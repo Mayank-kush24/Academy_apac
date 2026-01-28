@@ -1,0 +1,175 @@
+/**
+ * Subtle Liquid Glass Effects
+ * Applied across the entire application
+ */
+
+/* Liquid Glass Base Effect - Enhanced */
+.liquid-glass {
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(35px) saturate(200%);
+    -webkit-backdrop-filter: blur(35px) saturate(200%);
+    border: 1px solid var(--glass-border-strong);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12),
+                0 2px 8px rgba(0, 0, 0, 0.08),
+                inset 0 1px 0 var(--glass-highlight),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.4);
+    position: relative;
+    overflow: hidden;
+}
+
+.liquid-glass::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        transparent 0%, 
+        rgba(255, 255, 255, 0.9) 20%,
+        rgba(255, 255, 255, 0.95) 50%,
+        rgba(255, 255, 255, 0.9) 80%,
+        transparent 100%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Popping orange to peach gradient accent on hover */
+.liquid-glass:hover::after {
+    content: '';
+    position: absolute;
+    top: -40%;
+    right: -15%;
+    width: 250px;
+    height: 250px;
+    background: var(--gradient-accent);
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+    z-index: 0;
+}
+
+/* Modal with Enhanced Liquid Glass */
+.modal-content {
+    background: var(--glass-bg-strong);
+    backdrop-filter: blur(50px) saturate(200%);
+    -webkit-backdrop-filter: blur(50px) saturate(200%);
+    border: 1px solid var(--glass-border-strong);
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15),
+                0 4px 16px rgba(0, 0, 0, 0.1),
+                inset 0 1px 0 var(--glass-highlight),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.4);
+    position: relative;
+    overflow: hidden;
+}
+
+.modal-content::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--gradient-vibrant);
+    opacity: 0.6;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Navigation items with subtle glass effect */
+.nav-item {
+    position: relative;
+}
+
+.nav-item::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--glass-bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    border-radius: 12px;
+    pointer-events: none;
+    z-index: -1;
+}
+
+.nav-item:hover::after {
+    opacity: 0.5;
+}
+
+/* Badge with gradient accent */
+.badge {
+    background: var(--gradient-vibrant);
+    color: white;
+    box-shadow: 0 4px 16px rgba(255, 107, 53, 0.4),
+                0 2px 8px rgba(255, 107, 53, 0.3),
+                inset 0 1px 0 rgba(255, 255, 255, 0.4),
+                inset 0 -1px 0 rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+
+/* Animated gradient background - Popping Orange to Peach */
+@keyframes gradientFloat {
+    0%, 100% {
+        transform: translate(0, 0) scale(1);
+        opacity: 0.1;
+    }
+    33% {
+        transform: translate(30px, -30px) scale(1.15);
+        opacity: 0.15;
+    }
+    66% {
+        transform: translate(-20px, 20px) scale(0.95);
+        opacity: 0.12;
+    }
+}
+
+/* Apply to page backgrounds */
+.page-content {
+    position: relative;
+}
+
+.page-content::before {
+    content: '';
+    position: fixed;
+    top: 20%;
+    right: 10%;
+    width: 500px;
+    height: 500px;
+    background: var(--gradient-vibrant);
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0.1;
+    animation: gradientFloat 20s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.page-content::after {
+    content: '';
+    position: fixed;
+    bottom: 15%;
+    left: 8%;
+    width: 450px;
+    height: 450px;
+    background: linear-gradient(135deg, rgba(255, 107, 53, 0.12) 0%, rgba(255, 182, 193, 0.1) 100%);
+    border-radius: 50%;
+    filter: blur(110px);
+    animation: gradientFloat 25s ease-in-out infinite reverse;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.page-content > * {
+    position: relative;
+    z-index: 1;
+}

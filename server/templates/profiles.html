@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Profiles - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<div class="profiles-page">
+    <div class="page-header">
+        <h1><i class="fas fa-user-circle"></i> User Profiles</h1>
+    </div>
+
+    <!-- Search and Filters Section -->
+    <div class="filters-section">
+        <div class="filters-card-glass">
+            <div class="filters-header">
+                <h3><i class="fas fa-filter"></i> Search & Filters</h3>
+                <button class="btn btn-sm btn-secondary" onclick="toggleFilters()">
+                    <i class="fas fa-chevron-down" id="filterToggleIcon"></i>
+                </button>
+            </div>
+            
+            <div id="filtersContent" class="filters-content">
+                <!-- Search Bar -->
+                <div class="search-bar">
+                    <i class="fas fa-search"></i>
+                    <input type="text" id="searchInput" placeholder="Search by name, email, organization, designation, or occupation..." 
+                           onkeyup="handleSearch()">
+                    <button class="btn btn-sm btn-primary" onclick="applyFilters()">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                </div>
+                
+                <!-- Filter Grid -->
+                <div class="filter-grid">
+                    <div class="filter-group">
+                        <label>Organization</label>
+                        <select id="filterOrganization" class="filter-select">
+                            <option value="">All Organizations</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Domain</label>
+                        <select id="filterDomain" class="filter-select">
+                            <option value="">All Domains</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Country</label>
+                        <select id="filterCountry" class="filter-select">
+                            <option value="">All Countries</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>State</label>
+                        <select id="filterState" class="filter-select">
+                            <option value="">All States</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>City</label>
+                        <select id="filterCity" class="filter-select">
+                            <option value="">All Cities</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Gender</label>
+                        <select id="filterGender" class="filter-select">
+                            <option value="">All Genders</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Class Stream</label>
+                        <select id="filterClassStream" class="filter-select">
+                            <option value="">All Streams</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Designation</label>
+                        <select id="filterDesignation" class="filter-select">
+                            <option value="">All Designations</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Occupation</label>
+                        <select id="filterOccupation" class="filter-select">
+                            <option value="">All Occupations</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Has GitHub</label>
+                        <select id="filterGithub" class="filter-select">
+                            <option value="">All</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                    
+                    <div class="filter-group">
+                        <label>Has LinkedIn</label>
+                        <select id="filterLinkedin" class="filter-select">
+                            <option value="">All</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div class="filter-actions">
+                    <button class="btn btn-secondary" onclick="clearFilters()">
+                        <i class="fas fa-times"></i> Clear All
+                    </button>
+                    <button class="btn btn-primary" onclick="applyFilters()">
+                        <i class="fas fa-filter"></i> Apply Filters
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Info -->
+    <div class="results-info">
+        <span id="resultsCount">Loading...</span>
+        <div class="results-per-page">
+            <label>Per page:</label>
+            <select id="perPageSelect" onchange="changePerPage()">
+                <option value="20">20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Profiles List -->
+    <div class="profiles-list-container">
+        <div class="profiles-list-card-glass">
+            <table class="profiles-list-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Organization</th>
+                        <th>Domain</th>
+                        <th>Location</th>
+                        <th>Designation</th>
+                        <th>Social</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="profilesListBody">
+                    <tr>
+                        <td colspan="8" class="loading-state">Loading profiles...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    <div class="pagination" id="pagination" style="display: none;">
+        <button class="btn btn-sm btn-secondary" id="prevPage" onclick="changePage(-1)">
+            <i class="fas fa-chevron-left"></i> Previous
+        </button>
+        <span id="pageInfo">Page 1 of 1</span>
+        <button class="btn btn-sm btn-secondary" id="nextPage" onclick="changePage(1)">
+            Next <i class="fas fa-chevron-right"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Profile Detail Modal -->
+<div id="profileModal" class="modal" style="display: none;">
+    <div class="modal-content modal-large">
+        <div class="modal-header">
+            <h2 id="modalProfileName">Profile Details</h2>
+            <button class="modal-close" onclick="closeProfileModal()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="modal-body" id="profileModalBody">
+            <!-- Profile details will be loaded here -->
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/profiles.js"></script>
+{% endblock %}

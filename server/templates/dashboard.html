@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<div class="dashboard-enterprise">
+    <!-- Command Bar -->
+    <div class="command-bar">
+        <div class="command-bar-left">
+            <h1 class="dashboard-title">Analytics</h1>
+            <div class="pill-filters">
+                <button class="pill active" data-period="30d">Last 30 Days</button>
+                <button class="pill" data-period="7d">Last 7 Days</button>
+                <button class="pill" data-period="90d">Last 90 Days</button>
+            </div>
+        </div>
+        <div class="command-bar-right">
+            <button class="command-btn" onclick="openCommandPalette()" title="Command Palette (⌘K)">
+                <span class="command-icon">⌘</span>
+                <span>K</span>
+            </button>
+            <button class="command-btn" onclick="exportData()" title="Export">
+                <span>Export</span>
+            </button>
+            <button class="command-btn" id="densityToggle" onclick="toggleDensity()" title="Data Density">
+                <span>Compact</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Compact Horizontal Metric Bar -->
+    <div class="metrics-bar">
+        <div class="metric-item">
+            <div class="metric-label">TOTAL USERS</div>
+            <div class="metric-content">
+                <span class="metric-value" id="totalUsers">-</span>
+                <span class="metric-change" id="totalUsersChange">-</span>
+            </div>
+        </div>
+        
+        <div class="metric-item">
+            <div class="metric-label">ORGANIZATIONS</div>
+            <div class="metric-content">
+                <span class="metric-value" id="uniqueOrgs">-</span>
+                <span class="metric-change" id="uniqueOrgsChange">-</span>
+            </div>
+        </div>
+        
+        <div class="metric-item">
+            <div class="metric-label">TOP DOMAIN</div>
+            <div class="metric-content">
+                <span class="metric-value metric-value-text" id="topDomain">-</span>
+                <span class="metric-meta">Primary sector</span>
+            </div>
+        </div>
+        
+        <div class="metric-item">
+            <div class="metric-label">TOP CITY</div>
+            <div class="metric-content">
+                <span class="metric-value" id="topCity">-</span>
+                <span class="metric-meta">Leading region</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Unified Data Grid -->
+    <div class="data-grid">
+        <!-- Registration Trend - Large -->
+        <section class="viz-panel" style="grid-column: 1 / 3;">
+            <div class="viz-header">
+                <div>
+                    <h2 class="viz-title">Registration Trend</h2>
+                    <p class="viz-subtitle">Daily user onboarding volume</p>
+                </div>
+                <div class="viz-actions">
+                    <button class="viz-action-btn" title="More options">⋯</button>
+                </div>
+            </div>
+            <div class="viz-container">
+                <canvas id="registrationTrendsChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Gender Distribution -->
+        <section class="viz-panel">
+            <div class="viz-header">
+                <div>
+                    <h2 class="viz-title">Gender Distribution</h2>
+                    <p class="viz-subtitle">Demographic breakdown</p>
+                </div>
+                <div class="viz-actions">
+                    <button class="viz-action-btn" title="More options">⋯</button>
+                </div>
+            </div>
+            <div class="viz-container">
+                <canvas id="genderChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Top Organizations -->
+        <section class="viz-panel">
+            <div class="viz-header">
+                <h2 class="viz-title">Top Organizations</h2>
+                <button class="viz-action-btn">⋯</button>
+            </div>
+            <div class="viz-container">
+                <canvas id="organizationsChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Top Domains -->
+        <section class="viz-panel">
+            <div class="viz-header">
+                <h2 class="viz-title">Top Domains</h2>
+                <button class="viz-action-btn">⋯</button>
+            </div>
+            <div class="viz-container">
+                <canvas id="domainsChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Top Cities -->
+        <section class="viz-panel">
+            <div class="viz-header">
+                <h2 class="viz-title">Top Cities</h2>
+                <button class="viz-action-btn">⋯</button>
+            </div>
+            <div class="viz-container">
+                <canvas id="citiesChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Data Intelligence Insights -->
+        <section class="insights-panel">
+            <div class="insights-header">
+                <div>
+                    <h2 class="insights-title">Data Intelligence</h2>
+                    <p class="insights-subtitle">Automated analysis of key metrics</p>
+                </div>
+                <button class="insights-refresh" onclick="refreshInsights()" title="Refresh Insights">
+                    <i class="material-icons-round" style="font-size: 18px;">refresh</i>
+                </button>
+            </div>
+            <div class="insights-list" id="insightsList">
+                <div class="insight-item">
+                    <div class="insight-category">Loading</div>
+                    <div class="insight-statement">Analyzing data...</div>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/static/js/dashboard.js"></script>
+{% endblock %}

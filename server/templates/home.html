@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<div class="home-hero-premium">
+    <div class="hero-container">
+        <!-- Left Side: Typography & Messaging -->
+        <div class="hero-content-premium">
+            <div class="hero-badge-premium">APAC Edition</div>
+            <h1 class="hero-title-premium">
+                Gen AI Academy
+            </h1>
+            <p class="hero-subtitle-premium">
+                Build in APAC.<br>
+                Build for the world.
+            </p>
+            <p class="hero-description-premium">
+                Transform your data into actionable intelligence. 
+                Enterprise-grade analytics for modern teams.
+            </p>
+            
+            <div class="hero-actions-premium">
+                <a href="/dashboard" class="btn-hero-primary">
+                    <span>View Dashboard</span>
+                    <i class="fas fa-arrow-right"></i>
+                </a>
+                <a href="/profiles" class="btn-hero-secondary">
+                    <span>Explore Profiles</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Right Side: Static Image -->
+        <div class="hero-visual-premium">
+            <img src="/static/images/hero-panels.png" alt="Gen AI Academy Visual" class="hero-image">
+        </div>
+    </div>
+</div>
+{% endblock %}

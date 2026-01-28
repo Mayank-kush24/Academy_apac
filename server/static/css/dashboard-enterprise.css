@@ -1,0 +1,988 @@
+/**
+ * Enterprise Dashboard Design System
+ * Premium data platform aesthetic - Not AI-like
+ * Inspired by Linear, Stripe, Vercel, Bloomberg
+ */
+
+/* ============================================
+   ENTERPRISE DASHBOARD LAYOUT
+   ============================================ */
+
+/* Flat grid-based layout - Seamlessly blend with page background */
+.dashboard-enterprise {
+    min-height: calc(100vh - 72px);
+    background: transparent !important; /* Force transparent to blend with page background */
+    padding: 0;
+    padding-top: 0; /* Ensure no padding that could cause overlap */
+    position: relative;
+    border-radius: 0;
+    box-shadow: none !important; /* Force no shadow */
+    border: none !important; /* Force no border */
+    margin: 0;
+    margin-top: 0; /* No top margin */
+    overflow: visible; /* Allow content to be fully visible */
+}
+
+/* Add spacing after command bar to push metrics bar down */
+.command-bar + .metrics-bar {
+    margin-top: 20px; /* Additional margin to create clear separation */
+}
+
+/* Ensure page-content doesn't add extra spacing above dashboard */
+.page-content:has(.dashboard-enterprise) {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+}
+
+/* Remove all pseudo-elements */
+.dashboard-enterprise::before,
+.dashboard-enterprise::after {
+    display: none;
+}
+
+.dashboard-enterprise > * {
+    position: relative;
+    z-index: 1;
+    background: transparent !important; /* Ensure all children are transparent */
+}
+
+/* Remove any pseudo-elements that might create visual separation */
+.dashboard-enterprise *::before,
+.dashboard-enterprise *::after {
+    display: none !important;
+}
+
+/* Command Bar - Minimal, Enterprise - Ultra-compact to prevent blocking data cards */
+.command-bar {
+    background: transparent !important; /* Force transparent to blend seamlessly */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04); /* Very subtle divider */
+    padding: 4px 24px; /* Ultra-minimal vertical padding */
+    padding-top: 2px; /* Minimal top padding */
+    padding-bottom: 4px; /* Minimal bottom padding */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: 72px; /* Position below top navigation bar */
+    z-index: 99; /* Below top bar (z-index 100) but above content */
+    box-shadow: none !important; /* Force no shadow */
+    border-radius: 0;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    margin-top: 0; /* No margin to prevent overlap */
+    margin-bottom: 0; /* No bottom margin */
+    /* Ensure command bar doesn't cover content on initial load */
+    min-height: fit-content;
+    height: auto; /* Auto height to minimize space */
+    max-height: 42px; /* Ultra-compact height */
+    line-height: 1; /* Tight line height for all content */
+}
+
+.command-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 16px; /* Further reduced gap between title and pills */
+    flex-wrap: wrap; /* Allow wrapping if needed */
+    row-gap: 2px; /* Minimal space between rows if wrapped */
+    line-height: 1; /* Tight line height */
+}
+
+.dashboard-title {
+    font-family: 'Inter', var(--font-display);
+    font-size: 20px; /* Slightly smaller to reduce vertical space */
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em; /* Tighter spacing */
+    margin: 0;
+    margin-bottom: 0; /* No bottom margin */
+    margin-top: 0; /* No top margin */
+    padding: 0; /* No padding */
+    font-feature-settings: 'tnum', 'ss01'; /* Tabular numbers, stylistic set */
+    line-height: 1; /* Ultra-tight line height to reduce vertical space */
+}
+
+/* Pill Filters */
+.pill-filters {
+    display: flex;
+    gap: 4px; /* Minimal gap between pills */
+    align-items: center;
+    margin: 0; /* No margin */
+    padding: 0; /* No padding */
+    line-height: 1; /* Tight line height */
+}
+
+/* Pills - Minimal with gradient accent on active */
+.pill {
+    padding: 4px 10px; /* Ultra-compact padding */
+    font-size: 11px; /* Smaller font */
+    font-weight: 600; /* Bolder for structure */
+    font-family: 'Inter', var(--font-display);
+    color: var(--text-secondary);
+    background: #FFFFFF; /* Pure white */
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Stronger border */
+    border-radius: 9999px; /* Pill shape to match major buttons */
+    cursor: pointer;
+    transition: all 0.15s ease;
+    letter-spacing: 0.01em;
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    font-feature-settings: 'tnum';
+    margin: 0; /* No margin */
+    line-height: 1; /* Ultra-tight line height */
+}
+
+.pill:hover {
+    background: var(--bg-primary);
+    border-color: rgba(0, 0, 0, 0.12); /* Darker border on hover */
+    color: var(--text-primary);
+    box-shadow: none; /* No shadow - flat design */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* Active pill - Brand gradient accent */
+.pill.active {
+    background: var(--gradient-primary); /* Brand gradient as accent */
+    color: #FFFFFF; /* White text on gradient */
+    border-color: transparent; /* No border on active */
+    box-shadow: none;
+    cursor: default;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    font-weight: 700; /* Bolder when active */
+}
+
+.pill:not(.active) {
+    cursor: pointer;
+}
+
+.pill:not(.active):hover {
+    background: #FFFFFF;
+    border-color: rgba(0, 0, 0, 0.15); /* Darker border on hover */
+    color: var(--text-primary);
+    transform: none;
+    box-shadow: none;
+}
+
+/* Command Buttons */
+.command-bar-right {
+    display: flex;
+    gap: 4px; /* Minimal gap between command buttons */
+    align-items: center;
+    margin: 0; /* No margin */
+    padding: 0; /* No padding */
+    line-height: 1; /* Tight line height */
+}
+
+/* Command buttons - Minimal with gradient accent on hover */
+.command-btn {
+    padding: 4px 8px; /* Ultra-compact padding */
+    font-size: 11px; /* Smaller font */
+    font-weight: 600; /* Bolder */
+    font-family: var(--font-display);
+    color: var(--text-secondary);
+    background: #FFFFFF; /* Pure white */
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Stronger border */
+    border-radius: 9999px; /* Pill shape to match major buttons */
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 3px; /* Minimal gap */
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    font-feature-settings: 'tnum';
+    margin: 0; /* No margin */
+    line-height: 1; /* Ultra-tight line height */
+}
+
+.command-btn:hover {
+    background: #FFFFFF;
+    border-color: transparent; /* Remove border on hover */
+    background-image: var(--gradient-primary); /* Brand gradient accent */
+    color: #FFFFFF; /* White text on gradient */
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.command-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* Command Palette Items - Minimal with gradient accent on hover */
+.command-item {
+    display: flex;
+    align-items: center;
+    padding: 12px 16px;
+    border-radius: 6px; /* Input radius */
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: 8px;
+    background: #FFFFFF; /* Pure white */
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Stronger border */
+    box-shadow: none;
+}
+
+.command-item:hover {
+    background: var(--gradient-primary); /* Brand gradient accent */
+    border-color: transparent;
+    color: #FFFFFF; /* White text on gradient */
+    transform: none;
+    box-shadow: none;
+}
+
+.command-item i {
+    font-size: 18px;
+    width: 24px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.command-item:hover i,
+.command-item:hover > div {
+    color: #FFFFFF; /* White on gradient */
+}
+
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.command-icon {
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+/* ============================================
+   COMPACT HORIZONTAL METRIC BAR
+   ============================================ */
+
+.metrics-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0;
+    padding: 20px 24px; /* Adequate vertical padding */
+    padding-top: 80px; /* Significantly increased top padding to push stats cards much lower */
+    max-width: 1920px;
+    margin: 0 auto;
+    margin-top: 20px; /* Add top margin to push dashboard section lower */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04); /* Very subtle divider */
+    background: transparent !important; /* Force transparent to blend with page */
+    position: relative;
+    z-index: 1; /* Below sticky command bar */
+    /* Ensure metrics bar is visible and not cut off */
+    min-height: 80px; /* Increased to accommodate large numbers */
+    overflow: visible;
+    box-shadow: none !important; /* Force no shadow */
+}
+
+/* ============================================
+   UNIFIED DATA GRID
+   ============================================ */
+
+.data-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    padding: 18px 24px 24px 24px; /* Reduced top padding for compact layout */
+    max-width: 1920px;
+    margin: 0 auto;
+    margin-top: 0; /* No top margin */
+    align-items: start;
+    grid-auto-rows: minmax(320px, auto);
+    position: relative;
+    z-index: 1; /* Below sticky elements */
+    background: transparent !important; /* Force transparent to blend seamlessly */
+    border: none !important; /* Force no border */
+    box-shadow: none !important; /* Force no shadow */
+}
+
+/* Compact Metric Items - No card containers */
+.metric-item {
+    padding: 0 20px;
+    padding-top: 4px; /* Extra top padding to prevent number cut-off */
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start; /* Align to top to prevent cut-off */
+    align-items: flex-start;
+    border-right: 1px solid rgba(0, 0, 0, 0.03) !important; /* Very subtle divider, almost invisible */
+    min-height: 80px; /* Increased to accommodate large numbers */
+    overflow: visible; /* Ensure content is not clipped */
+    position: relative;
+    z-index: 2; /* Above metrics-bar background */
+    background: transparent !important; /* Transparent background */
+}
+
+.metric-item:last-child {
+    border-right: none !important;
+}
+
+.metric-item {
+    border-right: 1px solid rgba(0, 0, 0, 0.03) !important; /* Very subtle divider, almost invisible */
+}
+
+.metric-content {
+    display: flex;
+    align-items: baseline;
+    gap: 10px; /* Tighter gap */
+    flex-wrap: wrap;
+    overflow: visible; /* Ensure content is not clipped */
+    position: relative;
+    z-index: 1;
+    margin: 0; /* No margin */
+    padding: 0; /* No padding */
+    width: 100%; /* Full width */
+}
+
+
+.metric-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 8px; /* Increased spacing */
+    margin-top: 0; /* No top margin */
+    padding-top: 0; /* No padding */
+    font-family: 'Inter', var(--font-display);
+    font-feature-settings: 'tnum', 'ss01';
+    overflow: visible; /* Ensure label is not clipped */
+    white-space: nowrap;
+    line-height: 1.2;
+}
+
+/* Metric value - Visually dominant numbers */
+.metric-value {
+    font-size: 44px; /* Larger, more dominant */
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1.1; /* Slightly increased for better visibility */
+    font-family: 'Inter', var(--font-display);
+    font-feature-settings: 'tnum', 'ss01';
+    letter-spacing: -0.05em; /* Tighter for large numbers */
+    white-space: nowrap;
+    display: inline-block;
+    overflow: visible; /* Ensure text is not clipped */
+    text-overflow: clip; /* Don't truncate */
+    margin: 0; /* No margin */
+    padding: 0; /* No padding */
+    padding-top: 0; /* Ensure no top padding that could cause issues */
+}
+
+.metric-value-text {
+    font-size: 34px; /* Larger for text values */
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    display: inline-block;
+    font-feature-settings: 'tnum', 'ss01';
+    color: var(--text-primary);
+}
+
+/* Inline trend indicator */
+.metric-change {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-blue);
+    font-family: 'Inter', var(--font-display);
+    font-feature-settings: 'tnum', 'ss01';
+    letter-spacing: 0.01em;
+    display: inline-block;
+    white-space: nowrap;
+}
+
+.metric-change.positive {
+    color: var(--accent-blue);
+}
+
+.metric-change.negative {
+    color: var(--danger-color);
+}
+
+.metric-change.positive {
+    color: var(--accent-blue);
+}
+
+.metric-meta {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    font-family: 'Inter', var(--font-display);
+    display: inline-block;
+    white-space: nowrap;
+}
+
+/* ============================================
+   VIZ PANELS IN UNIFIED GRID
+   ============================================ */
+
+/* Remove floating gradient accent on panels */
+.viz-panel::after {
+    display: none;
+}
+
+.viz-panel::before {
+    display: none; /* Remove gradient highlight bar */
+}
+
+/* Remove all pseudo-elements and effects */
+.viz-panel::before,
+.viz-panel::after {
+    display: none;
+}
+
+/* Viz panels - Seamlessly blend with background, no visual separation */
+.viz-panel {
+    background: transparent !important; /* Force transparent to blend with page background */
+    border: none !important; /* Force no border for seamless blending */
+    border-radius: 0; /* No rounded corners */
+    padding: 12px 16px; /* Reduced padding for larger charts */
+    padding-bottom: 16px;
+    transition: none;
+    box-shadow: none !important; /* Force no shadows */
+    position: relative;
+    overflow: visible; /* Allow chart overflow */
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    margin: 0; /* No margin */
+}
+
+.viz-panel:hover {
+    border: none !important; /* Force no border on hover */
+    box-shadow: none !important; /* Force no shadow on hover */
+    transform: none;
+    background: transparent !important; /* Force stay transparent */
+}
+
+.viz-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px; /* Reduced spacing for larger charts */
+    padding-bottom: 8px;
+    border-bottom: none; /* Remove divider for seamless look */
+    position: relative;
+    z-index: 2;
+    flex-shrink: 0;
+}
+
+/* Strong typography for chart titles */
+.viz-title {
+    font-size: 16px; /* Larger for prominence */
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 4px 0;
+    font-family: 'Inter', var(--font-display);
+    letter-spacing: -0.01em;
+    line-height: 1.3;
+    font-feature-settings: 'tnum', 'ss01';
+}
+
+.viz-subtitle {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+    font-family: 'Inter', var(--font-display);
+    line-height: 1.4;
+    font-weight: 500; /* Medium weight for structure */
+}
+
+.viz-actions {
+    display: flex;
+    gap: var(--space-xs);
+}
+
+.viz-action-btn {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Stronger border */
+    border-radius: 6px; /* Input radius */
+    background: #FFFFFF; /* Pure white */
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 16px;
+    transition: all 0.15s ease;
+    font-family: 'Inter', var(--font-display);
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.viz-action-btn:hover {
+    background: var(--gradient-primary); /* Brand gradient accent */
+    border-color: transparent;
+    color: #FFFFFF; /* White icon on gradient */
+    box-shadow: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.viz-container {
+    position: relative;
+    width: 100%;
+    z-index: 2;
+    pointer-events: auto;
+    overflow: visible;
+    flex: 1; /* Take remaining space in flex container */
+    min-height: 300px; /* Increased minimum height */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.viz-container canvas {
+    pointer-events: auto !important;
+    cursor: crosshair;
+    max-width: 100%;
+    height: 100% !important;
+    width: 100% !important;
+    object-fit: contain; /* Prevent stretching */
+}
+
+/* Chart container heights in unified grid - Proper sizing for different chart types */
+.data-grid .viz-container {
+    min-height: 320px; /* Increased to accommodate rotated x-axis labels */
+    height: 320px; /* Standard height for bar charts */
+    max-height: 320px; /* Prevent elongation */
+}
+
+/* Registration Trend spans 2 columns - larger height for line chart */
+.data-grid .viz-panel[style*="grid-column: 1 / 3"] .viz-container {
+    min-height: 350px;
+    height: 350px; /* Taller for line chart with more data points */
+    max-height: 350px;
+}
+
+/* Gender Distribution (donut chart) - match bar chart height */
+.data-grid .viz-panel .viz-container {
+    min-height: 320px; /* Increased to match bar charts */
+    height: 320px;
+    max-height: 320px;
+}
+
+/* Ensure chart containers have enough space for labels */
+.viz-panel .viz-container {
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+/* ============================================
+   INSIGHTS PANEL (Part of Unified Grid)
+   ============================================ */
+.insights-panel {
+    background: transparent !important; /* Force transparent to blend with page background */
+    border: none !important; /* Force no border for seamless blending */
+    border-radius: 0; /* No rounded corners */
+    padding: 20px 24px; /* Increased padding for data intelligence feel */
+    box-shadow: none !important; /* Force no shadows */
+    display: flex;
+    flex-direction: column;
+    height: 280px; /* Fixed height to match chart containers */
+    min-height: 280px;
+    max-height: 280px; /* Prevent expansion */
+    position: relative;
+    overflow: hidden; /* Hide overflow */
+}
+
+
+.insights-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 16px;
+    border-bottom: none; /* Remove divider for seamless look */
+    margin-bottom: 20px;
+}
+
+.insights-title {
+    font-size: 20px; /* Larger for data intelligence module */
+    font-weight: 700;
+    color: #1F2937; /* Dark text */
+    margin: 0 0 4px 0;
+    font-family: 'Inter', var(--font-display);
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+}
+
+.insights-subtitle {
+    font-size: 12px;
+    font-weight: 500;
+    color: #6B7280; /* Muted gray */
+    margin: 0;
+    font-family: 'Inter', var(--font-display);
+    letter-spacing: 0.01em;
+    text-transform: uppercase;
+}
+
+/* Insights list - Scrollable container */
+.insights-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 8px; /* Space for scrollbar */
+    margin-right: -8px; /* Compensate for padding */
+    max-height: calc(280px - 100px); /* Account for header height */
+}
+
+/* Custom scrollbar for insights list */
+.insights-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.insights-list::-webkit-scrollbar-track {
+    background: #F9FAFB;
+    border-radius: 3px;
+}
+
+.insights-list::-webkit-scrollbar-thumb {
+    background: #D1D5DB;
+    border-radius: 3px;
+}
+
+.insights-list::-webkit-scrollbar-thumb:hover {
+    background: #9CA3AF;
+}
+
+/* Refresh button - Gradient accent on hover */
+.insights-refresh {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0, 0, 0, 0.1); /* Stronger border */
+    border-radius: 6px; /* Input radius */
+    background: #FFFFFF; /* Pure white */
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 18px;
+    transition: all 0.15s ease;
+    box-shadow: none;
+    font-weight: 600;
+    position: relative;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+.insights-refresh i {
+    position: relative;
+    z-index: 1;
+}
+
+.insights-refresh:hover {
+    background: var(--gradient-primary); /* Brand gradient accent */
+    color: #FFFFFF; /* White icon on gradient */
+    transform: rotate(90deg);
+    box-shadow: none;
+    border-color: transparent; /* Remove border on hover */
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+}
+
+/* Removed old insight styles - using new data intelligence design below */
+
+/* Data Intelligence Insight Items */
+.insight-item {
+    padding: 16px 0; /* Reduced padding for more compact look */
+    border-bottom: 1px solid rgba(0, 0, 0, 0.04); /* Very subtle divider */
+    position: relative;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.insight-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.insight-item:first-child {
+    padding-top: 0;
+}
+
+/* Category Label - Strong Typography */
+.insight-category {
+    font-size: 10px;
+    font-weight: 700;
+    color: #9CA3AF; /* Muted gray */
+    margin-bottom: 8px;
+    font-family: 'Inter', var(--font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-feature-settings: 'tnum', 'ss01';
+}
+
+/* Statement - Natural Language with Strong Typography */
+.insight-statement {
+    font-size: 15px; /* Larger for readability */
+    font-weight: 400; /* Regular weight for natural language */
+    color: #1F2937; /* Dark text for strong contrast */
+    line-height: 1.6; /* Comfortable reading line height */
+    font-family: 'Inter', var(--font-display);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    letter-spacing: -0.01em; /* Slightly tighter for readability */
+}
+
+/* ============================================
+   RESPONSIVE DESIGN
+   ============================================ */
+
+/* Responsive: Tablet */
+@media (max-width: 1200px) {
+    .metrics-bar {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .metric-item {
+        border-right: none;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 16px 20px;
+    }
+    
+    .metric-item:nth-child(2n) {
+        border-right: 1px solid rgba(0, 0, 0, 0.08);
+    }
+    
+    .metric-item:nth-child(2n):last-child {
+        border-right: none;
+    }
+    
+    .data-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 16px;
+    }
+    
+    .data-grid .viz-panel[style*="grid-column: 1 / 3"] {
+        grid-column: 1 / -1; /* Full width on tablet */
+    }
+}
+
+/* Responsive: Mobile */
+@media (max-width: 768px) {
+    .metrics-bar {
+        grid-template-columns: 1fr;
+        padding: 16px;
+        padding-top: 24px; /* Reduced top padding on mobile */
+    }
+    
+    .metric-item {
+        border-right: none;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+        padding: 16px 0;
+        min-height: 70px;
+    }
+    
+    .metric-item:last-child {
+        border-bottom: none;
+    }
+    
+    .metric-value {
+        font-size: 32px; /* Slightly smaller for mobile */
+    }
+    
+    .metric-value-text {
+        font-size: 24px; /* Slightly smaller for mobile */
+    }
+    
+    .metric-label {
+        font-size: 9px; /* Smaller label on mobile */
+    }
+    
+    /* Force one chart per row on mobile */
+    .data-grid {
+        grid-template-columns: 1fr !important; /* Force single column */
+        gap: 20px; /* Increased gap for better spacing */
+        padding: 16px;
+    }
+    
+    /* All panels take full width on mobile */
+    .data-grid .viz-panel,
+    .data-grid .insights-panel {
+        grid-column: 1 / -1 !important; /* Force full width */
+    }
+    
+    .data-grid .viz-panel[style*="grid-column: 1 / 3"] {
+        grid-column: 1 / -1 !important; /* Full width on mobile */
+    }
+    
+    .data-grid .viz-container {
+        min-height: 280px; /* Adequate height for mobile */
+        height: 280px;
+        max-height: 280px;
+    }
+    
+    .data-grid .viz-panel[style*="grid-column: 1 / 3"] .viz-container {
+        min-height: 300px; /* Slightly taller for line chart */
+        height: 300px;
+        max-height: 300px;
+    }
+    
+    .insights-panel {
+        height: 280px;
+        min-height: 280px;
+        max-height: 280px;
+    }
+    
+    .insights-list {
+        max-height: calc(280px - 100px);
+    }
+    
+    .command-bar {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 16px; /* Reduced padding on mobile */
+        padding-top: 8px;
+    }
+    
+    .command-bar-left {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        width: 100%;
+    }
+    
+    .dashboard-title {
+        font-size: 18px; /* Smaller title on mobile */
+    }
+    
+    .pill-filters {
+        flex-wrap: wrap;
+        width: 100%;
+    }
+    
+    .pill {
+        font-size: 11px; /* Smaller pills on mobile */
+        padding: 5px 12px;
+    }
+    
+    .command-bar-right {
+        width: 100%;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .command-btn {
+        font-size: 11px; /* Smaller buttons on mobile */
+        padding: 5px 10px;
+    }
+    
+    .viz-title {
+        font-size: 16px; /* Smaller chart titles on mobile */
+    }
+    
+    .viz-subtitle {
+        font-size: 12px; /* Smaller subtitles on mobile */
+    }
+}
+
+@media (max-width: 640px) {
+    .dashboard-enterprise {
+        padding: 0;
+    }
+    
+    .command-bar {
+        padding: 16px;
+    }
+    
+    .metrics-bar {
+        padding: 16px;
+    }
+    
+    .metric-item {
+        padding: 10px 0;
+        min-height: 65px;
+    }
+    
+    .data-grid {
+        padding: 16px;
+    }
+    
+    .metric-value {
+        font-size: 28px;
+    }
+    
+    .data-grid .viz-container {
+        min-height: 240px;
+        height: 240px;
+    }
+    
+    .data-grid .viz-panel[style*="grid-column: 1 / 3"] .viz-container {
+        min-height: 280px;
+        height: 280px;
+    }
+    
+    .insights-panel {
+        height: 240px;
+        min-height: 240px;
+        max-height: 240px;
+    }
+    
+    .insights-list {
+        max-height: calc(240px - 100px);
+    }
+}
+
+/* ============================================
+   DENSITY MODE (Compact View)
+   ============================================ */
+
+.dashboard-enterprise.compact {
+    --space-lg: 16px;
+    --space-xl: 20px;
+}
+
+.dashboard-enterprise.compact .metrics-bar {
+    padding: 12px 24px;
+}
+
+.dashboard-enterprise.compact .metric-item {
+    padding: 0 16px;
+    min-height: 60px;
+}
+
+.dashboard-enterprise.compact .metric-value {
+    font-size: 36px; /* Still large but slightly reduced */
+}
+
+.dashboard-enterprise.compact .metric-value-text {
+    font-size: 28px;
+}
+
+.dashboard-enterprise.compact .viz-container {
+    height: 300px; /* Increased even in compact mode */
+}
+
+.dashboard-enterprise.compact .data-grid .viz-container {
+    height: 320px; /* Increased to accommodate rotated labels */
+}

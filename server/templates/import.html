@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+
+{% block title %}Import Data - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1><i class="fas fa-file-upload"></i> Import Data</h1>
+</div>
+
+<div class="import-wizard">
+    <!-- Step 1: Upload -->
+    <div id="step1" class="wizard-step active">
+        <div class="card">
+            <h2>Step 1: Upload Excel File</h2>
+            <p class="text-muted">Upload an Excel file (.xlsx or .xls) containing user data</p>
+            
+            <form id="uploadForm" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="excelFile">Select Excel File</label>
+                    <input type="file" id="excelFile" name="file" accept=".xlsx,.xls" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-upload"></i> Upload & Preview
+                </button>
+            </form>
+            
+            <div id="uploadError" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+    
+    <!-- Step 2: Field Mapping -->
+    <div id="step2" class="wizard-step" style="display: none;">
+        <div class="card">
+            <h2>Step 2: Map Fields</h2>
+            <p class="text-muted">Map Excel columns to database fields. You can override the auto-mapped fields.</p>
+            
+            <div class="table-container">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Excel Column</th>
+                            <th>Sample Value</th>
+                            <th>Database Field</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mappingTableBody">
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="wizard-actions">
+                <button class="btn btn-secondary" onclick="goToStep(1)">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+                <button class="btn btn-primary" onclick="goToStep(3)">
+                    Next <i class="fas fa-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 3: Import Mode -->
+    <div id="step3" class="wizard-step" style="display: none;">
+        <div class="card">
+            <h2>Step 3: Select Import Mode</h2>
+            <p class="text-muted">Choose how to handle existing records</p>
+            
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="importMode" value="create" checked>
+                    <strong>Create Only</strong> - Only insert new records (skip if email exists)
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="importMode" value="create_update">
+                    <strong>Create or Update</strong> - Insert new or update existing records (by email)
+                </label>
+            </div>
+            
+            <div class="form-group">
+                <label>
+                    <input type="radio" name="importMode" value="update_only">
+                    <strong>Update Only</strong> - Only update existing records (skip if email doesn't exist)
+                </label>
+            </div>
+            
+            <div class="wizard-actions">
+                <button class="btn btn-secondary" onclick="goToStep(2)">
+                    <i class="fas fa-arrow-left"></i> Back
+                </button>
+                <button class="btn btn-primary" onclick="executeImport()">
+                    <i class="fas fa-play"></i> Execute Import
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Step 4: Results -->
+    <div id="step4" class="wizard-step" style="display: none;">
+        <div class="card">
+            <h2>Import Results</h2>
+            
+            <div id="importResults" class="import-results">
+                <!-- Results will be displayed here -->
+            </div>
+            
+            <div class="wizard-actions">
+                <button class="btn btn-primary" onclick="resetWizard()">
+                    <i class="fas fa-redo"></i> Import Another File
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/import.js"></script>
+{% endblock %}
