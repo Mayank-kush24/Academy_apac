@@ -4,22 +4,50 @@
 
 let charts = {};
 let isLoading = false; // Prevent multiple simultaneous loads
-let currentPeriod = '30d'; // Default period
+let currentPeriod = 'all'; // Default period (entire dataset)
 
 // Load dashboard data on page load
 document.addEventListener('DOMContentLoaded', function() {
     // Only load if we're on the dashboard page
     if (window.location.pathname === '/dashboard') {
+        // Set active nav item
+        setActiveNavItem();
         initializeDashboard();
         loadDashboardData();
+        updateHeaderUserInfo(); // Update header user info on load
     }
 });
+
+/**
+ * Set active navigation item
+ */
+function setActiveNavItem() {
+    // Remove active class from all nav items
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
+    
+    // Add active class to dashboard nav item
+    const dashboardNav = document.querySelector('a[href="/dashboard"]');
+    if (dashboardNav) {
+        dashboardNav.classList.add('active');
+    }
+}
 
 /**
  * Initialize dashboard interactions
  */
 function initializeDashboard() {
-    // Time period filter pills
+    // Time period filter buttons (premium style)
+    const periodButtons = document.querySelectorAll('.period-btn[data-period]');
+    periodButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const period = this.getAttribute('data-period');
+            setPeriod(period);
+        });
+    });
+    
+    // Also support old pill class for backward compatibility
     const periodPills = document.querySelectorAll('.pill[data-period]');
     periodPills.forEach(pill => {
         pill.addEventListener('click', function() {
@@ -43,7 +71,15 @@ function initializeDashboard() {
 function setPeriod(period) {
     currentPeriod = period;
     
-    // Update active pill
+    // Update active button (premium style)
+    document.querySelectorAll('.period-btn[data-period]').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-period') === period) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Also update old pills for backward compatibility
     document.querySelectorAll('.pill[data-period]').forEach(pill => {
         pill.classList.remove('active');
         if (pill.getAttribute('data-period') === period) {
@@ -66,7 +102,7 @@ async function loadDashboardData() {
     
     isLoading = true;
     
-    // Show loading state
+    // Show loading state (if old structure exists)
     const loadingIndicator = document.querySelector('.command-bar');
     if (loadingIndicator) {
         loadingIndicator.style.opacity = '0.7';
@@ -79,34 +115,33 @@ async function loadDashboardData() {
         let summary = null;
         if (summaryResponse.ok) {
             summary = await summaryResponse.json();
-            updateKPICards(summary);
         } else {
-            // If error, show empty state
             summary = {
                 total_users: 0,
                 unique_organizations: 0,
                 top_domain: 'N/A',
-                top_city: 'N/A'
+                top_city: 'N/A',
+                average_age: null,
+                apac_except_india_users: 0,
+                top_india_state: 'N/A',
+                top_india_city: 'N/A',
+                top_apac_country: 'N/A',
+                previous_period_total_users: null,
+                previous_period_apac_users: null,
+                previous_period_average_age: null
             };
-            updateKPICards(summary);
         }
         
-        // Load charts with period parameter
         const chartsUrl = `/api/dashboard/charts?period=${currentPeriod}`;
         const chartsResponse = await authenticatedFetch(chartsUrl);
+        let chartsData = null;
         if (chartsResponse.ok) {
-            const chartsData = await chartsResponse.json();
-            renderCharts(chartsData, summary);
+            chartsData = await chartsResponse.json();
         } else {
-            // If error, show empty charts
-            renderCharts({
-                registration_trends: [],
-                gender_distribution: [],
-                top_domains: [],
-                top_cities: [],
-                top_organizations: []
-            }, summary);
+            chartsData = { registration_trends: [], gender_distribution: [], top_domains: [], top_cities: [], top_organizations: [] };
         }
+        updateKPICards(summary, chartsData);
+        renderCharts(chartsData, summary);
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
         // Show empty state instead of error
@@ -114,7 +149,12 @@ async function loadDashboardData() {
             total_users: 0,
             unique_organizations: 0,
             top_domain: 'N/A',
-            top_city: 'N/A'
+            top_city: 'N/A',
+            average_age: null,
+            apac_except_india_users: 0,
+            top_india_state: 'N/A',
+            top_india_city: 'N/A',
+            top_apac_country: 'N/A'
         });
         renderCharts({
             registration_trends: [],
@@ -125,7 +165,7 @@ async function loadDashboardData() {
         });
     } finally {
         isLoading = false;
-        // Remove loading state
+        // Remove loading state (if old structure exists)
         const loadingIndicator = document.querySelector('.command-bar');
         if (loadingIndicator) {
             loadingIndicator.style.opacity = '1';
@@ -134,46 +174,179 @@ async function loadDashboardData() {
 }
 
 /**
- * Update KPI cards - Enterprise style (metric strips)
+ * Update KPI cards - Premium style with real period-on-period (e.g. week-on-week) numbers
+ * @param {Object} summary - summary from API (includes previous_period_* for WoW)
+ * @param {Object} [chartsData] - optional charts data for real sparklines (registration_trends)
  */
-function updateKPICards(summary) {
-    // Update metric values
+function updateKPICards(summary, chartsData) {
+    const formatNumber = (num) => {
+        if (typeof num !== 'number') return num;
+        return num.toLocaleString();
+    };
+    const trendValues = (chartsData && chartsData.registration_trends && Array.isArray(chartsData.registration_trends))
+        ? chartsData.registration_trends.map(t => t.value)
+        : null;
+
+    const totalUsers = summary.total_users || 0;
     const totalUsersEl = document.getElementById('totalUsers');
-    const uniqueOrgsEl = document.getElementById('uniqueOrgs');
-    const topDomainEl = document.getElementById('topDomain');
-    const topCityEl = document.getElementById('topCity');
-    
-    if (totalUsersEl) {
-        totalUsersEl.textContent = summary.total_users || 0;
+    if (totalUsersEl) totalUsersEl.textContent = formatNumber(totalUsers);
+    updateKPITrend('totalUsersChange', totalUsers, summary.previous_period_total_users, '—');
+    renderMiniChart('totalUsersMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(totalUsers));
+
+    const apacUsers = summary.apac_except_india_users || 0;
+    const apacUsersEl = document.getElementById('apacUsers');
+    if (apacUsersEl) apacUsersEl.textContent = formatNumber(apacUsers);
+    updateKPITrend('apacUsersChange', apacUsers, summary.previous_period_apac_users, '—');
+    renderMiniChart('apacUsersMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(apacUsers));
+
+    const avgAge = summary.average_age;
+    const averageAgeEl = document.getElementById('averageAge');
+    if (averageAgeEl) {
+        if (avgAge && avgAge > 0) averageAgeEl.textContent = Math.round(avgAge) + ' yrs';
+        else averageAgeEl.textContent = 'N/A';
     }
-    
-    if (uniqueOrgsEl) {
-        uniqueOrgsEl.textContent = summary.unique_organizations || 0;
+    updateKPITrend('averageAgeChange', avgAge || 0, summary.previous_period_average_age, '—');
+    renderMiniChart('averageAgeMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(avgAge || 0));
+
+    const topIndiaLocationEl = document.getElementById('topIndiaLocation');
+    const topIndiaLocationMetaEl = document.getElementById('topIndiaLocationMeta');
+    if (topIndiaLocationEl) {
+        const state = summary.top_india_state || 'N/A';
+        const city = summary.top_india_city || 'N/A';
+        if (state !== 'N/A' && city !== 'N/A') topIndiaLocationEl.textContent = `${city}, ${state}`;
+        else if (state !== 'N/A') topIndiaLocationEl.textContent = state;
+        else if (city !== 'N/A') topIndiaLocationEl.textContent = city;
+        else topIndiaLocationEl.textContent = 'N/A';
     }
-    
-    if (topDomainEl) {
-        const domain = summary.top_domain || 'N/A';
-        // Don't truncate - let CSS handle overflow with word-wrap
-        topDomainEl.textContent = domain;
-        topDomainEl.title = domain; // Tooltip for full text
+    if (topIndiaLocationMetaEl) {
+        const state = summary.top_india_state || 'N/A';
+        const city = summary.top_india_city || 'N/A';
+        topIndiaLocationMetaEl.textContent = (state !== 'N/A' && city !== 'N/A') ? `${state} State` : 'India';
     }
-    
-    if (topCityEl) {
-        topCityEl.textContent = summary.top_city || 'N/A';
+    updateKPITrend('topIndiaLocationChange', null, null, '—');
+
+    const topApacCountryEl = document.getElementById('topApacCountry');
+    if (topApacCountryEl) topApacCountryEl.textContent = summary.top_apac_country || 'N/A';
+    updateKPITrend('topApacCountryChange', null, null, '—');
+    renderMiniChart('topApacCountryMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(0));
+
+    updateHeaderUserInfo();
+}
+
+/**
+ * Update KPI trend indicator - real period-on-period (e.g. week-on-week) change
+ * @param {string} elementId - ID of the trend element
+ * @param {number} current - current period value
+ * @param {number|null|undefined} previous - previous period value (same length as current)
+ * @param {string} fallbackLabel - if no previous data, e.g. '—' or 'N/A'
+ */
+function updateKPITrend(elementId, current, previous, fallbackLabel) {
+    const trendEl = document.getElementById(elementId);
+    if (!trendEl) return;
+    if (previous == null || previous === undefined || previous === 0) {
+        trendEl.className = 'kpi-change neutral';
+        trendEl.innerHTML = `<span>${fallbackLabel !== undefined ? fallbackLabel : '—'}</span>`;
+        return;
     }
-    
-    // Update change indicators (placeholder - would come from API)
-    const totalUsersChangeEl = document.getElementById('totalUsersChange');
-    const uniqueOrgsChangeEl = document.getElementById('uniqueOrgsChange');
-    
-    if (totalUsersChangeEl) {
-        totalUsersChangeEl.textContent = '+12% WoW';
-        totalUsersChangeEl.classList.add('positive');
+    const changePct = ((current - previous) / previous) * 100;
+    const isPositive = changePct >= 0;
+    const sign = changePct >= 0 ? '+' : '';
+    const text = `${sign}${changePct.toFixed(1)}%`;
+    trendEl.className = `kpi-change ${isPositive ? 'positive' : 'negative'}`;
+    trendEl.innerHTML = `
+        <i class="fas fa-arrow-${isPositive ? 'up' : 'down'}"></i>
+        <span>${text}</span>
+    `;
+}
+
+/**
+ * Generate trend data for mini charts
+ */
+function generateTrendData(value) {
+    // Generate sample trend data (7 points)
+    const base = value * 0.7;
+    const variation = value * 0.3;
+    const data = [];
+    for (let i = 0; i < 7; i++) {
+        const random = Math.random();
+        data.push(Math.round(base + (variation * random)));
     }
+    return data;
+}
+
+/**
+ * Render mini chart for KPI card - Premium style with gradient
+ */
+function renderMiniChart(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || !data || data.length === 0) return;
     
-    if (uniqueOrgsChangeEl) {
-        uniqueOrgsChangeEl.textContent = '+5% WoW';
-        uniqueOrgsChangeEl.classList.add('positive');
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
+    
+    // Calculate min/max for scaling
+    const min = Math.min(...data);
+    const max = Math.max(...data);
+    const range = max - min || 1;
+    
+    // Create gradient for line
+    const gradient = ctx.createLinearGradient(0, 0, width, 0);
+    gradient.addColorStop(0, '#ff7a18');
+    gradient.addColorStop(1, '#ff9f43');
+    
+    // Draw line with gradient
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    
+    const stepX = width / (data.length - 1);
+    data.forEach((value, index) => {
+        const x = index * stepX;
+        const normalized = (value - min) / range;
+        const y = height - (normalized * height * 0.8) - (height * 0.1);
+        
+        if (index === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    });
+    
+    ctx.stroke();
+    
+    // Add subtle glow effect
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(255, 122, 24, 0.3)';
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+}
+
+/**
+ * Update header user info
+ */
+function updateHeaderUserInfo() {
+    try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+            const user = JSON.parse(userStr);
+            const userNameEl = document.getElementById('headerUserName');
+            const userEmailEl = document.getElementById('headerUserEmail');
+            
+            if (userNameEl) {
+                userNameEl.textContent = user.name || 'User';
+            }
+            if (userEmailEl) {
+                userEmailEl.textContent = user.email || 'user@example.com';
+            }
+        }
+    } catch (e) {
+        console.error('Error updating header user info:', e);
     }
 }
 
@@ -195,9 +368,14 @@ function renderCharts(data, summary = null) {
         showEmptyChart('genderChart', 'No gender data available');
     }
     
-    // Top Domains (Bar Chart)
+    // Top Domains (Bar Chart) - Primary segmentation
     if (data.top_domains && data.top_domains.length > 0) {
         renderBarChart('domainsChart', 'Top Domains', data.top_domains);
+        // Also render for secondary chart if exists
+        const secondaryChart = document.getElementById('domainsChartSecondary');
+        if (secondaryChart) {
+            renderBarChart('domainsChartSecondary', 'Top Domains', data.top_domains);
+        }
     } else {
         showEmptyChart('domainsChart', 'No domain data available');
     }
@@ -339,12 +517,16 @@ function generateInsights(data, summary) {
         });
     }
     
-    // Render insights with data intelligence styling
+    // Render insights with premium data intelligence styling
     if (insights.length > 0) {
-        insightsList.innerHTML = insights.map(insight => `
-            <div class="insight-item">
-                <div class="insight-category">${insight.category}</div>
-                <div class="insight-statement">${insight.statement}</div>
+        insightsList.innerHTML = insights.map((insight, index) => `
+            <div class="insight-item" style="animation-delay: ${index * 0.1}s">
+                <div class="insight-icon">
+                    <i class="fas fa-lightbulb"></i>
+                </div>
+                <div class="insight-content">
+                    <div class="insight-text">${insight.statement}</div>
+                </div>
             </div>
         `).join('');
     } else {
@@ -431,6 +613,13 @@ function openCommandPalette() {
                         <div>
                             <div style="font-weight: 600; margin-bottom: 4px;">Export Data</div>
                             <div style="font-size: 12px; color: var(--text-muted);">Download dashboard data as CSV</div>
+                        </div>
+                    </div>
+                    <div class="command-item" data-action="period-all" onclick="executeCommand('period-all')">
+                        <i class="fas fa-database" style="margin-right: 12px; color: var(--accent-blue);"></i>
+                        <div>
+                            <div style="font-weight: 600; margin-bottom: 4px;">All Data</div>
+                            <div style="font-size: 12px; color: var(--text-muted);">Show entire dataset (no date filter)</div>
                         </div>
                     </div>
                     <div class="command-item" data-action="period-7d" onclick="executeCommand('period-7d')">
@@ -535,6 +724,9 @@ function executeCommand(action) {
         case 'export':
             exportData();
             break;
+        case 'period-all':
+            setPeriod('all');
+            break;
         case 'period-7d':
             setPeriod('7d');
             break;
@@ -552,11 +744,24 @@ function executeCommand(action) {
 
 /**
  * Export dashboard data
+ * Make it globally accessible
  */
-async function exportData() {
+window.exportData = async function exportData(event) {
     try {
-        // Show loading state
-        const exportBtn = event?.target?.closest('.command-btn') || document.querySelector('.command-btn[onclick="exportData()"]');
+        // Show loading state - find button by onclick attribute or class
+        let exportBtn = null;
+        if (event && event.target) {
+            exportBtn = event.target.closest('.action-btn') || 
+                       event.target.closest('.command-btn') ||
+                       event.target.closest('button');
+        }
+        if (!exportBtn) {
+            exportBtn = document.querySelector('button[onclick="exportData()"]') ||
+                       document.querySelector('button[onclick*="exportData"]') ||
+                       document.querySelector('.action-btn') ||
+                       document.querySelector('.command-btn');
+        }
+        
         if (exportBtn) {
             const originalText = exportBtn.innerHTML;
             exportBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting...';
@@ -577,38 +782,61 @@ async function exportData() {
             // Create CSV content
             let csvContent = 'Dashboard Export - ' + new Date().toLocaleString() + '\n\n';
             csvContent += 'Summary Statistics\n';
-            csvContent += 'Period,Value\n';
+            csvContent += 'Metric,Value\n';
             csvContent += `Total Users,${summary.total_users}\n`;
+            csvContent += `APAC Users (Excl. India),${summary.apac_except_india_users || 0}\n`;
+            csvContent += `Average Age,${summary.average_age || 'N/A'}\n`;
+            csvContent += `Top India State,${summary.top_india_state || 'N/A'}\n`;
+            csvContent += `Top India City,${summary.top_india_city || 'N/A'}\n`;
+            csvContent += `Top APAC Country,${summary.top_apac_country || 'N/A'}\n`;
             csvContent += `Unique Organizations,${summary.unique_organizations}\n`;
             csvContent += `Top Domain,${summary.top_domain}\n`;
             csvContent += `Top City,${summary.top_city}\n\n`;
             
             csvContent += 'Registration Trends\n';
             csvContent += 'Date,Count\n';
-            charts.registration_trends.forEach(trend => {
-                csvContent += `${trend.date},${trend.value}\n`;
-            });
+            if (charts.registration_trends && charts.registration_trends.length > 0) {
+                charts.registration_trends.forEach(trend => {
+                    const date = trend.date || trend.label || '';
+                    csvContent += `${date},${trend.value || 0}\n`;
+                });
+            }
             csvContent += '\n';
             
             csvContent += 'Gender Distribution\n';
             csvContent += 'Gender,Count\n';
-            charts.gender_distribution.forEach(g => {
-                csvContent += `${g.label},${g.value}\n`;
-            });
+            if (charts.gender_distribution && charts.gender_distribution.length > 0) {
+                charts.gender_distribution.forEach(g => {
+                    csvContent += `${g.label || 'Unknown'},${g.value || 0}\n`;
+                });
+            }
             csvContent += '\n';
             
             csvContent += 'Top Domains\n';
             csvContent += 'Domain,Count\n';
-            charts.top_domains.forEach(d => {
-                csvContent += `${d.label},${d.value}\n`;
-            });
+            if (charts.top_domains && charts.top_domains.length > 0) {
+                charts.top_domains.forEach(d => {
+                    csvContent += `${d.label || 'Unknown'},${d.value || 0}\n`;
+                });
+            }
             csvContent += '\n';
             
             csvContent += 'Top Cities\n';
             csvContent += 'City,Count\n';
-            charts.top_cities.forEach(c => {
-                csvContent += `${c.label},${c.value}\n`;
-            });
+            if (charts.top_cities && charts.top_cities.length > 0) {
+                charts.top_cities.forEach(c => {
+                    csvContent += `${c.label},${c.value}\n`;
+                });
+            }
+            csvContent += '\n';
+            
+            csvContent += 'Top Organizations\n';
+            csvContent += 'Organization,Count\n';
+            if (charts.top_organizations && charts.top_organizations.length > 0) {
+                charts.top_organizations.forEach(o => {
+                    csvContent += `${o.label},${o.value}\n`;
+                });
+            }
             
             // Create blob and download
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -627,17 +855,22 @@ async function exportData() {
             
             // Show success message
             showNotification('Data exported successfully!', 'success');
+        } else {
+            console.warn('Export button not found');
         }
     } catch (error) {
         console.error('Export failed:', error);
         showNotification('Export failed. Please try again.', 'error');
-        const exportBtn = document.querySelector('.command-btn[onclick="exportData()"]');
+        // Try to reset button state
+        const exportBtn = document.querySelector('button[onclick="exportData()"]') ||
+                         document.querySelector('.action-btn[onclick*="exportData"]') ||
+                         document.querySelector('.command-btn[onclick*="exportData"]');
         if (exportBtn) {
-            exportBtn.innerHTML = '<span>Export</span>';
+            exportBtn.innerHTML = '<i class="fas fa-download"></i><span>Export</span>';
             exportBtn.disabled = false;
         }
     }
-}
+};
 
 /**
  * Show notification
@@ -719,11 +952,11 @@ function renderDonutChart(canvasId, title, data) {
     ctx.style.display = 'block';
     const chartContainer = ctx.parentElement;
     if (chartContainer) {
-        // Set explicit height for donut chart
-        chartContainer.style.height = '280px';
-        chartContainer.style.minHeight = '280px';
-        chartContainer.style.maxHeight = '280px';
-        ctx.style.height = '280px';
+        // Set explicit height for donut chart (premium size)
+        chartContainer.style.height = '320px';
+        chartContainer.style.minHeight = '320px';
+        chartContainer.style.maxHeight = '320px';
+        ctx.style.height = '320px';
         ctx.style.width = '100%';
     }
     const messageEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
@@ -733,15 +966,16 @@ function renderDonutChart(canvasId, title, data) {
     const values = data.map(item => item.value);
     const total = values.reduce((a, b) => a + b, 0);
     
-    // Analytical grayscale with brand accent
+    // Premium color palette
     const grayscaleColors = [
-        '#E5E7EB', // Light gray
-        '#D1D5DB', // Medium-light gray
-        '#9CA3AF', // Medium gray
-        '#6B7280', // Medium-dark gray
-        '#4B5563'  // Dark gray
+        'rgba(229, 231, 235, 0.6)', // Light gray with transparency
+        'rgba(209, 213, 219, 0.6)', // Medium-light gray
+        'rgba(156, 163, 175, 0.6)', // Medium gray
+        'rgba(107, 114, 128, 0.6)', // Medium-dark gray
+        'rgba(75, 85, 99, 0.6)'  // Dark gray
     ];
-    const brandAccent = '#FF6B35'; // Orange brand accent
+    const brandAccent = '#ff7a18'; // Orange primary
+    const brandAccentLight = '#ff9f43'; // Orange light
     
     // Use brand accent for largest segment, grayscale for others
     const sortedIndices = values.map((v, i) => ({ value: v, index: i }))
@@ -843,11 +1077,13 @@ function renderBarChart(canvasId, title, data) {
     const chartContainer = ctx.parentElement;
     if (chartContainer) {
         chartContainer.style.pointerEvents = 'auto';
-        // Set explicit height for bar charts - increased to accommodate rotated labels
-        chartContainer.style.height = '320px';
-        chartContainer.style.minHeight = '320px';
-        chartContainer.style.maxHeight = '320px';
-        ctx.style.height = '320px';
+        // Set explicit height for bar charts (medium size for ranking cards)
+        const isRanking = chartContainer.closest('.chart-ranking');
+        const height = isRanking ? '280px' : '360px';
+        chartContainer.style.height = height;
+        chartContainer.style.minHeight = height;
+        chartContainer.style.maxHeight = height;
+        ctx.style.height = height;
         ctx.style.width = '100%';
     }
     const messageEl = chartContainer.querySelector('.empty-chart-message');
@@ -863,14 +1099,15 @@ function renderBarChart(canvasId, title, data) {
     const sortedIndices = values.map((v, i) => ({ value: v, index: i }))
         .sort((a, b) => b.value - a.value);
     
-    const brandAccent = '#FF6B35'; // Orange brand accent
+    const brandAccent = '#ff7a18'; // Orange primary
+    const brandAccentLight = '#ff9f43'; // Orange light
     const grayscaleColors = [
-        '#E5E7EB', // Light gray
-        '#D1D5DB', // Medium-light gray
-        '#9CA3AF', // Medium gray
-        '#6B7280', // Medium-dark gray
-        '#4B5563', // Dark gray
-        '#374151'  // Darker gray
+        'rgba(229, 231, 235, 0.7)', // Light gray
+        'rgba(209, 213, 219, 0.7)', // Medium-light gray
+        'rgba(156, 163, 175, 0.7)', // Medium gray
+        'rgba(107, 114, 128, 0.7)', // Medium-dark gray
+        'rgba(75, 85, 99, 0.7)', // Dark gray
+        'rgba(55, 65, 81, 0.7)'  // Darker gray
     ];
     
     // Assign colors: top value gets accent, others use grayscale
@@ -901,13 +1138,13 @@ function renderBarChart(canvasId, title, data) {
                 label: title,
                 data: values,
                 backgroundColor: backgroundColors,
-                borderRadius: 0, // No rounded corners - analytical style
+                borderRadius: 8, // Rounded corners for premium look
                 borderSkipped: false,
                 maxBarThickness: optimalBarThickness,
                 minBarLength: 4,
                 borderWidth: 0,
-                categoryPercentage: 0.85, // Increased for better data density
-                barPercentage: 0.95, // Increased for better data density
+                categoryPercentage: 0.8, // Spacing for premium look
+                barPercentage: 0.85, // Spacing for premium look
             }]
         },
         options: {
@@ -995,7 +1232,7 @@ function renderBarChart(canvasId, title, data) {
                 y: {
                     beginAtZero: true,
                     grid: {
-                        color: '#E5E7EB', // Grayscale grid lines
+                        color: 'rgba(0, 0, 0, 0.04)', // Subtle grid for premium look
                         drawBorder: false,
                         lineWidth: 1,
                         drawOnChartArea: true,
@@ -1071,8 +1308,11 @@ function renderBarChart(canvasId, title, data) {
  * Render line chart - Enterprise monochrome style (daily registration trend)
  */
 function renderLineChart(canvasId, title, data) {
-    const ctx = document.getElementById(canvasId);
-    if (!ctx) return;
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) {
+        console.error('Canvas element not found:', canvasId);
+        return;
+    }
     
     // Destroy existing chart if it exists
     if (charts[canvasId]) {
@@ -1080,14 +1320,14 @@ function renderLineChart(canvasId, title, data) {
     }
     
     // Show canvas and ensure pointer events are enabled
-    ctx.style.display = 'block';
-    ctx.style.pointerEvents = 'auto';
-    ctx.style.cursor = 'crosshair';
-    const chartContainer = ctx.parentElement;
+    canvas.style.display = 'block';
+    canvas.style.pointerEvents = 'auto';
+    canvas.style.cursor = 'crosshair';
+    const chartContainer = canvas.parentElement;
     if (chartContainer) {
         chartContainer.style.pointerEvents = 'auto';
     }
-    const messageEl = chartContainer.querySelector('.empty-chart-message');
+    const messageEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
     if (messageEl) messageEl.remove();
     
     const labels = data.map(item => item.label);
@@ -1097,43 +1337,59 @@ function renderLineChart(canvasId, title, data) {
     // Calculate step size for x-axis labels
     const labelStep = Math.max(1, Math.floor(labels.length / 10));
     
-    // Analytical grayscale with brand accent - no gradient fill
-    const brandAccent = '#FF6B35'; // Orange brand accent
-    const lineColor = brandAccent; // Use brand accent for line
-    const fillColor = 'rgba(255, 107, 53, 0.05)'; // Solid subtle fill - no gradient
-    
-    // Set container height for line chart
+    // Set container height for line chart (premium large size)
+    const chartHeight = 360;
     if (chartContainer) {
-        chartContainer.style.height = '350px';
-        ctx.height = 350;
+        chartContainer.style.height = chartHeight + 'px';
+        chartContainer.style.minHeight = chartHeight + 'px';
+        chartContainer.style.maxHeight = chartHeight + 'px';
+        canvas.style.height = chartHeight + 'px';
+        canvas.style.width = '100%';
     }
     
-    charts[canvasId] = new Chart(ctx, {
+    // Premium gradient colors
+    const brandAccent = '#ff7a18'; // Orange primary
+    const brandAccentLight = '#ff9f43'; // Orange light
+    
+    charts[canvasId] = new Chart(canvas, {
         type: 'line',
         data: {
             labels: labels,
             datasets: [{
                 label: title,
                 data: values,
-                borderColor: lineColor,
-                backgroundColor: fillColor,
+                borderColor: brandAccent,
+                backgroundColor: function(context) {
+                    const chart = context.chart;
+                    const ctx = chart.ctx;
+                    if (!ctx || typeof ctx.createLinearGradient !== 'function') {
+                        return 'rgba(255, 122, 24, 0.15)';
+                    }
+                    if (!chart.chartArea) {
+                        return 'rgba(255, 122, 24, 0.15)';
+                    }
+                    const gradient = ctx.createLinearGradient(0, chart.chartArea.top, 0, chart.chartArea.bottom);
+                    gradient.addColorStop(0, 'rgba(255, 122, 24, 0.15)');
+                    gradient.addColorStop(1, 'rgba(255, 122, 24, 0.02)');
+                    return gradient;
+                },
                 fill: true,
-                tension: 0.3, // Less curve for analytical look
+                tension: 0.4, // Smooth curves for premium look
                 pointRadius: 0, // No points by default
-                pointHoverRadius: 5,
-                pointHitRadius: 8,
-                pointBackgroundColor: lineColor,
+                pointHoverRadius: 6,
+                pointHitRadius: 10,
+                pointBackgroundColor: brandAccent,
                 pointBorderColor: '#FFFFFF',
-                pointBorderWidth: 2,
-                pointHoverBackgroundColor: brandAccent,
+                pointBorderWidth: 3,
+                pointHoverBackgroundColor: brandAccentLight,
                 pointHoverBorderColor: '#FFFFFF',
-                borderWidth: 2.5, // Slightly thicker for visibility
-                hoverRadius: 6
+                borderWidth: 3, // Thicker for premium look
+                hoverRadius: 8
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             interaction: {
                 intersect: false,
                 mode: 'index'
@@ -1189,7 +1445,7 @@ function renderLineChart(canvasId, title, data) {
                 y: {
                     beginAtZero: true,
                     grid: {
-                        color: '#E5E7EB', // Grayscale grid
+                        color: 'rgba(0, 0, 0, 0.04)', // Subtle grid for premium look
                         drawBorder: false,
                         lineWidth: 1,
                         drawTicks: false

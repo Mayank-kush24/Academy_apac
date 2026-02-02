@@ -11,7 +11,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from server.app import create_app
-from server.models import db, User, UserPII
+from server.models import db, User, UserPII, ActivityLog
 
 def init_database():
     """Initialize database and create all tables"""
@@ -38,6 +38,11 @@ def init_database():
                 print("✓ 'user_pii' table exists")
             else:
                 print("✗ 'user_pii' table NOT found")
+            
+            if 'activity_logs' in tables:
+                print("✓ 'activity_logs' table exists")
+            else:
+                print("✗ 'activity_logs' table NOT found")
             
             # Check if admin user exists
             admin_count = User.query.filter_by(role='admin').count()

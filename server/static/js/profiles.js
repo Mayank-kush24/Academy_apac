@@ -8,6 +8,400 @@ let totalPages = 1;
 let filterOptions = {};
 let currentFilters = {};
 
+// Helper function for authenticated requests (fallback if auth.js not loaded)
+function authenticatedFetch(url, options = {}) {
+    const token = localStorage.getItem('token');
+    if (!token) {
+        return Promise.reject(new Error('Not authenticated'));
+    }
+    
+    const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...(options.headers || {})
+    };
+    
+    return fetch(url, {
+        ...options,
+        headers
+    }).then(response => {
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+            throw new Error('Session expired');
+        }
+        return response;
+    });
+}
+
+// Make it globally available
+window.authenticatedFetch = authenticatedFetch;
+
+// Helper functions (must be defined before use)
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return null;
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    } catch (e) {
+        return dateString;
+    }
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return null;
+    try {
+        const date = new Date(dateString);
+        return date.toLocaleString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    } catch (e) {
+        return dateString;
+    }
+}
+
+/**
+ * Load and render activity logs for a profile into #profileActivityLogList
+ */
+async function loadProfileLogs(profileId) {
+    const container = document.getElementById('profileActivityLogList');
+    if (!container) return;
+    const token = localStorage.getItem('token');
+    if (!token) {
+        container.innerHTML = '<p class="activity-log-empty">Sign in to view activity log.</p>';
+        return;
+    }
+    try {
+        const response = await fetch(`/api/profiles/${profileId}/logs?per_page=20`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!response.ok) {
+            container.innerHTML = '<p class="activity-log-empty">Unable to load activity log.</p>';
+            return;
+        }
+        const data = await response.json();
+        const logs = data.logs || [];
+        if (logs.length === 0) {
+            container.innerHTML = '<p class="activity-log-empty">No activity recorded yet for this profile.</p>';
+            return;
+        }
+        container.innerHTML = logs.map(log => {
+            const time = formatDateTime(log.created_at) || log.created_at;
+            const actionClass = log.action === 'create' ? 'log-create' : log.action === 'update' ? 'log-update' : 'log-delete';
+            const actionLabel = log.action === 'create' ? 'Created' : log.action === 'update' ? 'Updated' : 'Deleted';
+            let changesHtml = '';
+            if (log.action === 'update' && log.changes && log.changes.length > 0) {
+                changesHtml = '<ul class="activity-log-changes">' + log.changes.map(c => 
+                    `<li><strong>${escapeHtml(c.field)}</strong>: ${escapeHtml(String(c.old_value ?? ''))} → ${escapeHtml(String(c.new_value ?? ''))}</li>`
+                ).join('') + '</ul>';
+            }
+            const summary = escapeHtml(log.summary || actionLabel);
+            return `<div class="activity-log-item ${actionClass}">
+                <div class="activity-log-header">
+                    <span class="activity-log-badge">${actionLabel}</span>
+                    <span class="activity-log-time">${time}</span>
+                </div>
+                <div class="activity-log-summary">${summary}</div>
+                ${changesHtml}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<p class="activity-log-empty">Failed to load activity log.</p>';
+    }
+}
+
+// Make functions globally available immediately (before DOMContentLoaded)
+window.viewProfileDetails = function(profileId) {
+    console.log('viewProfileDetails called with ID:', profileId);
+    
+    // Get token
+    const token = localStorage.getItem('token');
+    if (!token) {
+        alert('Please login to view profile details');
+        window.location.href = '/login';
+        return;
+    }
+    
+    const url = `/api/profiles/${profileId}`;
+    console.log('Fetching profile from:', url);
+    
+    // Make authenticated request
+    console.log('Starting fetch request...');
+    fetch(url, {
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        }
+    })
+    .then(response => {
+        console.log('Fetch completed, response received');
+        console.log('Response status:', response.status, response.statusText);
+        console.log('Response headers:', response.headers);
+        
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+            return Promise.reject(new Error('Session expired'));
+        }
+        
+        if (!response.ok) {
+            console.error('Response not OK, status:', response.status);
+            return response.text().then(text => {
+                console.error('Error response text:', text);
+                try {
+                    const errorData = JSON.parse(text);
+                    throw new Error(errorData.error || `Failed to load profile details (${response.status})`);
+                } catch (e) {
+                    throw new Error(`Failed to load profile details (${response.status}): ${text}`);
+                }
+            });
+        }
+        
+        console.log('Response OK, parsing JSON...');
+        return response.json().then(data => {
+            console.log('JSON parsed successfully:', data);
+            return data;
+        }).catch(e => {
+            console.error('JSON parse error:', e);
+            return response.text().then(text => {
+                console.error('Response text:', text);
+                throw new Error('Invalid JSON response: ' + text.substring(0, 100));
+            });
+        });
+    })
+    .then(data => {
+        console.log('Response data received:', data);
+        
+        const profile = data.profile;
+        
+        if (!profile) {
+            console.error('No profile in response:', data);
+            throw new Error('Profile not found in response');
+        }
+        
+        console.log('Profile data:', profile);
+        
+        // Populate modal
+        const modalNameEl = document.getElementById('modalProfileName');
+        if (modalNameEl) {
+            modalNameEl.textContent = profile.name || 'Profile Details';
+        } else {
+            console.error('Modal name element not found');
+        }
+        
+        const modalBody = document.getElementById('profileModalBody');
+        if (!modalBody) {
+            console.error('Modal body element not found');
+            alert('Modal not found. Please refresh the page.');
+            return;
+        }
+        
+        console.log('Populating modal body...');
+        modalBody.innerHTML = `
+            <div class="profile-detail-grid">
+                <div class="detail-section">
+                    <h4><i class="fas fa-info-circle"></i> Basic Information</h4>
+                    <div class="detail-row">
+                        <span class="detail-label">Name:</span>
+                        <span class="detail-value">${escapeHtml(profile.name || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Email:</span>
+                        <span class="detail-value">${escapeHtml(profile.email || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Mobile:</span>
+                        <span class="detail-value">${escapeHtml(profile.mobile_number || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Date of Birth:</span>
+                        <span class="detail-value">${formatDate(profile.date_of_birth) || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Gender:</span>
+                        <span class="detail-value">${escapeHtml(profile.gender || 'N/A')}</span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4><i class="fas fa-briefcase"></i> Professional</h4>
+                    <div class="detail-row">
+                        <span class="detail-label">Organization:</span>
+                        <span class="detail-value">${escapeHtml(profile.organization_name || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Designation:</span>
+                        <span class="detail-value">${escapeHtml(profile.designation || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Occupation:</span>
+                        <span class="detail-value">${escapeHtml(profile.occupation || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Domain:</span>
+                        <span class="detail-value">${escapeHtml(profile.domain || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Class Stream:</span>
+                        <span class="detail-value">${escapeHtml(profile.class_stream || 'N/A')}</span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4><i class="fas fa-map-marker-alt"></i> Location</h4>
+                    <div class="detail-row">
+                        <span class="detail-label">Country:</span>
+                        <span class="detail-value">${escapeHtml(profile.country || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">State:</span>
+                        <span class="detail-value">${escapeHtml(profile.state || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">City:</span>
+                        <span class="detail-value">${escapeHtml(profile.city || 'N/A')}</span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4><i class="fas fa-link"></i> Social Links</h4>
+                    <div class="detail-row detail-row-social">
+                        <span class="detail-label">GitHub:</span>
+                        <span class="detail-value detail-value-social">
+                            ${profile.github_url ? `
+                                <a href="${escapeHtml(profile.github_url)}" target="_blank" class="social-link-large">
+                                    <i class="fab fa-github"></i> <span class="social-url">${escapeHtml(profile.github_url)}</span>
+                                </a>
+                            ` : 'N/A'}
+                        </span>
+                    </div>
+                    <div class="detail-row detail-row-social">
+                        <span class="detail-label">LinkedIn:</span>
+                        <span class="detail-value detail-value-social">
+                            ${profile.linkedin_url ? `
+                                <a href="${escapeHtml(profile.linkedin_url)}" target="_blank" class="social-link-large">
+                                    <i class="fab fa-linkedin"></i> <span class="social-url">${escapeHtml(profile.linkedin_url)}</span>
+                                </a>
+                            ` : 'N/A'}
+                        </span>
+                    </div>
+                </div>
+                
+                <div class="detail-section">
+                    <h4><i class="fas fa-calendar"></i> Timestamps</h4>
+                    <div class="detail-row">
+                        <span class="detail-label">Registered At:</span>
+                        <span class="detail-value">${formatDateTime(profile.registered_at) || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Created At:</span>
+                        <span class="detail-value">${formatDateTime(profile.created_at) || 'N/A'}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Updated At:</span>
+                        <span class="detail-value">${formatDateTime(profile.updated_at) || 'N/A'}</span>
+                    </div>
+                </div>
+                
+                <div class="detail-section detail-section-logs">
+                    <h4><i class="fas fa-history"></i> Activity Log</h4>
+                    <div id="profileActivityLogList" class="activity-log-list">Loading...</div>
+                </div>
+            </div>
+        `;
+        
+        console.log('Modal body populated, showing modal...');
+        loadProfileLogs(profile.id);
+        
+        // Show modal
+        const modal = document.getElementById('profileModal');
+        if (modal) {
+            console.log('Modal element found, setting display to flex');
+            
+            // Set fixed positioning styles
+            modal.style.position = 'fixed';
+            modal.style.top = '0';
+            modal.style.left = '0';
+            modal.style.width = '100vw';
+            modal.style.height = '100vh';
+            modal.style.zIndex = '10000';
+            modal.style.display = 'flex';
+            modal.style.alignItems = 'center';
+            modal.style.justifyContent = 'center';
+            modal.style.margin = '0';
+            modal.style.padding = '0';
+            
+            // Prevent body scroll
+            document.body.style.overflow = 'hidden';
+            
+            // Scroll to top of page to ensure modal is visible
+            window.scrollTo({ top: 0, behavior: 'instant' });
+            
+            // Force display with setTimeout to ensure it shows
+            setTimeout(() => {
+                modal.style.display = 'flex';
+                modal.style.position = 'fixed';
+                modal.style.top = '0';
+                modal.style.left = '0';
+                console.log('Modal positioned and displayed');
+            }, 10);
+            
+            // Click outside to close
+            const modalContent = modal.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.onclick = function(e) {
+                    e.stopPropagation();
+                };
+                // Ensure modal content is centered
+                modalContent.style.margin = 'auto';
+                modalContent.style.position = 'relative';
+            }
+            
+            modal.onclick = function(e) {
+                if (e.target === modal) {
+                    closeProfileModal();
+                }
+            };
+        } else {
+            console.error('Modal element not found!');
+            alert('Modal element not found. Please refresh the page.');
+        }
+    })
+    .catch(error => {
+        console.error('=== ERROR IN PROFILE FETCH ===');
+        console.error('Error loading profile details:', error);
+        console.error('Error type:', typeof error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        if (error.stack) {
+            console.error('Error stack:', error.stack);
+        }
+        console.error('Full error object:', error);
+        alert('Failed to load profile details: ' + (error.message || 'Unknown error'));
+    });
+};
+
+window.closeProfileModal = function() {
+    const modal = document.getElementById('profileModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+};
+
 // Load on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadFilterOptions();
@@ -19,7 +413,15 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 async function loadFilterOptions() {
     try {
-        const response = await authenticatedFetch('/api/profiles/filters');
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const response = await fetch('/api/profiles/filters', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
         if (response.ok) {
             filterOptions = await response.json();
             populateFilterDropdowns();
@@ -66,13 +468,30 @@ function populateFilterDropdowns() {
  */
 async function loadProfiles() {
     try {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login';
+            return;
+        }
+        
         const params = new URLSearchParams({
             page: currentPage,
             per_page: perPage,
             ...currentFilters
         });
         
-        const response = await authenticatedFetch(`/api/profiles?${params.toString()}`);
+        const response = await fetch(`/api/profiles?${params.toString()}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+            return;
+        }
+        
         if (!response.ok) {
             throw new Error('Failed to load profiles');
         }
@@ -84,8 +503,11 @@ async function loadProfiles() {
         
     } catch (error) {
         console.error('Failed to load profiles:', error);
-        document.getElementById('profilesListBody').innerHTML = 
-            '<tr><td colspan="8" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+        const tbody = document.getElementById('profilesListBody');
+        if (tbody) {
+            tbody.innerHTML = 
+                '<tr><td colspan="8" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+        }
     }
 }
 
@@ -165,22 +587,67 @@ function formatLocation(profile) {
 }
 
 /**
- * View profile details
+ * View profile details (async version - also available globally)
  */
 async function viewProfileDetails(profileId) {
+    console.log('viewProfileDetails called with ID:', profileId);
+    
     try {
-        const response = await authenticatedFetch(`/api/profiles/${profileId}`);
+        // Get token
+        const token = localStorage.getItem('token');
+        if (!token) {
+            alert('Please login to view profile details');
+            window.location.href = '/login';
+            return;
+        }
+        
+        const url = `/api/profiles/${profileId}`;
+        console.log('Fetching profile from:', url);
+        
+        // Make authenticated request
+        const response = await fetch(url, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '/login';
+            return;
+        }
+        
         if (!response.ok) {
-            throw new Error('Failed to load profile details');
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || `Failed to load profile details (${response.status})`);
         }
         
         const data = await response.json();
+        console.log('Profile data received:', data);
+        
         const profile = data.profile;
         
+        if (!profile) {
+            throw new Error('Profile not found in response');
+        }
+        
         // Populate modal
-        document.getElementById('modalProfileName').textContent = profile.name || 'Profile Details';
+        const modalNameEl = document.getElementById('modalProfileName');
+        if (modalNameEl) {
+            modalNameEl.textContent = profile.name || 'Profile Details';
+        } else {
+            console.error('Modal name element not found');
+        }
         
         const modalBody = document.getElementById('profileModalBody');
+        if (!modalBody) {
+            console.error('Modal body element not found');
+            alert('Modal not found. Please refresh the page.');
+            return;
+        }
+        
         modalBody.innerHTML = `
             <div class="profile-detail-grid">
                 <div class="detail-section">
@@ -249,22 +716,22 @@ async function viewProfileDetails(profileId) {
                 
                 <div class="detail-section">
                     <h4><i class="fas fa-link"></i> Social Links</h4>
-                    <div class="detail-row">
+                    <div class="detail-row detail-row-social">
                         <span class="detail-label">GitHub:</span>
-                        <span class="detail-value">
+                        <span class="detail-value detail-value-social">
                             ${profile.github_url ? `
                                 <a href="${escapeHtml(profile.github_url)}" target="_blank" class="social-link-large">
-                                    <i class="fab fa-github"></i> ${escapeHtml(profile.github_url)}
+                                    <i class="fab fa-github"></i> <span class="social-url">${escapeHtml(profile.github_url)}</span>
                                 </a>
                             ` : 'N/A'}
                         </span>
                     </div>
-                    <div class="detail-row">
+                    <div class="detail-row detail-row-social">
                         <span class="detail-label">LinkedIn:</span>
-                        <span class="detail-value">
+                        <span class="detail-value detail-value-social">
                             ${profile.linkedin_url ? `
                                 <a href="${escapeHtml(profile.linkedin_url)}" target="_blank" class="social-link-large">
-                                    <i class="fab fa-linkedin"></i> ${escapeHtml(profile.linkedin_url)}
+                                    <i class="fab fa-linkedin"></i> <span class="social-url">${escapeHtml(profile.linkedin_url)}</span>
                                 </a>
                             ` : 'N/A'}
                         </span>
@@ -286,23 +753,72 @@ async function viewProfileDetails(profileId) {
                         <span class="detail-value">${formatDateTime(profile.updated_at) || 'N/A'}</span>
                     </div>
                 </div>
+                
+                <div class="detail-section detail-section-logs">
+                    <h4><i class="fas fa-history"></i> Activity Log</h4>
+                    <div id="profileActivityLogList" class="activity-log-list">Loading...</div>
+                </div>
             </div>
         `;
         
+        loadProfileLogs(profile.id);
+        
         // Show modal
-        document.getElementById('profileModal').style.display = 'flex';
+        const modal = document.getElementById('profileModal');
+        if (modal) {
+            modal.style.display = 'flex';
+            // Prevent body scroll when modal is open
+            document.body.style.overflow = 'hidden';
+            
+            // Add click outside to close (only on backdrop, not content)
+            const modalContent = modal.querySelector('.modal-content');
+            if (modalContent) {
+                modalContent.onclick = function(e) {
+                    e.stopPropagation();
+                };
+            }
+            
+            const existingHandler = modal._clickHandler;
+            if (existingHandler) {
+                modal.removeEventListener('click', existingHandler);
+            }
+            
+            modal._clickHandler = function(e) {
+                if (e.target === modal) {
+                    closeProfileModal();
+                }
+            };
+            modal.addEventListener('click', modal._clickHandler);
+            
+            console.log('Modal displayed successfully');
+        } else {
+            console.error('Profile modal element not found');
+            alert('Modal not found. Please refresh the page.');
+        }
         
     } catch (error) {
+        console.error('Error loading profile details:', error);
         alert('Failed to load profile details: ' + error.message);
     }
 }
+
+// Make function globally available immediately
+window.viewProfileDetails = viewProfileDetails;
 
 /**
  * Close profile modal
  */
 function closeProfileModal() {
-    document.getElementById('profileModal').style.display = 'none';
+    const modal = document.getElementById('profileModal');
+    if (modal) {
+        modal.style.display = 'none';
+        // Restore body scroll
+        document.body.style.overflow = '';
+    }
 }
+
+// Make functions globally available immediately
+window.closeProfileModal = closeProfileModal;
 
 /**
  * Apply filters

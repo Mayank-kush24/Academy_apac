@@ -175,6 +175,9 @@ def import_data(df, mappings, mode='create'):
     records_to_insert = []
     records_to_update = []
     
+    # Track emails we've already processed in this batch to avoid duplicates within the same file
+    processed_emails_in_batch = set()
+    
     for index, row in df.iterrows():
         try:
             # Build data dictionary from mappings
@@ -210,6 +213,15 @@ def import_data(df, mappings, mode='create'):
             
             email = data['email']
             
+            # Check for duplicate emails within the same file
+            if email in processed_emails_in_batch:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Duplicate email in file")
+                continue
+            
+            processed_emails_in_batch.add(email)
+            
             if mode == 'create':
                 if email in existing_emails_set:
                     skipped += 1
@@ -227,9 +239,11 @@ def import_data(df, mappings, mode='create'):
                     records_to_update.append((email, data))
                     updated += 1
                 else:
-                    # Add to batch insert
+                    # Add to batch insert (email doesn't exist in DB)
                     records_to_insert.append(data)
                     created += 1
+                    # Also add to processed set to track what we're inserting
+                    existing_emails_set.add(email)  # Track newly inserted emails
                     
             elif mode == 'update_only':
                 if email in existing_emails_set:
@@ -242,11 +256,32 @@ def import_data(df, mappings, mode='create'):
                         errors.append(f"Row {index + 2}: Email not found")
                     continue
             
-            # Batch commit for inserts
+            # Batch commit for inserts (use individual add() so activity logs are created)
             if len(records_to_insert) >= BATCH_SIZE:
                 try:
-                    db.session.bulk_insert_mappings(UserPII, records_to_insert)
-                    db.session.commit()
+                    if mode == 'create_update':
+                        for record in records_to_insert:
+                            try:
+                                user = UserPII(**record)
+                                db.session.add(user)
+                                db.session.flush()
+                            except Exception as insert_error:
+                                db.session.rollback()
+                                if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
+                                    existing_user = UserPII.query.filter_by(email=record.get('email')).first()
+                                    if existing_user:
+                                        for key, value in record.items():
+                                            setattr(existing_user, key, value)
+                                        updated += 1
+                                        created -= 1
+                                else:
+                                    raise insert_error
+                        db.session.commit()
+                    else:
+                        for record in records_to_insert:
+                            user = UserPII(**record)
+                            db.session.add(user)
+                        db.session.commit()
                     records_to_insert = []
                 except Exception as e:
                     db.session.rollback()
@@ -274,10 +309,30 @@ def import_data(df, mappings, mode='create'):
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
     
-    # Commit remaining records
+    # Commit remaining records (individual add() so activity logs are created)
     try:
         if records_to_insert:
-            db.session.bulk_insert_mappings(UserPII, records_to_insert)
+            if mode == 'create_update':
+                for record in records_to_insert:
+                    try:
+                        user = UserPII(**record)
+                        db.session.add(user)
+                        db.session.flush()
+                    except Exception as insert_error:
+                        db.session.rollback()
+                        if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
+                            existing_user = UserPII.query.filter_by(email=record.get('email')).first()
+                            if existing_user:
+                                for key, value in record.items():
+                                    setattr(existing_user, key, value)
+                                updated += 1
+                                created -= 1
+                        else:
+                            raise insert_error
+            else:
+                for record in records_to_insert:
+                    user = UserPII(**record)
+                    db.session.add(user)
         
         if records_to_update:
             for update_email, update_data in records_to_update:

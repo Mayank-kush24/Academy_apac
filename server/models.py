@@ -81,3 +81,33 @@ class User(db.Model):
             'status': self.status,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
+
+
+class ActivityLog(db.Model):
+    """Table for storing activity logs (create/update/delete on any tracked table)"""
+    __tablename__ = 'activity_logs'
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    action = db.Column(db.String(20), nullable=False)  # 'create', 'update', 'delete'
+    entity_type = db.Column(db.String(64), nullable=False)  # 'user_pii', 'user', etc.
+    entity_id = db.Column(db.String(64), nullable=False)  # primary key of the record (as string)
+    actor_user_id = db.Column(UUID(as_uuid=True), nullable=True)  # app user who performed action (if any)
+    changes = db.Column(db.JSON, nullable=True)  # list of { "field", "old_value", "new_value" } for updates
+    snapshot_before = db.Column(db.JSON, nullable=True)  # full record state before (for update/delete)
+    snapshot_after = db.Column(db.JSON, nullable=True)  # full record state after (for create/update)
+    summary = db.Column(db.String(500), nullable=True)  # human-readable one-liner
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'action': self.action,
+            'entity_type': self.entity_type,
+            'entity_id': self.entity_id,
+            'actor_user_id': str(self.actor_user_id) if self.actor_user_id else None,
+            'changes': self.changes,
+            'snapshot_before': self.snapshot_before,
+            'snapshot_after': self.snapshot_after,
+            'summary': self.summary,
+        }

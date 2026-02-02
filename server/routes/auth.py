@@ -14,9 +14,9 @@ bp = Blueprint('auth', __name__)
 def login():
     """User login endpoint"""
     try:
-        data = request.get_json()
-        email = data.get('email')
-        password = data.get('password')
+        data = request.get_json(silent=True) or {}
+        email = (data.get('email') or '').strip()
+        password = data.get('password') or ''
         
         if not email or not password:
             return jsonify({'error': 'Email and password are required'}), 400
@@ -30,8 +30,11 @@ def login():
         if user.status != 'active':
             return jsonify({'error': 'User account is inactive'}), 403
         
-        # Verify password
-        if not bcrypt.checkpw(password.encode('utf-8'), user.password_hash.encode('utf-8')):
+        # Normalize password_hash to bytes for bcrypt (column may be str or bytes)
+        pw_hash = user.password_hash
+        if isinstance(pw_hash, str):
+            pw_hash = pw_hash.encode('utf-8')
+        if not bcrypt.checkpw(password.encode('utf-8'), pw_hash):
             return jsonify({'error': 'Invalid credentials'}), 401
         
         # Generate token

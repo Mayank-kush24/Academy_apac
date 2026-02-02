@@ -2,8 +2,8 @@
 User profiles routes (for viewing user_pii data)
 """
 from flask import Blueprint, request, jsonify
-from sqlalchemy import or_, and_
-from server.models import db, UserPII
+from sqlalchemy import or_, and_, func, text
+from server.models import db, UserPII, ActivityLog
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role
 
@@ -233,5 +233,117 @@ def get_profile_detail(profile_id):
             'profile': profile.to_dict()
         }), 200
         
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def _master_log_to_profile_log(row):
+    """Map a master_logs row to the format expected by the profile activity UI."""
+    op = (getattr(row, 'operation_type', None) or '').upper()
+    if op == 'INSERT':
+        action = 'create'
+    elif op == 'UPDATE':
+        action = 'update'
+    elif op == 'DELETE':
+        action = 'delete'
+    else:
+        action = 'create'
+    changed_by = getattr(row, 'changed_by', None) or 'system'
+    if op == 'INSERT':
+        summary = f"Created by {changed_by}"
+    elif op == 'UPDATE':
+        summary = f"Updated by {changed_by}"
+    else:
+        summary = f"Deleted by {changed_by}"
+    ts = getattr(row, 'timestamp', None)
+    created_at = ts.isoformat() if ts else None
+    changes = []
+    old_vals = getattr(row, 'old_values', None)
+    new_vals = getattr(row, 'new_values', None)
+    if op == 'UPDATE' and old_vals and new_vals:
+        old = old_vals if isinstance(old_vals, dict) else {}
+        new = new_vals if isinstance(new_vals, dict) else {}
+        for key in set(old) | set(new):
+            if old.get(key) != new.get(key):
+                changes.append({
+                    'field': key,
+                    'old_value': old.get(key),
+                    'new_value': new.get(key),
+                })
+    return {
+        'action': action,
+        'created_at': created_at,
+        'summary': summary,
+        'changes': changes,
+        'changed_by': changed_by,
+    }
+
+
+@bp.route('/<profile_id>/logs', methods=['GET'])
+@require_role('viewer', 'editor', 'admin')
+def get_profile_logs(profile_id):
+    """Get activity logs for a profile from master_logs (user_pii record)."""
+    try:
+        profile = UserPII.query.filter_by(id=profile_id).first()
+        if not profile:
+            return jsonify({'error': 'Profile not found'}), 404
+        
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 50, type=int), 100)
+        offset = (page - 1) * per_page
+        record_id = str(profile_id)
+
+        try:
+            # Prefer master_logs (PostgreSQL triggers)
+            total = db.session.execute(
+                text("""
+                    SELECT COUNT(*) FROM master_logs
+                    WHERE table_name = 'user_pii' AND record_identifier = :rid
+                """),
+                {"rid": record_id}
+            ).scalar() or 0
+            rows = db.session.execute(
+                text("""
+                    SELECT log_id, table_name, operation_type, record_identifier,
+                           old_values, new_values, changed_by, timestamp, additional_info
+                    FROM master_logs
+                    WHERE table_name = 'user_pii' AND record_identifier = :rid
+                    ORDER BY log_id DESC
+                    LIMIT :limit OFFSET :offset
+                """),
+                {"rid": record_id, "limit": per_page, "offset": offset}
+            ).fetchall()
+            logs = [_master_log_to_profile_log(row) for row in rows]
+            pages = (total + per_page - 1) // per_page if per_page else 0
+            return jsonify({
+                'logs': logs,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': total,
+                    'pages': pages,
+                    'has_next': page < pages,
+                    'has_prev': page > 1,
+                }
+            }), 200
+        except Exception:
+            # Fallback to activity_logs if master_logs not applied
+            query = ActivityLog.query.filter(
+                ActivityLog.entity_type == 'user_pii',
+                ActivityLog.entity_id == record_id
+            ).order_by(ActivityLog.created_at.desc())
+            pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+            logs = [log.to_dict() for log in pagination.items]
+            return jsonify({
+                'logs': logs,
+                'pagination': {
+                    'page': page,
+                    'per_page': per_page,
+                    'total': pagination.total,
+                    'pages': pagination.pages,
+                    'has_next': pagination.has_next,
+                    'has_prev': pagination.has_prev,
+                }
+            }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

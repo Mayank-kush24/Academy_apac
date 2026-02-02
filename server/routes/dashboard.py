@@ -2,8 +2,8 @@
 Dashboard analytics routes
 """
 from flask import Blueprint, jsonify, request
-from sqlalchemy import func, desc, case
-from datetime import datetime, timedelta
+from sqlalchemy import func, desc, case, or_, and_
+from datetime import datetime, timedelta, date
 from server.models import db, UserPII
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role
@@ -24,7 +24,7 @@ def get_summary():
         return _fetch_summary_data(period)
     
     try:
-        period = request.args.get('period', '30d')
+        period = request.args.get('period', 'all')
         result = _get_summary(period)
         return jsonify(result), 200
     except Exception as e:
@@ -33,29 +33,105 @@ def get_summary():
             'total_users': 0,
             'unique_organizations': 0,
             'top_domain': 'N/A',
-            'top_city': 'N/A'
+            'top_city': 'N/A',
+            'average_age': None,
+            'apac_except_india_users': 0,
+            'top_india_state': 'N/A',
+            'top_india_city': 'N/A',
+            'top_apac_country': 'N/A'
         }), 200
 
 
+def _get_period_dates(period):
+    """Return cutoff_date for the given period.
+    For 'all': no filter (entire dataset).
+    For 'month': start of current calendar month (1st at 00:00:00).
+    For 7d/30d/90d: that many days ago from now.
+    """
+    cutoff_date = None
+    if period == 'all':
+        return None
+    if period == 'month':
+        # Current calendar month: from 1st of this month 00:00:00
+        now = datetime.now()
+        cutoff_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif period == '7d':
+        cutoff_date = datetime.now() - timedelta(days=7)
+    elif period == '30d':
+        cutoff_date = datetime.now() - timedelta(days=30)
+    elif period == '90d':
+        cutoff_date = datetime.now() - timedelta(days=90)
+    return cutoff_date
+
+
+def _date_filter_condition(cutoff_date):
+    """Return SQLAlchemy filter for registered_at or created_at >= cutoff_date."""
+    if not cutoff_date:
+        return None
+    return or_(
+        and_(UserPII.registered_at.isnot(None), UserPII.registered_at >= cutoff_date),
+        and_(UserPII.registered_at.is_(None), UserPII.created_at >= cutoff_date)
+    )
+
+
+def _get_previous_period_range(period):
+    """Return (prev_start, current_start) for the previous period (for week-on-week / period-on-period).
+    Previous period is the same length as current, immediately before it.
+    For 'all' there is no previous period.
+    """
+    if period == 'all':
+        return None, None
+    now = datetime.now()
+    if period == 'month':
+        current_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        # First day of last month
+        if now.month == 1:
+            prev_start = now.replace(year=now.year - 1, month=12, day=1, hour=0, minute=0, second=0, microsecond=0)
+        else:
+            prev_start = now.replace(month=now.month - 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return prev_start, current_start
+    if period == '7d':
+        current_start = now - timedelta(days=7)
+        prev_start = now - timedelta(days=14)
+        return prev_start, current_start
+    if period == '30d':
+        current_start = now - timedelta(days=30)
+        prev_start = now - timedelta(days=60)
+        return prev_start, current_start
+    if period == '90d':
+        current_start = now - timedelta(days=90)
+        prev_start = now - timedelta(days=180)
+        return prev_start, current_start
+    return None, None
+
+
+def _previous_period_filter(prev_start, current_start):
+    """Filter: registered_at (or created_at) >= prev_start AND < current_start."""
+    if prev_start is None or current_start is None:
+        return None
+    return or_(
+        and_(
+            UserPII.registered_at.isnot(None),
+            UserPII.registered_at >= prev_start,
+            UserPII.registered_at < current_start
+        ),
+        and_(
+            UserPII.registered_at.is_(None),
+            UserPII.created_at >= prev_start,
+            UserPII.created_at < current_start
+        )
+    )
+
+
 def _fetch_summary_data(period):
-    """Internal function to fetch summary data"""
+    """Internal function to fetch summary data. period: 'all', 'month', '7d', '30d', '90d'."""
     try:
-        # Get period parameter (7d, 30d, 90d, or None for all)
-        period = request.args.get('period', '30d')
-        days = None
-        if period == '7d':
-            days = 7
-        elif period == '30d':
-            days = 30
-        elif period == '90d':
-            days = 90
+        cutoff_date = _get_period_dates(period)
+        date_cond = _date_filter_condition(cutoff_date)
         
-        # Base query with optional date filter
         base_query = UserPII.query
-        cutoff_date = None
-        if days:
-            cutoff_date = datetime.now() - timedelta(days=days)
-            base_query = base_query.filter(UserPII.created_at >= cutoff_date)
+        if date_cond is not None:
+            base_query = base_query.filter(date_cond)
         
         # Total users
         total_users = base_query.count() or 0
@@ -63,8 +139,8 @@ def _fetch_summary_data(period):
         # Unique organizations
         try:
             org_query = db.session.query(func.count(func.distinct(UserPII.organization_name)))
-            if cutoff_date:
-                org_query = org_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                org_query = org_query.filter(date_cond)
             unique_orgs = org_query.scalar() or 0
         except:
             unique_orgs = 0
@@ -79,8 +155,8 @@ def _fetch_summary_data(period):
                 UserPII.domain.isnot(None),
                 UserPII.domain != ''
             )
-            if cutoff_date:
-                domain_query = domain_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                domain_query = domain_query.filter(date_cond)
             top_domain_result = domain_query.group_by(
                 UserPII.domain
             ).order_by(desc('count')).first()
@@ -99,8 +175,8 @@ def _fetch_summary_data(period):
                 UserPII.city.isnot(None),
                 UserPII.city != ''
             )
-            if cutoff_date:
-                city_query = city_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                city_query = city_query.filter(date_cond)
             top_city_result = city_query.group_by(
                 UserPII.city
             ).order_by(desc('count')).first()
@@ -125,8 +201,8 @@ def _fetch_summary_data(period):
                 UserPII.github_url.isnot(None),
                 UserPII.github_url != ''
             )
-            if cutoff_date:
-                github_query = github_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                github_query = github_query.filter(date_cond)
             users_with_github = github_query.count() or 0
         except:
             users_with_github = 0
@@ -137,8 +213,8 @@ def _fetch_summary_data(period):
                 UserPII.linkedin_url.isnot(None),
                 UserPII.linkedin_url != ''
             )
-            if cutoff_date:
-                linkedin_query = linkedin_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                linkedin_query = linkedin_query.filter(date_cond)
             users_with_linkedin = linkedin_query.count() or 0
         except:
             users_with_linkedin = 0
@@ -153,8 +229,8 @@ def _fetch_summary_data(period):
                 UserPII.organization_name.isnot(None),
                 UserPII.organization_name != ''
             )
-            if cutoff_date:
-                org_query = org_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                org_query = org_query.filter(date_cond)
             top_org_result = org_query.group_by(
                 UserPII.organization_name
             ).order_by(desc('count')).first()
@@ -177,9 +253,8 @@ def _fetch_summary_data(period):
             ).filter(
                 UserPII.date_of_birth.isnot(None)
             )
-            if days:
-                cutoff_date = datetime.now() - timedelta(days=days)
-                age_query = age_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                age_query = age_query.filter(date_cond)
             
             avg_age_result = age_query.scalar()
             if avg_age_result:
@@ -191,9 +266,8 @@ def _fetch_summary_data(period):
                 dob_query = UserPII.query.filter(
                     UserPII.date_of_birth.isnot(None)
                 )
-                if days:
-                    cutoff_date = datetime.now() - timedelta(days=days)
-                    dob_query = dob_query.filter(UserPII.created_at >= cutoff_date)
+                if date_cond is not None:
+                    dob_query = dob_query.filter(date_cond)
                 # Limit to 10000 records for fallback
                 users_with_dob = dob_query.limit(10000).all()
                 
@@ -211,6 +285,141 @@ def _fetch_summary_data(period):
             except:
                 avg_age = None
         
+        # APAC countries list (excluding India)
+        APAC_COUNTRIES = [
+            'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
+            'Fiji', 'Hong Kong', 'Indonesia', 'Japan', 'Laos', 'Malaysia',
+            'Maldives', 'Mongolia', 'Myanmar', 'Nepal', 'New Zealand',
+            'North Korea', 'Pakistan', 'Papua New Guinea', 'Philippines',
+            'Singapore', 'South Korea', 'Sri Lanka', 'Taiwan', 'Thailand',
+            'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
+        ]
+        
+        # Users from APAC except India
+        apac_except_india_count = 0
+        try:
+            # Filter for APAC countries (case-insensitive), excluding India
+            apac_conditions = [UserPII.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
+            if apac_conditions:
+                apac_query = base_query.filter(
+                    UserPII.country.isnot(None),
+                    UserPII.country != '',
+                    ~UserPII.country.ilike('%India%'),
+                    or_(*apac_conditions)
+                )
+            else:
+                # If no APAC countries defined, just exclude India
+                apac_query = base_query.filter(
+                    UserPII.country.isnot(None),
+                    UserPII.country != '',
+                    ~UserPII.country.ilike('%India%')
+                )
+            apac_except_india_count = apac_query.count() or 0
+        except Exception as e:
+            print(f"Error calculating APAC users: {e}")
+            import traceback
+            traceback.print_exc()
+            apac_except_india_count = 0
+        
+        # Top state and city from India
+        top_india_state = None
+        top_india_city = None
+        try:
+            india_state_query = db.session.query(
+                UserPII.state,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.ilike('%India%'),
+                UserPII.state.isnot(None),
+                UserPII.state != ''
+            )
+            if date_cond is not None:
+                india_state_query = india_state_query.filter(date_cond)
+            top_india_state_result = india_state_query.group_by(
+                UserPII.state
+            ).order_by(desc('count')).first()
+            top_india_state = top_india_state_result[0] if top_india_state_result else None
+            
+            india_city_query = db.session.query(
+                UserPII.city,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.ilike('%India%'),
+                UserPII.city.isnot(None),
+                UserPII.city != ''
+            )
+            if date_cond is not None:
+                india_city_query = india_city_query.filter(date_cond)
+            top_india_city_result = india_city_query.group_by(
+                UserPII.city
+            ).order_by(desc('count')).first()
+            top_india_city = top_india_city_result[0] if top_india_city_result else None
+        except Exception as e:
+            print(f"Error calculating India stats: {e}")
+            top_india_state = None
+            top_india_city = None
+        
+        # Top country from APAC except India
+        top_apac_country = None
+        try:
+            # Filter for APAC countries (case-insensitive), excluding India
+            apac_conditions = [UserPII.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
+            apac_country_query = db.session.query(
+                UserPII.country,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.isnot(None),
+                UserPII.country != '',
+                ~UserPII.country.ilike('%India%')
+            )
+            if apac_conditions:
+                apac_country_query = apac_country_query.filter(or_(*apac_conditions))
+            if date_cond is not None:
+                apac_country_query = apac_country_query.filter(date_cond)
+            top_apac_country_result = apac_country_query.group_by(
+                UserPII.country
+            ).order_by(desc('count')).first()
+            top_apac_country = top_apac_country_result[0] if top_apac_country_result else None
+        except Exception as e:
+            print(f"Error calculating top APAC country: {e}")
+            import traceback
+            traceback.print_exc()
+            top_apac_country = None
+        
+        # Previous period metrics for week-on-week / period-on-period
+        prev_total_users = None
+        prev_apac_users = None
+        prev_avg_age = None
+        prev_start, current_start = _get_previous_period_range(period)
+        prev_cond = _previous_period_filter(prev_start, current_start) if prev_start and current_start else None
+        if prev_cond is not None:
+            try:
+                prev_total_users = UserPII.query.filter(prev_cond).count() or 0
+            except Exception:
+                prev_total_users = 0
+            try:
+                apac_conditions = [UserPII.country.ilike(f'%{c}%') for c in APAC_COUNTRIES]
+                prev_apac_q = UserPII.query.filter(
+                    prev_cond,
+                    UserPII.country.isnot(None),
+                    UserPII.country != '',
+                    ~UserPII.country.ilike('%India%')
+                )
+                if apac_conditions:
+                    prev_apac_q = prev_apac_q.filter(or_(*apac_conditions))
+                prev_apac_users = prev_apac_q.count() or 0
+            except Exception:
+                prev_apac_users = 0
+            try:
+                today = datetime.now().date()
+                prev_age_q = db.session.query(
+                    func.avg(func.extract('year', func.age(today, UserPII.date_of_birth)))
+                ).filter(UserPII.date_of_birth.isnot(None)).filter(prev_cond)
+                prev_avg_result = prev_age_q.scalar()
+                prev_avg_age = int(prev_avg_result) if prev_avg_result else None
+            except Exception:
+                prev_avg_age = None
+        
         return {
             'total_users': total_users,
             'unique_organizations': unique_orgs,
@@ -220,7 +429,14 @@ def _fetch_summary_data(period):
             'top_organization': top_org or 'N/A',
             'users_with_github': users_with_github,
             'users_with_linkedin': users_with_linkedin,
-            'average_age': avg_age
+            'average_age': avg_age,
+            'apac_except_india_users': apac_except_india_count,
+            'top_india_state': top_india_state or 'N/A',
+            'top_india_city': top_india_city or 'N/A',
+            'top_apac_country': top_apac_country or 'N/A',
+            'previous_period_total_users': prev_total_users,
+            'previous_period_apac_users': prev_apac_users,
+            'previous_period_average_age': prev_avg_age
         }
     except Exception as e:
         # Return empty data instead of error
@@ -228,7 +444,15 @@ def _fetch_summary_data(period):
             'total_users': 0,
             'unique_organizations': 0,
             'top_domain': 'N/A',
-            'top_city': 'N/A'
+            'top_city': 'N/A',
+            'average_age': None,
+            'apac_except_india_users': 0,
+            'top_india_state': 'N/A',
+            'top_india_city': 'N/A',
+            'top_apac_country': 'N/A',
+            'previous_period_total_users': None,
+            'previous_period_apac_users': None,
+            'previous_period_average_age': None
         }
 
 
@@ -279,7 +503,7 @@ def get_charts():
         return _fetch_charts_data(period)
     
     try:
-        period = request.args.get('period', '30d')
+        period = request.args.get('period', 'all')
         result = _get_charts(period)
         return jsonify(result), 200
     except Exception as e:
@@ -301,24 +525,14 @@ def get_charts():
 
 
 def _fetch_charts_data(period):
-    """Internal function to fetch charts data"""
+    """Internal function to fetch charts data. period: 'all', 'month', '7d', '30d', '90d'."""
     try:
-        # Get period parameter (7d, 30d, 90d, or None for all)
-        period = request.args.get('period', '30d')
-        days = None
-        if period == '7d':
-            days = 7
-        elif period == '30d':
-            days = 30
-        elif period == '90d':
-            days = 90
+        cutoff_date = _get_period_dates(period)
+        date_cond = _date_filter_condition(cutoff_date)
         
-        # Base query with optional date filter
         base_query = UserPII.query
-        cutoff_date = None
-        if days:
-            cutoff_date = datetime.now() - timedelta(days=days)
-            base_query = base_query.filter(UserPII.created_at >= cutoff_date)
+        if date_cond is not None:
+            base_query = base_query.filter(date_cond)
         
         # Gender distribution
         gender_distribution = []
@@ -330,8 +544,8 @@ def _fetch_charts_data(period):
                 UserPII.gender.isnot(None),
                 UserPII.gender != ''
             )
-            if cutoff_date:
-                gender_query = gender_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                gender_query = gender_query.filter(date_cond)
             gender_data = gender_query.group_by(
                 UserPII.gender
             ).all()
@@ -349,8 +563,8 @@ def _fetch_charts_data(period):
                 UserPII.domain.isnot(None),
                 UserPII.domain != ''
             )
-            if cutoff_date:
-                domains_query = domains_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                domains_query = domains_query.filter(date_cond)
             top_domains = domains_query.group_by(
                 UserPII.domain
             ).order_by(desc('count')).limit(10).all()
@@ -368,8 +582,8 @@ def _fetch_charts_data(period):
                 UserPII.city.isnot(None),
                 UserPII.city != ''
             )
-            if cutoff_date:
-                cities_query = cities_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                cities_query = cities_query.filter(date_cond)
             top_cities = cities_query.group_by(
                 UserPII.city
             ).order_by(desc('count')).limit(10).all()
@@ -387,8 +601,8 @@ def _fetch_charts_data(period):
                 UserPII.state.isnot(None),
                 UserPII.state != ''
             )
-            if cutoff_date:
-                states_query = states_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                states_query = states_query.filter(date_cond)
             top_states = states_query.group_by(
                 UserPII.state
             ).order_by(desc('count')).limit(10).all()
@@ -406,8 +620,8 @@ def _fetch_charts_data(period):
                 UserPII.country.isnot(None),
                 UserPII.country != ''
             )
-            if cutoff_date:
-                countries_query = countries_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                countries_query = countries_query.filter(date_cond)
             countries = countries_query.group_by(
                 UserPII.country
             ).order_by(desc('count')).limit(10).all()
@@ -425,8 +639,8 @@ def _fetch_charts_data(period):
                 UserPII.organization_name.isnot(None),
                 UserPII.organization_name != ''
             )
-            if cutoff_date:
-                orgs_query = orgs_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                orgs_query = orgs_query.filter(date_cond)
             top_orgs = orgs_query.group_by(
                 UserPII.organization_name
             ).order_by(desc('count')).limit(10).all()
@@ -444,8 +658,8 @@ def _fetch_charts_data(period):
                 UserPII.class_stream.isnot(None),
                 UserPII.class_stream != ''
             )
-            if cutoff_date:
-                streams_query = streams_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                streams_query = streams_query.filter(date_cond)
             streams = streams_query.group_by(
                 UserPII.class_stream
             ).order_by(desc('count')).all()
@@ -463,8 +677,8 @@ def _fetch_charts_data(period):
                 UserPII.designation.isnot(None),
                 UserPII.designation != ''
             )
-            if cutoff_date:
-                designation_query = designation_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                designation_query = designation_query.filter(date_cond)
             designations = designation_query.group_by(
                 UserPII.designation
             ).order_by(desc('count')).limit(10).all()
@@ -482,8 +696,8 @@ def _fetch_charts_data(period):
                 UserPII.occupation.isnot(None),
                 UserPII.occupation != ''
             )
-            if cutoff_date:
-                occupation_query = occupation_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                occupation_query = occupation_query.filter(date_cond)
             occupations = occupation_query.group_by(
                 UserPII.occupation
             ).order_by(desc('count')).limit(10).all()
@@ -514,9 +728,8 @@ def _fetch_charts_data(period):
                 UserPII.date_of_birth.isnot(None),
                 age_expr >= 18  # Only count adults
             )
-            if days:
-                cutoff_date = datetime.now() - timedelta(days=days)
-                age_query = age_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                age_query = age_query.filter(date_cond)
             
             age_results = age_query.group_by(age_group_expr).all()
             age_groups_data = [{'label': r[0], 'value': r[1]} for r in age_results if r[0] is not None]
@@ -528,9 +741,8 @@ def _fetch_charts_data(period):
                 dob_query = UserPII.query.filter(
                     UserPII.date_of_birth.isnot(None)
                 )
-                if days:
-                    cutoff_date = datetime.now() - timedelta(days=days)
-                    dob_query = dob_query.filter(UserPII.created_at >= cutoff_date)
+                if date_cond is not None:
+                    dob_query = dob_query.filter(date_cond)
                 # Limit to 10000 records for fallback
                 users_with_dob = dob_query.limit(10000).all()
                 
@@ -567,9 +779,15 @@ def _fetch_charts_data(period):
         # Registration trends (daily) using registered_at column
         registration_trends = []
         try:
-            # Use period days or default to 30
-            trend_days = days if days else 30
-            start_date = datetime.now() - timedelta(days=trend_days)
+            # Start date from period: Jan 15 for 'all', or period cutoff
+            if cutoff_date:
+                start_date = cutoff_date
+            else:
+                # For 'all' data: line charts start from Jan 15 (current or previous year)
+                now = datetime.now()
+                start_date = datetime(now.year, 1, 15)
+                if start_date.date() > now.date():
+                    start_date = datetime(now.year - 1, 1, 15)
             # Use date_trunc for PostgreSQL compatibility, filter out NULL registered_at
             trends = db.session.query(
                 func.date_trunc('day', UserPII.registered_at).label('date'),
@@ -616,16 +834,16 @@ def _fetch_charts_data(period):
                 UserPII.github_url.isnot(None),
                 UserPII.github_url != ''
             )
-            if cutoff_date:
-                github_query = github_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                github_query = github_query.filter(date_cond)
             github_count = github_query.count() or 0
             
             linkedin_query = UserPII.query.filter(
                 UserPII.linkedin_url.isnot(None),
                 UserPII.linkedin_url != ''
             )
-            if cutoff_date:
-                linkedin_query = linkedin_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                linkedin_query = linkedin_query.filter(date_cond)
             linkedin_count = linkedin_query.count() or 0
             
             both_query = UserPII.query.filter(
@@ -634,12 +852,12 @@ def _fetch_charts_data(period):
                 UserPII.linkedin_url.isnot(None),
                 UserPII.linkedin_url != ''
             )
-            if cutoff_date:
-                both_query = both_query.filter(UserPII.created_at >= cutoff_date)
+            if date_cond is not None:
+                both_query = both_query.filter(date_cond)
             both_count = both_query.count() or 0
             
             # Get total for period
-            period_total = base_query.count() if days else UserPII.query.count()
+            period_total = base_query.count()
             
             github_only = max(0, github_count - both_count)
             linkedin_only = max(0, linkedin_count - both_count)

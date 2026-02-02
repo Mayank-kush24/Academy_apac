@@ -1,7 +1,7 @@
 """
 Flask application initialization for Gen AI Academy APAC Edition
 """
-from flask import Flask, render_template, send_from_directory
+from flask import Flask, render_template, send_from_directory, request, jsonify, redirect
 from flask_cors import CORS
 import os
 import sys
@@ -13,8 +13,8 @@ if __name__ == '__main__':
         sys.path.insert(0, parent_dir)
 
 from server.config import Config
-from server.models import db
-from server.routes import auth, users, import_data, dashboard, profiles
+from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
+from server.routes import auth, users, import_data, dashboard, profiles, audit
 
 def create_app():
     """Create and configure Flask application"""
@@ -59,13 +59,31 @@ def create_app():
         except Exception as e:
             print(f"[WARNING] Could not create database tables: {str(e)}")
             print("  Run 'python init_database.py' to initialize the database manually")
+        # Register activity log listeners (create/update/delete on UserPII, User)
+        try:
+            from server.utils.activity_log import register_activity_listeners
+            register_activity_listeners()
+            print("[OK] Activity log listeners registered")
+        except Exception as e:
+            print(f"[WARNING] Activity log listeners: {e}")
     
+    # Set PostgreSQL session variables for master_logs (changed_by, optional additional_info)
+    # so triggers can record who made the change. Run before first DB use in request.
+    @app.before_request
+    def set_audit_context():
+        try:
+            from server.utils.audit import set_audit_session_vars
+            set_audit_session_vars()
+        except Exception:
+            pass
+
     # Register blueprints
     app.register_blueprint(auth.bp, url_prefix='/api/auth')
     app.register_blueprint(users.bp, url_prefix='/api/users')
     app.register_blueprint(import_data.bp, url_prefix='/api/import')
     app.register_blueprint(dashboard.bp, url_prefix='/api/dashboard')
     app.register_blueprint(profiles.bp, url_prefix='/api/profiles')
+    app.register_blueprint(audit.bp, url_prefix='/api/admin')
     
     # Serve static files
     @app.route('/static/<path:filename>')
@@ -79,11 +97,37 @@ def create_app():
         """Home page"""
         return render_template('home.html')
     
-    # Login page
-    @app.route('/login')
+    # Login page (GET = show form, POST = accept form/JSON and return same as API for compatibility)
+    @app.route('/login', methods=['GET', 'POST'])
     def login_page():
-        """Login page"""
-        return render_template('login.html')
+        if request.method != 'POST':
+            return render_template('login.html')
+        # POST: same logic as API so form or AJAX to /login works
+        try:
+            data = request.get_json(silent=True) or {}
+            if not data:
+                data = {'email': (request.form.get('email') or '').strip(), 'password': request.form.get('password') or ''}
+            email = data.get('email') or ''
+            password = data.get('password') or ''
+            if not email or not password:
+                return jsonify({'error': 'Email and password are required'}), 400
+            from server.models import User
+            import bcrypt
+            from server.utils.auth import generate_token
+            user = User.query.filter_by(email=email).first()
+            if not user:
+                return jsonify({'error': 'Invalid credentials'}), 401
+            if user.status != 'active':
+                return jsonify({'error': 'User account is inactive'}), 403
+            pw_hash = user.password_hash
+            if isinstance(pw_hash, str):
+                pw_hash = pw_hash.encode('utf-8')
+            if not bcrypt.checkpw(password.encode('utf-8'), pw_hash):
+                return jsonify({'error': 'Invalid credentials'}), 401
+            token = generate_token(user)
+            return jsonify({'token': token, 'user': user.to_dict()}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
     
     # Dashboard page
     @app.route('/dashboard')

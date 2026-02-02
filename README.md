@@ -170,6 +170,10 @@ Fields:
 - `status` (active, inactive)
 - `created_at`
 
+### Audit: `master_logs` (optional)
+
+For audit trails, apply `schema.sql` to create the `master_logs` table and triggers. The app sets PostgreSQL session variables (`app.current_user`, optional `app.current_user_extra`) before each request so triggers can populate `changed_by` and `additional_info`. See **AUDIT_LOGGING.md** for setup, verification, and how to add triggers for new tables.
+
 ## User Roles & Permissions
 
 ### Admin

@@ -1,0 +1,3 @@
+# This directory contains model files
+# After running `flutter pub run build_runner build`, 
+# .g.dart files will be generated here

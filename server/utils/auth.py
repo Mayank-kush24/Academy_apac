@@ -3,6 +3,7 @@ JWT authentication utilities
 """
 from datetime import datetime, timedelta
 from functools import wraps
+from uuid import UUID
 from flask import request, jsonify
 from server.config import Config
 from server.models import db, User
@@ -63,8 +64,15 @@ def get_current_user():
         if not payload:
             return None
         
-        # Get user from database
-        user = User.query.filter_by(id=payload['user_id']).first()
+        # Get user from database (User.id is UUID, payload has string)
+        user_id = payload.get('user_id')
+        if not user_id:
+            return None
+        try:
+            user_uuid = UUID(user_id) if isinstance(user_id, str) else user_id
+        except (TypeError, ValueError):
+            return None
+        user = User.query.filter_by(id=user_uuid).first()
         return user
     except (IndexError, KeyError):
         return None

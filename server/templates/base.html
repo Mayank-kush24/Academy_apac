@@ -9,6 +9,8 @@
     <title>{% block title %}Gen AI Academy APAC{% endblock %}</title>
     <link rel="stylesheet" href="/static/css/styles.css">
     <link rel="stylesheet" href="/static/css/dashboard-enterprise.css">
+    <link rel="stylesheet" href="/static/css/dashboard-boutiq.css">
+    <link rel="stylesheet" href="/static/css/dashboard-premium.css">
     <link rel="stylesheet" href="/static/css/liquid-glass.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +18,7 @@
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <div class="app-container">
         <!-- Sidebar Overlay -->
         <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
@@ -100,9 +102,18 @@
                 </div>
             </header>
             
-            <!-- Page Content -->
+            <!-- Page Content (Premium theme: liquid background + container) -->
             <div class="page-content">
-                {% block content %}{% endblock %}
+                <div class="theme-premium">
+                    <div class="liquid-background">
+                        <div class="liquid-blob blob-1"></div>
+                        <div class="liquid-blob blob-2"></div>
+                        <div class="liquid-blob blob-3"></div>
+                    </div>
+                    <div class="theme-container">
+                        {% block content %}{% endblock %}
+                    </div>
+                </div>
             </div>
         </main>
     </div>

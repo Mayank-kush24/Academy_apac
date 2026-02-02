@@ -1,0 +1,42 @@
+name: gen_ai_academy_dashboard
+description: Gen AI Academy APAC Dashboard - Cross-platform mobile app
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # HTTP requests
+  http: ^1.1.0
+  
+  # Secure storage (replaces Keychain)
+  flutter_secure_storage: ^9.0.0
+  
+  # Shared preferences (for widget data)
+  shared_preferences: ^2.2.2
+  
+  # State management (MVVM pattern)
+  provider: ^6.1.1
+  
+  # Home screen widgets
+  home_widget: ^0.5.0
+  
+  # JSON serialization
+  json_annotation: ^4.8.1
+  
+  # UI
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.7
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true

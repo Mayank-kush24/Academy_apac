@@ -116,6 +116,13 @@ def execute_import():
         # Parse Excel
         df = parse_excel(file_path)
         
+        # Optional: set additional_info for master_logs (source, filename)
+        try:
+            from server.utils.audit import set_audit_extra
+            set_audit_extra({"source": "csv_import", "filename": filename})
+        except Exception:
+            pass
+        
         # Execute import
         result = import_data(df, mappings, mode)
         

@@ -6,6 +6,55 @@ let currentStep = 1;
 let excelData = null;
 let fieldMappings = {};
 
+// Premium file upload zone: show selected file and support drag-and-drop
+(function initFileUploadZone() {
+    const zone = document.getElementById('fileUploadZone');
+    const fileInput = document.getElementById('excelFile');
+    const fileNameDisplay = document.getElementById('fileNameDisplay');
+
+    function updateZoneFromInput() {
+        const file = fileInput.files[0];
+        if (file) {
+            zone.classList.add('has-file');
+            fileNameDisplay.innerHTML = '<i class="fas fa-check-circle"></i> ' + escapeHtml(file.name);
+        } else {
+            zone.classList.remove('has-file');
+            fileNameDisplay.innerHTML = '';
+        }
+    }
+
+    fileInput.addEventListener('change', updateZoneFromInput);
+
+    ['dragenter', 'dragover'].forEach(ev => {
+        zone.addEventListener(ev, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.add('drag-over');
+        });
+    });
+    ['dragleave', 'drop'].forEach(ev => {
+        zone.addEventListener(ev, function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.remove('drag-over');
+        });
+    });
+    zone.addEventListener('drop', function(e) {
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) {
+            fileInput.files = files;
+            updateZoneFromInput();
+        }
+    });
+
+    zone.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInput.click();
+        }
+    });
+})();
+
 // Handle file upload
 document.getElementById('uploadForm').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -95,6 +144,57 @@ function updateMapping(column, dbField) {
 }
 
 /**
+ * Initialize import mode selection
+ */
+function initImportModeSelection() {
+    // Remove any existing selected state
+    document.querySelectorAll('.import-mode-option').forEach(opt => {
+        opt.classList.remove('selected');
+    });
+    
+    // Set default selection
+    const defaultOption = document.querySelector('.import-mode-option[data-mode="create"]');
+    if (defaultOption) {
+        defaultOption.classList.add('selected');
+        // Also set the hidden radio button
+        const radio = defaultOption.querySelector('input[type="radio"]');
+        if (radio) radio.checked = true;
+    }
+    
+    // Add click handlers to mode options
+    document.querySelectorAll('.import-mode-option').forEach(option => {
+        // Remove any existing event listeners by using a flag
+        if (option.dataset.listenerAdded) return;
+        option.dataset.listenerAdded = 'true';
+        
+        // Add click handler
+        option.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Remove selected class from all options
+            document.querySelectorAll('.import-mode-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            
+            // Add selected class to clicked option
+            this.classList.add('selected');
+            
+            // Update hidden radio button
+            const mode = this.getAttribute('data-mode');
+            const radio = this.querySelector('input[type="radio"]');
+            if (radio) {
+                radio.checked = true;
+            } else {
+                // Fallback: find radio by value
+                const fallbackRadio = document.querySelector(`input[name="importMode"][value="${mode}"]`);
+                if (fallbackRadio) fallbackRadio.checked = true;
+            }
+        });
+    });
+}
+
+/**
  * Navigate to step
  */
 function goToStep(step) {
@@ -111,13 +211,28 @@ function goToStep(step) {
         targetStep.classList.add('active');
         currentStep = step;
     }
+    
+    // Initialize import mode selection when step 3 is shown
+    if (step === 3) {
+        setTimeout(() => {
+            initImportModeSelection();
+        }, 100);
+    }
 }
 
 /**
  * Execute import
  */
 async function executeImport() {
-    const mode = document.querySelector('input[name="importMode"]:checked').value;
+    // Get mode from selected option or radio button
+    const selectedOption = document.querySelector('.import-mode-option.selected');
+    let mode;
+    if (selectedOption) {
+        mode = selectedOption.getAttribute('data-mode');
+    } else {
+        const radio = document.querySelector('input[name="importMode"]:checked');
+        mode = radio ? radio.value : 'create';
+    }
     
     if (!excelData || !fieldMappings) {
         alert('Please complete the previous steps');
@@ -216,6 +331,10 @@ function resetWizard() {
     excelData = null;
     fieldMappings = {};
     document.getElementById('uploadForm').reset();
+    var zone = document.getElementById('fileUploadZone');
+    var fileNameDisplay = document.getElementById('fileNameDisplay');
+    if (zone) zone.classList.remove('has-file');
+    if (fileNameDisplay) fileNameDisplay.innerHTML = '';
     goToStep(1);
 }
 

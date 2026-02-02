@@ -3,151 +3,214 @@
 {% block title %}Dashboard - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
-<div class="dashboard-enterprise">
-    <!-- Command Bar -->
-    <div class="command-bar">
-        <div class="command-bar-left">
-            <h1 class="dashboard-title">Analytics</h1>
-            <div class="pill-filters">
-                <button class="pill active" data-period="30d">Last 30 Days</button>
-                <button class="pill" data-period="7d">Last 7 Days</button>
-                <button class="pill" data-period="90d">Last 90 Days</button>
-            </div>
-        </div>
-        <div class="command-bar-right">
-            <button class="command-btn" onclick="openCommandPalette()" title="Command Palette (⌘K)">
-                <span class="command-icon">⌘</span>
-                <span>K</span>
-            </button>
-            <button class="command-btn" onclick="exportData()" title="Export">
-                <span>Export</span>
-            </button>
-            <button class="command-btn" id="densityToggle" onclick="toggleDensity()" title="Data Density">
-                <span>Compact</span>
-            </button>
-        </div>
-    </div>
-
-    <!-- Compact Horizontal Metric Bar -->
-    <div class="metrics-bar">
-        <div class="metric-item">
-            <div class="metric-label">TOTAL USERS</div>
-            <div class="metric-content">
-                <span class="metric-value" id="totalUsers">-</span>
-                <span class="metric-change" id="totalUsersChange">-</span>
-            </div>
-        </div>
-        
-        <div class="metric-item">
-            <div class="metric-label">ORGANIZATIONS</div>
-            <div class="metric-content">
-                <span class="metric-value" id="uniqueOrgs">-</span>
-                <span class="metric-change" id="uniqueOrgsChange">-</span>
-            </div>
-        </div>
-        
-        <div class="metric-item">
-            <div class="metric-label">TOP DOMAIN</div>
-            <div class="metric-content">
-                <span class="metric-value metric-value-text" id="topDomain">-</span>
-                <span class="metric-meta">Primary sector</span>
-            </div>
-        </div>
-        
-        <div class="metric-item">
-            <div class="metric-label">TOP CITY</div>
-            <div class="metric-content">
-                <span class="metric-value" id="topCity">-</span>
-                <span class="metric-meta">Leading region</span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Unified Data Grid -->
-    <div class="data-grid">
-        <!-- Registration Trend - Large -->
-        <section class="viz-panel" style="grid-column: 1 / 3;">
-            <div class="viz-header">
+<div class="dashboard-premium" id="dashboardPremium">
+    <div class="dashboard-container">
+        <!-- Header Section -->
+        <div class="dashboard-header">
+            <div class="header-content">
                 <div>
-                    <h2 class="viz-title">Registration Trend</h2>
-                    <p class="viz-subtitle">Daily user onboarding volume</p>
+                    <h1 class="page-title">Analytics Dashboard</h1>
+                    <p class="page-subtitle">Real-time insights and data intelligence</p>
                 </div>
-                <div class="viz-actions">
-                    <button class="viz-action-btn" title="More options">⋯</button>
+                <div class="header-actions">
+                    <div class="period-filters">
+                        <button class="period-btn active" data-period="all">All data</button>
+                        <button class="period-btn" data-period="month">This month</button>
+                        <button class="period-btn" data-period="7d">Last 7 days</button>
+                        <button class="period-btn" data-period="90d">Last 90 days</button>
+                    </div>
+                    <button class="action-btn" onclick="exportData()" title="Export Data">
+                        <i class="fas fa-download"></i>
+                        <span>Export</span>
+                    </button>
                 </div>
             </div>
-            <div class="viz-container">
-                <canvas id="registrationTrendsChart"></canvas>
-            </div>
-        </section>
+        </div>
 
-        <!-- Gender Distribution -->
-        <section class="viz-panel">
-            <div class="viz-header">
-                <div>
-                    <h2 class="viz-title">Gender Distribution</h2>
-                    <p class="viz-subtitle">Demographic breakdown</p>
+        <!-- Row 1: Hero KPI Cards -->
+        <div class="hero-kpi-row">
+            <div class="glass-card kpi-hero">
+                <div class="kpi-icon">
+                    <i class="fas fa-users"></i>
                 </div>
-                <div class="viz-actions">
-                    <button class="viz-action-btn" title="More options">⋯</button>
-                </div>
-            </div>
-            <div class="viz-container">
-                <canvas id="genderChart"></canvas>
-            </div>
-        </section>
-
-        <!-- Top Organizations -->
-        <section class="viz-panel">
-            <div class="viz-header">
-                <h2 class="viz-title">Top Organizations</h2>
-                <button class="viz-action-btn">⋯</button>
-            </div>
-            <div class="viz-container">
-                <canvas id="organizationsChart"></canvas>
-            </div>
-        </section>
-
-        <!-- Top Domains -->
-        <section class="viz-panel">
-            <div class="viz-header">
-                <h2 class="viz-title">Top Domains</h2>
-                <button class="viz-action-btn">⋯</button>
-            </div>
-            <div class="viz-container">
-                <canvas id="domainsChart"></canvas>
-            </div>
-        </section>
-
-        <!-- Top Cities -->
-        <section class="viz-panel">
-            <div class="viz-header">
-                <h2 class="viz-title">Top Cities</h2>
-                <button class="viz-action-btn">⋯</button>
-            </div>
-            <div class="viz-container">
-                <canvas id="citiesChart"></canvas>
-            </div>
-        </section>
-
-        <!-- Data Intelligence Insights -->
-        <section class="insights-panel">
-            <div class="insights-header">
-                <div>
-                    <h2 class="insights-title">Data Intelligence</h2>
-                    <p class="insights-subtitle">Automated analysis of key metrics</p>
-                </div>
-                <button class="insights-refresh" onclick="refreshInsights()" title="Refresh Insights">
-                    <i class="material-icons-round" style="font-size: 18px;">refresh</i>
-                </button>
-            </div>
-            <div class="insights-list" id="insightsList">
-                <div class="insight-item">
-                    <div class="insight-category">Loading</div>
-                    <div class="insight-statement">Analyzing data...</div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Total Users</div>
+                    <div class="kpi-value" id="totalUsers">-</div>
+                    <div class="kpi-sparkline">
+                        <canvas id="totalUsersMiniChart" width="120" height="32"></canvas>
+                    </div>
+                    <div class="kpi-change positive" id="totalUsersChange">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>Loading...</span>
+                    </div>
                 </div>
             </div>
-        </section>
+
+            <div class="glass-card kpi-hero">
+                <div class="kpi-icon">
+                    <i class="fas fa-globe-asia"></i>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-label">APAC (Excl. India)</div>
+                    <div class="kpi-value" id="apacUsers">-</div>
+                    <div class="kpi-sparkline">
+                        <canvas id="apacUsersMiniChart" width="120" height="32"></canvas>
+                    </div>
+                    <div class="kpi-change positive" id="apacUsersChange">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card kpi-hero">
+                <div class="kpi-icon">
+                    <i class="fas fa-birthday-cake"></i>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Average Age</div>
+                    <div class="kpi-value" id="averageAge">-</div>
+                    <div class="kpi-sparkline">
+                        <canvas id="averageAgeMiniChart" width="120" height="32"></canvas>
+                    </div>
+                    <div class="kpi-change positive" id="averageAgeChange">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card kpi-hero">
+                <div class="kpi-icon">
+                    <i class="fas fa-map-marker-alt"></i>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Top India Location</div>
+                    <div class="kpi-value kpi-value-text" id="topIndiaLocation">-</div>
+                    <div class="kpi-meta" id="topIndiaLocationMeta">State & City</div>
+                    <div class="kpi-change positive" id="topIndiaLocationChange">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="glass-card kpi-hero">
+                <div class="kpi-icon">
+                    <i class="fas fa-flag"></i>
+                </div>
+                <div class="kpi-content">
+                    <div class="kpi-label">Top APAC Country</div>
+                    <div class="kpi-value kpi-value-text" id="topApacCountry">-</div>
+                    <div class="kpi-sparkline">
+                        <canvas id="topApacCountryMiniChart" width="120" height="32"></canvas>
+                    </div>
+                    <div class="kpi-change positive" id="topApacCountryChange">
+                        <i class="fas fa-arrow-up"></i>
+                        <span>Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 2: Primary Analytics Section (70/30 split) -->
+        <div class="primary-analytics-row">
+            <!-- Left: Primary Chart (70%) -->
+            <div class="glass-card chart-primary">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">Registration Trend</h3>
+                        <p class="chart-subtitle">Daily user onboarding volume</p>
+                    </div>
+                </div>
+                <div class="chart-container-large">
+                    <canvas id="registrationTrendsChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Right: Segmentation (30%) -->
+            <div class="glass-card chart-secondary">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">User Segmentation</h3>
+                        <p class="chart-subtitle">Domain distribution</p>
+                    </div>
+                </div>
+                <div class="chart-container-compact">
+                    <canvas id="domainsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3: Ranking & Distribution (3 cards) -->
+        <div class="ranking-row">
+            <div class="glass-card chart-ranking">
+                <div class="chart-header">
+                    <h3 class="chart-title">Top Cities</h3>
+                </div>
+                <div class="chart-container-medium">
+                    <canvas id="citiesChart"></canvas>
+                </div>
+            </div>
+
+            <div class="glass-card chart-ranking">
+                <div class="chart-header">
+                    <h3 class="chart-title">Top Domains</h3>
+                </div>
+                <div class="chart-container-medium">
+                    <canvas id="domainsChartSecondary"></canvas>
+                </div>
+            </div>
+
+            <div class="glass-card chart-ranking">
+                <div class="chart-header">
+                    <h3 class="chart-title">Top Organizations</h3>
+                </div>
+                <div class="chart-container-medium">
+                    <canvas id="organizationsChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 4: Intelligence Layer -->
+        <div class="intelligence-row">
+            <!-- Left: Data Intelligence -->
+            <div class="glass-card intelligence-panel">
+                <div class="intelligence-header">
+                    <div>
+                        <h3 class="intelligence-title">
+                            <i class="fas fa-brain"></i>
+                            Data Intelligence
+                        </h3>
+                        <p class="intelligence-subtitle">AI-powered insights</p>
+                    </div>
+                    <button class="intelligence-refresh" onclick="refreshInsights()" title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+                <div class="insights-list" id="insightsList">
+                    <div class="insight-item loading">
+                        <div class="insight-icon">
+                            <i class="fas fa-spinner fa-spin"></i>
+                        </div>
+                        <div class="insight-content">
+                            <div class="insight-text">Analyzing data...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Gender Distribution -->
+            <div class="glass-card chart-donut">
+                <div class="chart-header">
+                    <h3 class="chart-title">Gender Distribution</h3>
+                    <p class="chart-subtitle">Demographic breakdown</p>
+                </div>
+                <div class="chart-container-donut">
+                    <canvas id="genderChart"></canvas>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 

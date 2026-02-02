@@ -3,14 +3,19 @@
 {% block title %}Profiles - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
-<div class="profiles-page">
-    <div class="page-header">
-        <h1><i class="fas fa-user-circle"></i> User Profiles</h1>
+<div class="profiles-page theme-page">
+    <div class="dashboard-header">
+        <div class="header-content">
+            <div>
+                <h1 class="page-title">User Profiles</h1>
+                <p class="page-subtitle">Search and explore user profile data</p>
+            </div>
+        </div>
     </div>
 
     <!-- Search and Filters Section -->
     <div class="filters-section">
-        <div class="filters-card-glass">
+        <div class="glass-card filters-card-glass">
             <div class="filters-header">
                 <h3><i class="fas fa-filter"></i> Search & Filters</h3>
                 <button class="btn btn-sm btn-secondary" onclick="toggleFilters()">
@@ -140,7 +145,7 @@
 
     <!-- Profiles List -->
     <div class="profiles-list-container">
-        <div class="profiles-list-card-glass">
+        <div class="glass-card profiles-list-card-glass">
             <table class="profiles-list-table">
                 <thead>
                     <tr>
@@ -176,16 +181,18 @@
 </div>
 
 <!-- Profile Detail Modal -->
-<div id="profileModal" class="modal" style="display: none;">
-    <div class="modal-content modal-large">
+<div id="profileModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000;">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()" style="margin: auto;">
         <div class="modal-header">
             <h2 id="modalProfileName">Profile Details</h2>
-            <button class="modal-close" onclick="closeProfileModal()">
+            <button class="modal-close" onclick="closeProfileModal()" type="button">
                 <i class="fas fa-times"></i>
             </button>
         </div>
         <div class="modal-body" id="profileModalBody">
-            <!-- Profile details will be loaded here -->
+            <div style="text-align: center; padding: 40px;">
+                <div class="loading">Loading profile details...</div>
+            </div>
         </div>
     </div>
 </div>

@@ -3,37 +3,55 @@
 {% block title %}Import Data - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h1><i class="fas fa-file-upload"></i> Import Data</h1>
-</div>
+<div class="import-page theme-page">
+    <div class="dashboard-header">
+        <div class="header-content">
+            <div>
+                <h1 class="page-title">Import Data</h1>
+                <p class="page-subtitle">Upload Excel and map fields to import user profiles</p>
+            </div>
+        </div>
+    </div>
 
-<div class="import-wizard">
-    <!-- Step 1: Upload -->
-    <div id="step1" class="wizard-step active">
-        <div class="card">
-            <h2>Step 1: Upload Excel File</h2>
-            <p class="text-muted">Upload an Excel file (.xlsx or .xls) containing user data</p>
+    <div class="import-wizard">
+        <!-- Step 1: Upload -->
+        <div id="step1" class="wizard-step active">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-file-upload"></i> Step 1: Upload Excel File</h3>
+                    <p class="chart-subtitle">Upload an Excel file (.xlsx or .xls) containing user data</p>
+                </div>
             
             <form id="uploadForm" enctype="multipart/form-data">
-                <div class="form-group">
-                    <label for="excelFile">Select Excel File</label>
-                    <input type="file" id="excelFile" name="file" accept=".xlsx,.xls" required>
+                <div class="form-group file-upload-group">
+                    <label class="file-upload-label">Select Excel File</label>
+                    <div class="file-upload-zone" id="fileUploadZone" role="button" tabindex="0" aria-label="Select Excel file">
+                        <input type="file" id="excelFile" name="file" accept=".xlsx,.xls" required class="file-upload-input" aria-label="Excel file">
+                        <div class="file-upload-content">
+                            <span class="file-upload-icon"><i class="fas fa-file-excel"></i></span>
+                            <span class="file-upload-text">Drag and drop your Excel file here, or <strong>browse</strong></span>
+                            <span class="file-upload-hint">.xlsx or .xls up to 10MB</span>
+                        </div>
+                        <div class="file-name-display" id="fileNameDisplay" aria-live="polite"></div>
+                    </div>
                 </div>
                 
-                <button type="submit" class="btn btn-primary">
+                <button type="submit" class="btn btn-primary import-upload-btn">
                     <i class="fas fa-upload"></i> Upload & Preview
                 </button>
             </form>
             
             <div id="uploadError" class="error-message" style="display: none;"></div>
+            </div>
         </div>
-    </div>
     
-    <!-- Step 2: Field Mapping -->
-    <div id="step2" class="wizard-step" style="display: none;">
-        <div class="card">
-            <h2>Step 2: Map Fields</h2>
-            <p class="text-muted">Map Excel columns to database fields. You can override the auto-mapped fields.</p>
+        <!-- Step 2: Field Mapping -->
+        <div id="step2" class="wizard-step" style="display: none;">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-columns"></i> Step 2: Map Fields</h3>
+                    <p class="chart-subtitle">Map Excel columns to database fields. You can override the auto-mapped fields.</p>
+                </div>
             
             <div class="table-container">
                 <table class="data-table">
@@ -49,68 +67,83 @@
                 </table>
             </div>
             
-            <div class="wizard-actions">
-                <button class="btn btn-secondary" onclick="goToStep(1)">
-                    <i class="fas fa-arrow-left"></i> Back
-                </button>
-                <button class="btn btn-primary" onclick="goToStep(3)">
-                    Next <i class="fas fa-arrow-right"></i>
-                </button>
+                <div class="wizard-actions">
+                    <button class="btn btn-secondary" onclick="goToStep(1)">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </button>
+                    <button class="btn btn-primary" onclick="goToStep(3)">
+                        Next <i class="fas fa-arrow-right"></i>
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
     
-    <!-- Step 3: Import Mode -->
-    <div id="step3" class="wizard-step" style="display: none;">
-        <div class="card">
-            <h2>Step 3: Select Import Mode</h2>
-            <p class="text-muted">Choose how to handle existing records</p>
+        <!-- Step 3: Import Mode -->
+        <div id="step3" class="wizard-step" style="display: none;">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-cogs"></i> Step 3: Select Import Mode</h3>
+                    <p class="chart-subtitle">Choose how to handle existing records</p>
+                </div>
             
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="importMode" value="create" checked>
-                    <strong>Create Only</strong> - Only insert new records (skip if email exists)
-                </label>
-            </div>
-            
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="importMode" value="create_update">
-                    <strong>Create or Update</strong> - Insert new or update existing records (by email)
-                </label>
-            </div>
-            
-            <div class="form-group">
-                <label>
-                    <input type="radio" name="importMode" value="update_only">
-                    <strong>Update Only</strong> - Only update existing records (skip if email doesn't exist)
-                </label>
-            </div>
-            
-            <div class="wizard-actions">
-                <button class="btn btn-secondary" onclick="goToStep(2)">
-                    <i class="fas fa-arrow-left"></i> Back
-                </button>
-                <button class="btn btn-primary" onclick="executeImport()">
-                    <i class="fas fa-play"></i> Execute Import
-                </button>
+                <div class="import-mode-options">
+                    <div class="import-mode-option" data-mode="create">
+                        <input type="radio" name="importMode" value="create" checked style="display: none;">
+                        <div class="mode-radio">
+                            <div class="radio-circle"></div>
+                        </div>
+                        <div class="mode-content">
+                            <div class="mode-title">Create Only</div>
+                            <div class="mode-description">Only insert new records (skip if email exists)</div>
+                        </div>
+                    </div>
+                    <div class="import-mode-option" data-mode="create_update">
+                        <input type="radio" name="importMode" value="create_update" style="display: none;">
+                        <div class="mode-radio">
+                            <div class="radio-circle"></div>
+                        </div>
+                        <div class="mode-content">
+                            <div class="mode-title">Create or Update</div>
+                            <div class="mode-description">Insert new or update existing records (by email)</div>
+                        </div>
+                    </div>
+                    <div class="import-mode-option" data-mode="update_only">
+                        <input type="radio" name="importMode" value="update_only" style="display: none;">
+                        <div class="mode-radio">
+                            <div class="radio-circle"></div>
+                        </div>
+                        <div class="mode-content">
+                            <div class="mode-title">Update Only</div>
+                            <div class="mode-description">Only update existing records (skip if email doesn't exist)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="wizard-actions">
+                    <button class="btn btn-secondary" onclick="goToStep(2)">
+                        <i class="fas fa-arrow-left"></i> Back
+                    </button>
+                    <button class="btn btn-primary btn-execute action-btn" onclick="executeImport()">
+                        <i class="fas fa-play"></i> Execute Import
+                    </button>
+                </div>
             </div>
         </div>
-    </div>
     
-    <!-- Step 4: Results -->
-    <div id="step4" class="wizard-step" style="display: none;">
-        <div class="card">
-            <h2>Import Results</h2>
+        <!-- Step 4: Results -->
+        <div id="step4" class="wizard-step" style="display: none;">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-check-circle"></i> Import Results</h3>
+                </div>
             
-            <div id="importResults" class="import-results">
-                <!-- Results will be displayed here -->
-            </div>
-            
-            <div class="wizard-actions">
-                <button class="btn btn-primary" onclick="resetWizard()">
-                    <i class="fas fa-redo"></i> Import Another File
-                </button>
+                <div id="importResults" class="import-results">
+                    <!-- Results will be displayed here -->
+                </div>
+                <div class="wizard-actions">
+                    <button class="btn btn-primary action-btn" onclick="resetWizard()">
+                        <i class="fas fa-redo"></i> Import Another File
+                    </button>
+                </div>
             </div>
         </div>
     </div>
