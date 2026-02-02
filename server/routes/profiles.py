@@ -5,13 +5,13 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import or_, and_, func, text
 from server.models import db, UserPII, ActivityLog
 from server.utils.auth import get_current_user
-from server.utils.permissions import require_role
+from server.utils.permissions import require_role, require_page_access
 
 bp = Blueprint('profiles', __name__)
 
 
 @bp.route('', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('profiles')
 def get_profiles():
     """Get user profiles with search and filters"""
     try:
@@ -28,6 +28,7 @@ def get_profiles():
         occupation = request.args.get('occupation', '').strip()
         has_github = request.args.get('has_github', '').strip()
         has_linkedin = request.args.get('has_linkedin', '').strip()
+        bob_match = request.args.get('bob_match', '').strip()
         
         # Pagination
         page = request.args.get('page', 1, type=int)
@@ -112,16 +113,13 @@ def get_profiles():
                 )
             )
         
-        # Get total count before pagination - use efficient count
-        # For large datasets, use estimate if available, otherwise use count
-        try:
-            # Try to use a more efficient count query
-            total = db.session.query(func.count(UserPII.id)).select_from(query.subquery()).scalar()
-        except:
-            # Fallback to regular count
-            total = query.count()
+        # BOB match filter (Book of Business)
+        if bob_match.lower() == 'true':
+            query = query.filter(UserPII.bob_match == True)
+        elif bob_match.lower() == 'false':
+            query = query.filter(UserPII.bob_match == False)
         
-        # Apply pagination
+        # Apply pagination (Flask-SQLAlchemy computes total via paginate())
         pagination = query.order_by(UserPII.created_at.desc()).paginate(
             page=page,
             per_page=per_page,
@@ -135,7 +133,7 @@ def get_profiles():
             'pagination': {
                 'page': page,
                 'per_page': per_page,
-                'total': total,
+                'total': pagination.total,
                 'pages': pagination.pages,
                 'has_next': pagination.has_next,
                 'has_prev': pagination.has_prev
@@ -147,7 +145,7 @@ def get_profiles():
 
 
 @bp.route('/filters', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('profiles')
 def get_filter_options():
     """Get available filter options for dropdowns (cached)"""
     from server.utils.cache import cache_result
@@ -221,7 +219,7 @@ def get_filter_options():
 
 
 @bp.route('/<profile_id>', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('profiles')
 def get_profile_detail(profile_id):
     """Get detailed profile information"""
     try:
@@ -280,7 +278,7 @@ def _master_log_to_profile_log(row):
 
 
 @bp.route('/<profile_id>/logs', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('profiles')
 def get_profile_logs(profile_id):
     """Get activity logs for a profile from master_logs (user_pii record)."""
     try:

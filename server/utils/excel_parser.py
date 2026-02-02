@@ -41,7 +41,8 @@ def get_db_fields():
         'gender',
         'occupation',
         'github_url',
-        'linkedin_url'
+        'linkedin_url',
+        'utm_medium'
     ]
 
 
@@ -106,6 +107,8 @@ def auto_map_fields(excel_columns):
                     'mobile': 'mobile_number',
                     'github': 'github_url',
                     'linkedin': 'linkedin_url',
+                    'utmmedium': 'utm_medium',
+                    'utm_medium': 'utm_medium',
                 }
                 
                 for alias, db_field in alias_map.items():

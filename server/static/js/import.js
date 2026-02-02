@@ -354,3 +354,81 @@ function showError(elementId, message) {
         errorDiv.style.display = 'block';
     }
 }
+
+// Book of Business (BOB) XLSX upload
+(function initBobUpload() {
+    const zone = document.getElementById('bobFileUploadZone');
+    const fileInput = document.getElementById('bobExcelFile');
+    const fileNameDisplay = document.getElementById('bobFileNameDisplay');
+    if (!zone || !fileInput) return;
+
+    function updateBobZone() {
+        const file = fileInput.files[0];
+        if (file) {
+            zone.classList.add('has-file');
+            if (fileNameDisplay) fileNameDisplay.innerHTML = '<i class="fas fa-check-circle"></i> ' + escapeHtml(file.name);
+        } else {
+            zone.classList.remove('has-file');
+            if (fileNameDisplay) fileNameDisplay.innerHTML = '';
+        }
+    }
+    fileInput.addEventListener('change', updateBobZone);
+    ['dragenter', 'dragover'].forEach(ev => {
+        zone.addEventListener(ev, function(e) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-over'); });
+    });
+    ['dragleave', 'drop'].forEach(ev => {
+        zone.addEventListener(ev, function(e) { e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag-over'); });
+    });
+    zone.addEventListener('drop', function(e) {
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (files && files.length) { fileInput.files = files; updateBobZone(); }
+    });
+})();
+
+document.getElementById('bobUploadForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('bobExcelFile');
+    const file = fileInput && fileInput.files[0];
+    const errorEl = document.getElementById('bobUploadError');
+    const successEl = document.getElementById('bobUploadSuccess');
+    const btn = document.getElementById('bobUploadBtn');
+    if (errorEl) errorEl.style.display = 'none';
+    if (successEl) successEl.style.display = 'none';
+    if (!file) {
+        if (errorEl) { errorEl.textContent = 'Please select an XLSX file'; errorEl.style.display = 'block'; }
+        return;
+    }
+    const formData = new FormData();
+    formData.append('bob_file', file);
+    const token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+    if (!token) {
+        if (errorEl) { errorEl.textContent = 'Not authenticated'; errorEl.style.display = 'block'; }
+        return;
+    }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...'; }
+    try {
+        const response = await fetch('/api/import/bob', {
+            method: 'POST',
+            headers: { 'Authorization': 'Bearer ' + token },
+            body: formData
+        });
+        const data = await response.json().catch(function() { return {}; });
+        if (!response.ok) {
+            if (errorEl) { errorEl.textContent = data.error || 'Import failed'; errorEl.style.display = 'block'; }
+            return;
+        }
+        if (successEl) {
+            successEl.innerHTML = (data.message || 'Imported ' + (data.companies_imported || 0) + ' companies. BOB match updated for ' + (data.bob_match_updated || 0) + ' profile(s).');
+            successEl.style.display = 'block';
+        }
+        fileInput.value = '';
+        const zone = document.getElementById('bobFileUploadZone');
+        const fileNameDisplay = document.getElementById('bobFileNameDisplay');
+        if (zone) zone.classList.remove('has-file');
+        if (fileNameDisplay) fileNameDisplay.innerHTML = '';
+    } catch (err) {
+        if (errorEl) { errorEl.textContent = err.message || 'Request failed'; errorEl.style.display = 'block'; }
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-upload"></i> Import Book of Business'; }
+    }
+});

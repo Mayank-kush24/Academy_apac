@@ -31,6 +31,8 @@ class UserPII(db.Model):
     occupation = db.Column(db.String(255), nullable=True)
     github_url = db.Column(db.String(500), nullable=True)
     linkedin_url = db.Column(db.String(500), nullable=True)
+    utm_medium = db.Column(db.String(255), nullable=True)
+    bob_match = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -54,9 +56,20 @@ class UserPII(db.Model):
             'occupation': self.occupation,
             'github_url': self.github_url,
             'linkedin_url': self.linkedin_url,
+            'utm_medium': self.utm_medium,
+            'bob_match': bool(self.bob_match),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
+
+
+class BobCompany(db.Model):
+    """Table for Book of Business company names (matched against UserPII.organization_name)."""
+    __tablename__ = 'bob_companies'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    company_name = db.Column(db.String(500), nullable=False)
+    normalized_name = db.Column(db.String(500), nullable=True, index=True)
 
 
 class User(db.Model):
@@ -69,6 +82,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     role = db.Column(db.String(50), nullable=False, default='viewer')  # admin, editor, viewer
     status = db.Column(db.String(50), nullable=False, default='active')  # active, inactive
+    allowed_pages = db.Column(db.JSON, nullable=True)  # list of page ids user can see, e.g. ['home','dashboard','profiles']; null = use role defaults
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
@@ -79,6 +93,7 @@ class User(db.Model):
             'email': self.email,
             'role': self.role,
             'status': self.status,
+            'allowed_pages': self.allowed_pages,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 

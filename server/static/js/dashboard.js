@@ -138,7 +138,7 @@ async function loadDashboardData() {
         if (chartsResponse.ok) {
             chartsData = await chartsResponse.json();
         } else {
-            chartsData = { registration_trends: [], gender_distribution: [], top_domains: [], top_cities: [], top_organizations: [] };
+            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], top_cities: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
@@ -159,9 +159,13 @@ async function loadDashboardData() {
         renderCharts({
             registration_trends: [],
             gender_distribution: [],
+            registration_source_bifurcation: [],
+            occupation_distribution: [],
             top_domains: [],
             top_cities: [],
-            top_organizations: []
+            top_organizations: [],
+            india_state_registrations: [],
+            apac_country_registrations: []
         });
     } finally {
         isLoading = false;
@@ -229,6 +233,12 @@ function updateKPICards(summary, chartsData) {
     if (topApacCountryEl) topApacCountryEl.textContent = summary.top_apac_country || 'N/A';
     updateKPITrend('topApacCountryChange', null, null, '—');
     renderMiniChart('topApacCountryMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(0));
+
+    const bookOfBusinessEl = document.getElementById('bookOfBusinessRegistrations');
+    if (bookOfBusinessEl) {
+        const bobCount = summary.book_of_business_registrations;
+        bookOfBusinessEl.textContent = (bobCount !== undefined && bobCount !== null) ? formatNumber(bobCount) : '-';
+    }
 
     updateHeaderUserInfo();
 }
@@ -363,19 +373,28 @@ function renderCharts(data, summary = null) {
     
     // Gender Distribution (Donut Chart) - Insights panel
     if (data.gender_distribution && data.gender_distribution.length > 0) {
-        renderDonutChart('genderChart', 'Gender Distribution', data.gender_distribution);
+        renderDonutChart('genderChart', 'Gender Distribution', data.gender_distribution, { palette: 'gender' });
     } else {
         showEmptyChart('genderChart', 'No gender data available');
     }
     
-    // Top Domains (Bar Chart) - Primary segmentation
+    // Registration source bifurcation (Donut: Google vs Hack2skill by UTM medium)
+    if (data.registration_source_bifurcation && data.registration_source_bifurcation.length > 0) {
+        renderDonutChart('registrationSourceChart', 'Registration source bifurcation', data.registration_source_bifurcation, { palette: 'registration' });
+    } else {
+        showEmptyChart('registrationSourceChart', 'No registration source data available');
+    }
+    
+    // Occupation distribution (Donut)
+    if (data.occupation_distribution && data.occupation_distribution.length > 0) {
+        renderDonutChart('occupationChart', 'Occupation Distribution', data.occupation_distribution, { palette: 'occupation' });
+    } else {
+        showEmptyChart('occupationChart', 'No occupation data available');
+    }
+    
+    // Top Domains (Bar Chart) - User Segmentation only (no separate Top Domains card)
     if (data.top_domains && data.top_domains.length > 0) {
         renderBarChart('domainsChart', 'Top Domains', data.top_domains);
-        // Also render for secondary chart if exists
-        const secondaryChart = document.getElementById('domainsChartSecondary');
-        if (secondaryChart) {
-            renderBarChart('domainsChartSecondary', 'Top Domains', data.top_domains);
-        }
     } else {
         showEmptyChart('domainsChart', 'No domain data available');
     }
@@ -393,9 +412,281 @@ function renderCharts(data, summary = null) {
     } else {
         showEmptyChart('organizationsChart', 'No organization data available');
     }
+
+    // India state-wise heatmap (interactive)
+    renderIndiaMapHeatmap(data.india_state_registrations || []);
+
+    // APAC country-wise heatmap (interactive)
+    renderApacMapHeatmap(data.apac_country_registrations || []);
     
     // Generate insights (pass both chart data and summary)
     generateInsights(data, summary);
+}
+
+/** India GeoJSON URL (states only – no neighboring countries). */
+const INDIA_STATES_GEOJSON_URL = 'https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson';
+
+/**
+ * Normalize state name for lookup (DB may have "Delhi", GeoJSON has "NCT of Delhi").
+ */
+function normalizeStateName(name) {
+    if (!name || typeof name !== 'string') return '';
+    return name.replace(/^NCT of\s+/i, '').trim().toLowerCase();
+}
+
+/**
+ * Merge Ladakh and Jammu and Kashmir into a single "Jammu and Kashmir" feature (both parts kept, combined).
+ * Returns a new features array with the merged feature and the two originals removed.
+ */
+function mergeLadakhAndJammuKashmir(features) {
+    if (!Array.isArray(features)) return features;
+    const mergedName = 'Jammu and Kashmir';
+    let ladakh = null;
+    let jammuKashmir = null;
+    const rest = [];
+    features.forEach(function (f) {
+        const name = (f.properties && f.properties.ST_NM) ? String(f.properties.ST_NM).trim() : '';
+        const n = name.toLowerCase();
+        if (n === 'ladakh') ladakh = f;
+        else if (n === 'jammu and kashmir' || n === 'jammu & kashmir') jammuKashmir = f;
+        else rest.push(f);
+    });
+    if (!ladakh && !jammuKashmir) return features;
+    var coords = [];
+    if (ladakh && ladakh.geometry && ladakh.geometry.type === 'Polygon' && ladakh.geometry.coordinates) {
+        coords.push(ladakh.geometry.coordinates);
+    }
+    if (jammuKashmir && jammuKashmir.geometry && jammuKashmir.geometry.type === 'Polygon' && jammuKashmir.geometry.coordinates) {
+        coords.push(jammuKashmir.geometry.coordinates);
+    }
+    if (coords.length === 0) return features;
+    var merged = {
+        type: 'Feature',
+        geometry: { type: 'MultiPolygon', coordinates: coords },
+        properties: { ST_NM: mergedName }
+    };
+    rest.push(merged);
+    return rest;
+}
+
+/**
+ * Render interactive India state-wise registration heatmap (India only, no neighbors).
+ * @param {Array<{state: string, value: number}>} stateData - From API india_state_registrations
+ */
+function renderIndiaMapHeatmap(stateData) {
+    const container = document.getElementById('indiaMapHeatmap');
+    const mapWrap = document.getElementById('indiaMapContainer');
+    const tooltipEl = document.getElementById('indiaMapTooltip');
+    if (!container || typeof d3 === 'undefined') return;
+
+    container.innerHTML = '';
+    const countByState = {};
+    (stateData || []).forEach(function (d) {
+        const key = normalizeStateName(d.state);
+        if (key) countByState[key] = (countByState[key] || 0) + (d.value || 0);
+    });
+    const values = Object.values(countByState);
+    const maxCount = values.length ? Math.max(...values) : 0;
+
+    /** Combined count for merged Jammu and Kashmir (Ladakh + J&K). */
+    function countForJammuKashmir() {
+        return (countByState['ladakh'] || 0) + (countByState['jammu and kashmir'] || 0) + (countByState['jammu & kashmir'] || 0);
+    }
+
+    d3.json(INDIA_STATES_GEOJSON_URL)
+        .then(function (geojson) {
+            if (!geojson || !geojson.features) {
+                container.innerHTML = '<p class="chart-empty">Unable to load India map data.</p>';
+                return;
+            }
+            var features = mergeLadakhAndJammuKashmir(geojson.features);
+            const width = Math.min(560, container.clientWidth || 560);
+            const height = 380;
+            const projection = d3.geoMercator()
+                .center([82.5, 22])
+                .scale(width * 1.2)
+                .translate([width / 2, height / 2]);
+            const path = d3.geoPath().projection(projection);
+            const colorScale = d3.scaleSequential(d3.interpolateOranges)
+                .domain([0, Math.max(maxCount || 1, countForJammuKashmir())]);
+
+            const svg = d3.select(container)
+                .append('svg')
+                .attr('viewBox', [0, 0, width, height])
+                .attr('width', width)
+                .attr('height', height);
+
+            const g = svg.append('g');
+
+            g.selectAll('path')
+                .data(features)
+                .join('path')
+                .attr('class', 'state-path')
+                .attr('d', path)
+                .attr('fill', function (d) {
+                    const name = (d.properties && d.properties.ST_NM) ? d.properties.ST_NM : '';
+                    const count = (name === 'Jammu and Kashmir') ? countForJammuKashmir() : (countByState[normalizeStateName(name)] || 0);
+                    return colorScale(count);
+                })
+                .attr('stroke', '#000')
+                .attr('stroke-width', 1)
+                .on('mouseover', function (event, d) {
+                    const name = (d.properties && d.properties.ST_NM) ? d.properties.ST_NM : 'Unknown';
+                    const count = (name === 'Jammu and Kashmir') ? countForJammuKashmir() : (countByState[normalizeStateName(name)] || 0);
+                    if (tooltipEl && mapWrap) {
+                        const rect = mapWrap.getBoundingClientRect();
+                        tooltipEl.innerHTML = '<span class="tooltip-state">' + name + '</span><div class="tooltip-count">' + count + ' registration' + (count !== 1 ? 's' : '') + '</div>';
+                        tooltipEl.classList.add('visible');
+                        tooltipEl.style.left = (event.clientX - rect.left + 12) + 'px';
+                        tooltipEl.style.top = (event.clientY - rect.top + 12) + 'px';
+                    }
+                    d3.select(this).classed('highlighted', true);
+                })
+                .on('mousemove', function (event) {
+                    if (tooltipEl && mapWrap) {
+                        const rect = mapWrap.getBoundingClientRect();
+                        tooltipEl.style.left = (event.clientX - rect.left + 12) + 'px';
+                        tooltipEl.style.top = (event.clientY - rect.top + 12) + 'px';
+                    }
+                })
+                .on('mouseout', function () {
+                    if (tooltipEl) tooltipEl.classList.remove('visible');
+                    d3.select(this).classed('highlighted', false);
+                })
+                .on('click', function (event, d) {
+                    d3.selectAll('#indiaMapHeatmap path.state-path').classed('highlighted', false);
+                    d3.select(this).classed('highlighted', true);
+                });
+        })
+        .catch(function () {
+            container.innerHTML = '<p class="chart-empty">Unable to load India map.</p>';
+        });
+}
+
+/** World countries GeoJSON (filter to APAC only). */
+var WORLD_COUNTRIES_GEOJSON_URL = 'https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json';
+
+/** APAC country names as they may appear in GeoJSON (lowercase for matching). */
+var APAC_GEO_NAMES = new Set([
+    'india', 'australia', 'bangladesh', 'bhutan', 'brunei', 'cambodia', 'china', 'fiji',
+    'hong kong', 'indonesia', 'japan', 'laos', 'malaysia', 'maldives', 'mongolia', 'myanmar',
+    'nepal', 'new zealand', 'north korea', 'pakistan', 'papua new guinea', 'philippines',
+    'singapore', 'south korea', 'sri lanka', 'taiwan', 'thailand', 'timor-leste', 'vietnam',
+    'korea, republic of', 'lao pdr', 'viet nam', 'brunei darussalam', "democratic people's republic of korea"
+]);
+
+/** Map GeoJSON country name (lowercase) to API lookup key. */
+function apacGeoNameToKey(name) {
+    var n = (name || '').toLowerCase().trim();
+    if (n === 'korea, republic of') return 'south korea';
+    if (n === "democratic people's republic of korea") return 'north korea';
+    if (n === 'lao pdr') return 'laos';
+    if (n === 'viet nam') return 'vietnam';
+    if (n === 'brunei darussalam') return 'brunei';
+    return n;
+}
+
+/**
+ * Render interactive APAC region map: all APAC countries with country-wise registration heatmap.
+ * @param {Array<{country: string, value: number}>} countryData - From API apac_country_registrations
+ */
+function renderApacMapHeatmap(countryData) {
+    var container = document.getElementById('apacMapHeatmap');
+    var mapWrap = document.getElementById('apacMapContainer');
+    var tooltipEl = document.getElementById('apacMapTooltip');
+    if (!container || typeof d3 === 'undefined') return;
+
+    container.innerHTML = '';
+    var countByCountry = {};
+    (countryData || []).forEach(function (d) {
+        var key = (d.country || '').toLowerCase().trim();
+        if (key) countByCountry[key] = (countByCountry[key] || 0) + (d.value || 0);
+    });
+    var values = Object.values(countByCountry);
+    var maxCount = values.length ? Math.max.apply(null, values) : 0;
+
+    function countForCountry(geoName) {
+        var key = apacGeoNameToKey(geoName);
+        return countByCountry[key] || 0;
+    }
+
+    d3.json(WORLD_COUNTRIES_GEOJSON_URL)
+        .then(function (geojson) {
+            if (!geojson || !geojson.features) {
+                container.innerHTML = '<p class="chart-empty">Unable to load world map data.</p>';
+                return;
+            }
+            var apacFeatures = geojson.features.filter(function (f) {
+                var name = (f.properties && f.properties.name) ? String(f.properties.name).trim() : '';
+                return APAC_GEO_NAMES.has(name.toLowerCase()) || APAC_GEO_NAMES.has(apacGeoNameToKey(name));
+            });
+            if (apacFeatures.length === 0) {
+                container.innerHTML = '<p class="chart-empty">No APAC countries in map data.</p>';
+                return;
+            }
+            var width = Math.min(560, container.clientWidth || 560);
+            var height = 380;
+            var projection = d3.geoMercator()
+                .center([108, 8])
+                .scale(width * 0.42)
+                .translate([width / 2, height / 2]);
+            var path = d3.geoPath().projection(projection);
+            /* Use sqrt scale so lower-count countries get visible oranges; India (highest) stays darkest. */
+            var maxSqrt = Math.sqrt(Math.max(maxCount || 1, 1));
+            var colorScale = d3.scaleSequential(d3.interpolateOranges)
+                .domain([0, maxSqrt]);
+
+            var svg = d3.select(container)
+                .append('svg')
+                .attr('viewBox', [0, 0, width, height])
+                .attr('width', width)
+                .attr('height', height);
+
+            var g = svg.append('g');
+
+            g.selectAll('path')
+                .data(apacFeatures)
+                .join('path')
+                .attr('class', 'country-path')
+                .attr('d', path)
+                .attr('fill', function (d) {
+                    var name = (d.properties && d.properties.name) ? d.properties.name : '';
+                    var count = countForCountry(name);
+                    return colorScale(count > 0 ? Math.sqrt(count) : 0);
+                })
+                .attr('stroke', '#000')
+                .attr('stroke-width', 1)
+                .on('mouseover', function (event, d) {
+                    var name = (d.properties && d.properties.name) ? d.properties.name : 'Unknown';
+                    var count = countForCountry(name);
+                    if (tooltipEl && mapWrap) {
+                        var rect = mapWrap.getBoundingClientRect();
+                        tooltipEl.innerHTML = '<span class="tooltip-state">' + name + '</span><div class="tooltip-count">' + count + ' registration' + (count !== 1 ? 's' : '') + '</div>';
+                        tooltipEl.classList.add('visible');
+                        tooltipEl.style.left = (event.clientX - rect.left + 12) + 'px';
+                        tooltipEl.style.top = (event.clientY - rect.top + 12) + 'px';
+                    }
+                    d3.select(this).classed('highlighted', true);
+                })
+                .on('mousemove', function (event) {
+                    if (tooltipEl && mapWrap) {
+                        var rect = mapWrap.getBoundingClientRect();
+                        tooltipEl.style.left = (event.clientX - rect.left + 12) + 'px';
+                        tooltipEl.style.top = (event.clientY - rect.top + 12) + 'px';
+                    }
+                })
+                .on('mouseout', function () {
+                    if (tooltipEl) tooltipEl.classList.remove('visible');
+                    d3.select(this).classed('highlighted', false);
+                })
+                .on('click', function (event, d) {
+                    d3.selectAll('#apacMapHeatmap path.country-path').classed('highlighted', false);
+                    d3.select(this).classed('highlighted', true);
+                });
+        })
+        .catch(function () {
+            container.innerHTML = '<p class="chart-empty">Unable to load APAC map.</p>';
+        });
 }
 
 /**
@@ -937,9 +1228,15 @@ function showEmptyChart(canvasId, message) {
 }
 
 /**
- * Render donut chart - Enterprise monochrome style
+ * Render donut chart with optional palette and legend
+ * @param {string} canvasId - Canvas element id
+ * @param {string} title - Chart title
+ * @param {Array<{label: string, value: number}>} data - Chart data
+ * @param {{ palette?: 'registration'|'gender'|'occupation' }} [opts] - Options: palette for distinct colors
  */
-function renderDonutChart(canvasId, title, data) {
+function renderDonutChart(canvasId, title, data, opts) {
+    opts = opts || {};
+    const palette = opts.palette || 'gender';
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
     
@@ -948,15 +1245,15 @@ function renderDonutChart(canvasId, title, data) {
         charts[canvasId].destroy();
     }
     
-    // Show canvas
+    // Same size for all doughnut charts (e.g. when in bifurcation row)
+    const donutHeight = 280;
     ctx.style.display = 'block';
     const chartContainer = ctx.parentElement;
     if (chartContainer) {
-        // Set explicit height for donut chart (premium size)
-        chartContainer.style.height = '320px';
-        chartContainer.style.minHeight = '320px';
-        chartContainer.style.maxHeight = '320px';
-        ctx.style.height = '320px';
+        chartContainer.style.height = donutHeight + 'px';
+        chartContainer.style.minHeight = donutHeight + 'px';
+        chartContainer.style.maxHeight = donutHeight + 'px';
+        ctx.style.height = donutHeight + 'px';
         ctx.style.width = '100%';
     }
     const messageEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
@@ -966,25 +1263,18 @@ function renderDonutChart(canvasId, title, data) {
     const values = data.map(item => item.value);
     const total = values.reduce((a, b) => a + b, 0);
     
-    // Premium color palette
-    const grayscaleColors = [
-        'rgba(229, 231, 235, 0.6)', // Light gray with transparency
-        'rgba(209, 213, 219, 0.6)', // Medium-light gray
-        'rgba(156, 163, 175, 0.6)', // Medium gray
-        'rgba(107, 114, 128, 0.6)', // Medium-dark gray
-        'rgba(75, 85, 99, 0.6)'  // Dark gray
-    ];
-    const brandAccent = '#ff7a18'; // Orange primary
-    const brandAccentLight = '#ff9f43'; // Orange light
-    
-    // Use brand accent for largest segment, grayscale for others
-    const sortedIndices = values.map((v, i) => ({ value: v, index: i }))
-        .sort((a, b) => b.value - a.value);
-    const colors = values.map((_, i) => {
-        if (sortedIndices[0].index === i) return brandAccent;
-        const rank = sortedIndices.findIndex(item => item.index === i);
-        return grayscaleColors[Math.min(rank - 1, grayscaleColors.length - 1)] || '#E5E7EB';
-    });
+    // Distinct palettes per chart type
+    var colors;
+    if (palette === 'registration') {
+        var registrationPalette = { 'Google': '#4285F4', 'Hack2skill': '#ff7a18' };
+        colors = labels.map(function (l) { return registrationPalette[l] || '#94a3b8'; });
+    } else if (palette === 'occupation') {
+        var occupationPalette = ['#059669', '#0ea5e9', '#e11d48', '#6366f1', '#d97706', '#14b8a6', '#8b5cf6', '#f43f5e'];
+        colors = labels.map(function (_, i) { return occupationPalette[i % occupationPalette.length]; });
+    } else {
+        var genderPalette = ['#0d9488', '#7c3aed', '#f59e0b', '#64748b', '#06b6d4'];
+        colors = labels.map(function (_, i) { return genderPalette[i % genderPalette.length]; });
+    }
     
     charts[canvasId] = new Chart(ctx, {
         type: 'doughnut',
@@ -993,17 +1283,48 @@ function renderDonutChart(canvasId, title, data) {
             datasets: [{
                 data: values,
                 backgroundColor: colors,
-                borderWidth: 0, // No borders for analytical look
+                borderWidth: 0,
                 borderColor: 'transparent',
-                cutout: '70%' // Slightly larger donut for better visibility
+                cutout: '70%'
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: true,
+            layout: {
+                padding: { left: 0, right: 4, top: 0, bottom: 0 }
+            },
             plugins: {
                 legend: {
-                    display: false
+                    display: true,
+                    position: 'right',
+                    align: 'center',
+                    labels: {
+                        padding: 10,
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        font: { size: 11, family: 'Inter' },
+                        color: '#374151',
+                        boxWidth: 12,
+                        generateLabels: function(chart) {
+                            const data = chart.data;
+                            if (data.labels.length && data.datasets.length) {
+                                const ds = data.datasets[0];
+                                const total = ds.data.reduce(function(a, b) { return a + b; }, 0);
+                                return data.labels.map(function(label, i) {
+                                    const value = ds.data[i];
+                                    const pct = total ? ((value / total) * 100).toFixed(1) : 0;
+                                    return {
+                                        text: label + ' (' + value + ' – ' + pct + '%)',
+                                        fillStyle: ds.backgroundColor[i],
+                                        strokeStyle: ds.backgroundColor[i],
+                                        index: i
+                                    };
+                                });
+                            }
+                            return [];
+                        }
+                    }
                 },
                 tooltip: {
                     backgroundColor: 'rgba(255, 255, 255, 0.98)',

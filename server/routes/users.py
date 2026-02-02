@@ -5,9 +5,16 @@ from flask import Blueprint, request, jsonify
 import bcrypt
 from server.models import db, User
 from server.utils.auth import get_current_user
-from server.utils.permissions import require_role
+from server.utils.permissions import require_role, PAGES
 
 bp = Blueprint('users', __name__)
+
+
+@bp.route('/pages', methods=['GET'])
+@require_role('admin')
+def get_pages():
+    """Return list of pages for page-access UI (admin only)."""
+    return jsonify({'pages': PAGES}), 200
 
 
 @bp.route('', methods=['GET'])
@@ -34,6 +41,7 @@ def create_user():
         password = data.get('password')
         role = data.get('role', 'viewer')
         status = data.get('status', 'active')
+        allowed_pages = data.get('allowed_pages')  # list of page ids or None to use role defaults
         
         # Validation
         if not name or not email or not password:
@@ -44,6 +52,13 @@ def create_user():
         
         if status not in ['active', 'inactive']:
             return jsonify({'error': 'Invalid status'}), 400
+        
+        valid_page_ids = {p['id'] for p in PAGES}
+        if allowed_pages is not None:
+            if not isinstance(allowed_pages, list):
+                return jsonify({'error': 'allowed_pages must be a list'}), 400
+            if not all(p in valid_page_ids for p in allowed_pages):
+                return jsonify({'error': 'Invalid page id in allowed_pages'}), 400
         
         # Check if email already exists
         existing_user = User.query.filter_by(email=email).first()
@@ -59,7 +74,8 @@ def create_user():
             email=email,
             password_hash=password_hash,
             role=role,
-            status=status
+            status=status,
+            allowed_pages=allowed_pages if allowed_pages is not None else None
         )
         
         db.session.add(user)
@@ -108,6 +124,17 @@ def update_user(user_id):
             if data['status'] not in ['active', 'inactive']:
                 return jsonify({'error': 'Invalid status'}), 400
             user.status = data['status']
+        if 'allowed_pages' in data:
+            val = data['allowed_pages']
+            valid_page_ids = {p['id'] for p in PAGES}
+            if val is None:
+                user.allowed_pages = None
+            elif isinstance(val, list):
+                if not all(p in valid_page_ids for p in val):
+                    return jsonify({'error': 'Invalid page id in allowed_pages'}), 400
+                user.allowed_pages = val
+            else:
+                return jsonify({'error': 'allowed_pages must be a list or null'}), 400
         
         db.session.commit()
         

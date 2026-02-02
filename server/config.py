@@ -32,8 +32,8 @@ class Config:
     # Flask configuration
     SECRET_KEY = os.getenv('FLASK_SECRET_KEY', 'change-this-flask-secret-key-in-production')
     
-    # File upload configuration
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+    # File upload configuration (None = no limit)
+    MAX_CONTENT_LENGTH = None
     UPLOAD_FOLDER = 'uploads'
     
     @staticmethod

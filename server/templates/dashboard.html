@@ -113,6 +113,52 @@
             </div>
         </div>
 
+        <!-- Row 1b: Small KPI cards (Book of Business, Workshops, Code labs, MCQ Test) -->
+        <div class="kpi-small-row">
+            <div class="glass-card kpi-small">
+                <div class="kpi-small-icon">
+                    <i class="fas fa-book-open"></i>
+                </div>
+                <div class="kpi-small-content">
+                    <div class="kpi-small-label">Book of Business Registrations</div>
+                    <div class="kpi-small-value" id="bookOfBusinessRegistrations">-</div>
+                </div>
+            </div>
+            <div class="glass-card kpi-small">
+                <div class="kpi-small-icon">
+                    <i class="fas fa-chalkboard-teacher"></i>
+                </div>
+                <div class="kpi-small-content">
+                    <div class="kpi-small-label">Workshops completed</div>
+                    <div class="kpi-small-value wip-placeholder">
+                        <span class="wip-badge">Work in Progress</span>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card kpi-small">
+                <div class="kpi-small-icon">
+                    <i class="fas fa-laptop-code"></i>
+                </div>
+                <div class="kpi-small-content">
+                    <div class="kpi-small-label">Code labs done</div>
+                    <div class="kpi-small-value wip-placeholder">
+                        <span class="wip-badge">Work in Progress</span>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card kpi-small">
+                <div class="kpi-small-icon">
+                    <i class="fas fa-clipboard-check"></i>
+                </div>
+                <div class="kpi-small-content">
+                    <div class="kpi-small-label">MCQ Test done</div>
+                    <div class="kpi-small-value wip-placeholder">
+                        <span class="wip-badge">Work in Progress</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Row 2: Primary Analytics Section (70/30 split) -->
         <div class="primary-analytics-row">
             <!-- Left: Primary Chart (70%) -->
@@ -142,6 +188,104 @@
             </div>
         </div>
 
+        <!-- Registration source + Gender + Occupation (3 equal doughnut charts) -->
+        <div class="bifurcation-row">
+            <div class="glass-card chart-donut bifurcation-donut">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">Registration source bifurcation</h3>
+                        <p class="chart-subtitle">Google vs Hack2skill (by UTM medium)</p>
+                    </div>
+                </div>
+                <div class="chart-container-donut">
+                    <canvas id="registrationSourceChart"></canvas>
+                </div>
+            </div>
+            <div class="glass-card chart-donut bifurcation-donut">
+                <div class="chart-header">
+                    <h3 class="chart-title">Gender Distribution</h3>
+                    <p class="chart-subtitle">Demographic breakdown</p>
+                </div>
+                <div class="chart-container-donut">
+                    <canvas id="genderChart"></canvas>
+                </div>
+            </div>
+            <div class="glass-card chart-donut bifurcation-donut">
+                <div class="chart-header">
+                    <h3 class="chart-title">Occupation Distribution</h3>
+                    <p class="chart-subtitle">Breakdown by occupation</p>
+                </div>
+                <div class="chart-container-donut">
+                    <canvas id="occupationChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Track selection cards (placeholders) -->
+        <div class="tracks-row">
+            <div class="glass-card chart-secondary track-card">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">Track 1 selected</h3>
+                        <p class="chart-subtitle">Track 1 enrollment</p>
+                    </div>
+                </div>
+                <div class="registration-source-placeholder">
+                    <span class="wip-badge">Work in Progress</span>
+                </div>
+            </div>
+            <div class="glass-card chart-secondary track-card">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">Track 2 selected</h3>
+                        <p class="chart-subtitle">Track 2 enrollment</p>
+                    </div>
+                </div>
+                <div class="registration-source-placeholder">
+                    <span class="wip-badge">Work in Progress</span>
+                </div>
+            </div>
+            <div class="glass-card chart-secondary track-card">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">Track 3 selected</h3>
+                        <p class="chart-subtitle">Track 3 enrollment</p>
+                    </div>
+                </div>
+                <div class="registration-source-placeholder">
+                    <span class="wip-badge">Work in Progress</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- State-wise (India) + APAC Region Registrations – side by side -->
+        <div class="maps-row">
+            <div class="glass-card chart-secondary india-map-card">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">State-wise registrations (India)</h3>
+                        <p class="chart-subtitle">Hover or click a state to see registration count</p>
+                    </div>
+                </div>
+                <div class="india-map-container" id="indiaMapContainer">
+                    <div id="indiaMapHeatmap" class="india-map-svg-wrap"></div>
+                    <div id="indiaMapTooltip" class="india-map-tooltip" aria-hidden="true"></div>
+                </div>
+            </div>
+            <div class="glass-card chart-secondary apac-map-card">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">APAC Region Registrations</h3>
+                        <p class="chart-subtitle">Hover or click a country to see registration count</p>
+                    </div>
+                </div>
+                <div class="apac-map-container" id="apacMapContainer">
+                    <div id="apacMapHeatmap" class="apac-map-svg-wrap"></div>
+                    <div id="apacMapTooltip" class="india-map-tooltip apac-map-tooltip" aria-hidden="true"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Row 3: Ranking & Distribution (3 cards) -->
         <div class="ranking-row">
             <div class="glass-card chart-ranking">
@@ -150,15 +294,6 @@
                 </div>
                 <div class="chart-container-medium">
                     <canvas id="citiesChart"></canvas>
-                </div>
-            </div>
-
-            <div class="glass-card chart-ranking">
-                <div class="chart-header">
-                    <h3 class="chart-title">Top Domains</h3>
-                </div>
-                <div class="chart-container-medium">
-                    <canvas id="domainsChartSecondary"></canvas>
                 </div>
             </div>
 
@@ -173,8 +308,7 @@
         </div>
 
         <!-- Row 4: Intelligence Layer -->
-        <div class="intelligence-row">
-            <!-- Left: Data Intelligence -->
+        <div class="intelligence-row intelligence-row-single">
             <div class="glass-card intelligence-panel">
                 <div class="intelligence-header">
                     <div>
@@ -199,21 +333,11 @@
                     </div>
                 </div>
             </div>
-
-            <!-- Right: Gender Distribution -->
-            <div class="glass-card chart-donut">
-                <div class="chart-header">
-                    <h3 class="chart-title">Gender Distribution</h3>
-                    <p class="chart-subtitle">Demographic breakdown</p>
-                </div>
-                <div class="chart-container-donut">
-                    <canvas id="genderChart"></canvas>
-                </div>
-            </div>
         </div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
 <script src="/static/js/dashboard.js"></script>
 {% endblock %}

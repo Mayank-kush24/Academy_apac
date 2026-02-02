@@ -116,6 +116,15 @@
                             <option value="false">No</option>
                         </select>
                     </div>
+                    
+                    <div class="filter-group">
+                        <label>BOB match</label>
+                        <select id="filterBob" class="filter-select">
+                            <option value="">All</option>
+                            <option value="true">Yes</option>
+                            <option value="false">No</option>
+                        </select>
+                    </div>
                 </div>
                 
                 <div class="filter-actions">
@@ -125,6 +134,10 @@
                     <button class="btn btn-primary" onclick="applyFilters()">
                         <i class="fas fa-filter"></i> Apply Filters
                     </button>
+                </div>
+                <div id="appliedFiltersWrap" class="applied-filters-wrap">
+                    <span class="applied-filters-label">Applied:</span>
+                    <div id="appliedFiltersList" class="applied-filters-list"></div>
                 </div>
             </div>
         </div>
@@ -152,7 +165,9 @@
                         <th>Name</th>
                         <th>Email</th>
                         <th>Organization</th>
+                        <th>BOB match</th>
                         <th>Domain</th>
+                        <th>UTM medium</th>
                         <th>Location</th>
                         <th>Designation</th>
                         <th>Social</th>
@@ -161,7 +176,7 @@
                 </thead>
                 <tbody id="profilesListBody">
                     <tr>
-                        <td colspan="8" class="loading-state">Loading profiles...</td>
+                        <td colspan="10" class="loading-state">Loading profiles...</td>
                     </tr>
                 </tbody>
             </table>

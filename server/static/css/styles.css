@@ -1183,6 +1183,39 @@ body {
     transform: translateY(-1px);
 }
 
+.form-group .form-hint {
+    font-size: 12px;
+    color: var(--text-muted, #6b7280);
+    margin-top: 6px;
+}
+
+.form-group .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.page-access-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.page-access-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.page-access-item input {
+    width: auto;
+}
+
 /* Tables - Professional Data Product Style */
 .table-container {
     overflow-x: auto;
@@ -3413,6 +3446,40 @@ body {
     border-top: 1px solid rgba(0, 0, 0, 0.06);
 }
 
+.applied-filters-wrap {
+    display: none;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    font-size: 13px;
+}
+
+.applied-filters-label {
+    font-weight: 600;
+    color: var(--text-secondary, #6b7280);
+    margin-right: 4px;
+}
+
+.applied-filters-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.applied-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    background: rgba(99, 102, 241, 0.12);
+    color: var(--primary, #4f46e5);
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
 /* Results Info */
 .results-info {
     display: flex;
@@ -3761,6 +3828,35 @@ body {
     color: var(--text-primary);
     text-align: right;
     flex: 1;
+}
+
+/* Cohort progress grid (profile modal, before Activity Log) */
+.profile-cohort-grid-section {
+    grid-column: 1 / -1;
+}
+.profile-cohort-grid {
+    width: 100%;
+    border-collapse: collapse;
+    border: 1px solid #000;
+    font-size: 13px;
+}
+.profile-cohort-grid th,
+.profile-cohort-grid td {
+    border: 1px solid #000;
+    padding: 10px 14px;
+    text-align: left;
+}
+.profile-cohort-grid th {
+    background: rgba(0, 0, 0, 0.06);
+    font-weight: 600;
+    color: #1a1a1a;
+}
+.profile-cohort-grid .grid-row-label {
+    font-weight: 500;
+    background: rgba(0, 0, 0, 0.03);
+}
+.profile-cohort-grid tbody td:not(.grid-row-label) {
+    min-width: 80px;
 }
 
 /* Activity log (profile modal) */

@@ -6,14 +6,14 @@ from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
 from server.models import db, UserPII
 from server.utils.auth import get_current_user
-from server.utils.permissions import require_role
+from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
 
 bp = Blueprint('dashboard', __name__)
 
 
 @bp.route('/summary', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('dashboard')
 def get_summary():
     """Get dashboard summary statistics (cached)"""
     from server.utils.cache import cache_result
@@ -218,6 +218,15 @@ def _fetch_summary_data(period):
             users_with_linkedin = linkedin_query.count() or 0
         except:
             users_with_linkedin = 0
+        
+        # Book of Business registrations (bob_match = True)
+        try:
+            bob_query = UserPII.query.filter(UserPII.bob_match == True)
+            if date_cond is not None:
+                bob_query = bob_query.filter(date_cond)
+            book_of_business_registrations = bob_query.count() or 0
+        except Exception:
+            book_of_business_registrations = 0
         
         # Top organization
         top_org = None
@@ -434,6 +443,7 @@ def _fetch_summary_data(period):
             'top_india_state': top_india_state or 'N/A',
             'top_india_city': top_india_city or 'N/A',
             'top_apac_country': top_apac_country or 'N/A',
+            'book_of_business_registrations': book_of_business_registrations,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
             'previous_period_average_age': prev_avg_age
@@ -450,6 +460,7 @@ def _fetch_summary_data(period):
             'top_india_state': 'N/A',
             'top_india_city': 'N/A',
             'top_apac_country': 'N/A',
+            'book_of_business_registrations': 0,
             'previous_period_total_users': None,
             'previous_period_apac_users': None,
             'previous_period_average_age': None
@@ -457,7 +468,7 @@ def _fetch_summary_data(period):
 
 
 @bp.route('/widget-stats', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('dashboard')
 def get_widget_stats():
     """Get lightweight stats for iOS widget"""
     try:
@@ -492,7 +503,7 @@ def get_widget_stats():
 
 
 @bp.route('/charts', methods=['GET'])
-@require_role('viewer', 'editor', 'admin')
+@require_page_access('dashboard')
 def get_charts():
     """Get chart data for dashboard (cached)"""
     from server.utils.cache import cache_result
@@ -510,6 +521,7 @@ def get_charts():
         # Return empty data instead of error
         return jsonify({
             'gender_distribution': [],
+            'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
             'top_domains': [],
             'top_cities': [],
             'top_states': [],
@@ -520,7 +532,9 @@ def get_charts():
             'occupation_distribution': [],
             'age_groups': [],
             'registration_trends': [],
-            'social_media': []
+            'social_media': [],
+            'india_state_registrations': [],
+            'apac_country_registrations': []
         }), 200
 
 
@@ -552,6 +566,21 @@ def _fetch_charts_data(period):
             gender_distribution = [{'label': g[0], 'value': g[1]} for g in gender_data]
         except:
             gender_distribution = []
+        
+        # Registration source bifurcation: utm_medium = 'google' -> Google, else -> Hack2skill
+        registration_source_bifurcation = []
+        try:
+            total_users_period = base_query.count() or 0
+            google_count = base_query.filter(UserPII.utm_medium.isnot(None)).filter(
+                func.lower(func.trim(UserPII.utm_medium)) == 'google'
+            ).count() or 0
+            hack2skill_count = total_users_period - google_count
+            registration_source_bifurcation = [
+                {'label': 'Google', 'value': google_count},
+                {'label': 'Hack2skill', 'value': hack2skill_count}
+            ]
+        except Exception:
+            registration_source_bifurcation = [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}]
         
         # Top domains (top 10)
         top_domains_data = []
@@ -874,9 +903,55 @@ def _fetch_charts_data(period):
             social_media_data = [item for item in social_media_data if item['value'] > 0]
         except:
             social_media_data = []
-        
+
+        # India state-wise registration counts (for heatmap)
+        india_state_registrations = []
+        try:
+            india_state_query = db.session.query(
+                UserPII.state,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.ilike('%India%'),
+                UserPII.state.isnot(None),
+                UserPII.state != ''
+            )
+            if date_cond is not None:
+                india_state_query = india_state_query.filter(date_cond)
+            india_states = india_state_query.group_by(UserPII.state).order_by(desc('count')).all()
+            india_state_registrations = [{'state': s[0], 'value': s[1]} for s in india_states]
+        except Exception:
+            india_state_registrations = []
+
+        # APAC country-wise registration counts (for heatmap) – India + APAC countries
+        apac_country_registrations = []
+        try:
+            APAC_FOR_MAP = [
+                'India', 'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
+                'Fiji', 'Hong Kong', 'Indonesia', 'Japan', 'Laos', 'Malaysia', 'Maldives',
+                'Mongolia', 'Myanmar', 'Nepal', 'New Zealand', 'North Korea', 'Pakistan',
+                'Papua New Guinea', 'Philippines', 'Singapore', 'South Korea', 'Sri Lanka',
+                'Taiwan', 'Thailand', 'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
+            ]
+            apac_conditions = [UserPII.country.ilike(f'%{c}%') for c in APAC_FOR_MAP]
+            apac_country_query = db.session.query(
+                UserPII.country,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.isnot(None),
+                UserPII.country != ''
+            )
+            if apac_conditions:
+                apac_country_query = apac_country_query.filter(or_(*apac_conditions))
+            if date_cond is not None:
+                apac_country_query = apac_country_query.filter(date_cond)
+            apac_countries = apac_country_query.group_by(UserPII.country).order_by(desc('count')).all()
+            apac_country_registrations = [{'country': c[0], 'value': c[1]} for c in apac_countries]
+        except Exception:
+            apac_country_registrations = []
+
         return {
             'gender_distribution': gender_distribution,
+            'registration_source_bifurcation': registration_source_bifurcation,
             'top_domains': top_domains_data,
             'top_cities': top_cities_data,
             'top_states': top_states_data,
@@ -887,12 +962,15 @@ def _fetch_charts_data(period):
             'occupation_distribution': occupation_data,
             'age_groups': age_groups_data,
             'registration_trends': registration_trends,
-            'social_media': social_media_data
+            'social_media': social_media_data,
+            'india_state_registrations': india_state_registrations,
+            'apac_country_registrations': apac_country_registrations
         }
     except Exception as e:
         # Return empty data instead of error
         return {
             'gender_distribution': [],
+            'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
             'top_domains': [],
             'top_cities': [],
             'top_states': [],
@@ -903,5 +981,7 @@ def _fetch_charts_data(period):
             'occupation_distribution': [],
             'age_groups': [],
             'registration_trends': [],
-            'social_media': []
+            'social_media': [],
+            'india_state_registrations': [],
+            'apac_country_registrations': []
         }

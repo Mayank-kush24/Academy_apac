@@ -11,7 +11,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from server.app import create_app
-from server.models import db, User, UserPII, ActivityLog
+from server.models import db, User, UserPII, ActivityLog, BobCompany
 
 def init_database():
     """Initialize database and create all tables"""
@@ -43,6 +43,41 @@ def init_database():
                 print("✓ 'activity_logs' table exists")
             else:
                 print("✗ 'activity_logs' table NOT found")
+            
+            if 'bob_companies' in tables:
+                print("✓ 'bob_companies' table exists")
+            else:
+                print("✗ 'bob_companies' table NOT found")
+            
+            # Add allowed_pages column to users if missing (dynamic page access)
+            try:
+                from sqlalchemy import text
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_pages JSONB"))
+                    conn.commit()
+                print("✓ users.allowed_pages column verified")
+            except Exception as ex:
+                print("⚠ Could not add users.allowed_pages (may already exist):", ex)
+            
+            # Add bob_match column to user_pii if missing (Book of Business match)
+            try:
+                from sqlalchemy import text
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE user_pii ADD COLUMN IF NOT EXISTS bob_match BOOLEAN NOT NULL DEFAULT FALSE"))
+                    conn.commit()
+                print("✓ user_pii.bob_match column verified")
+            except Exception as ex:
+                print("⚠ Could not add user_pii.bob_match (may already exist):", ex)
+            
+            # Add utm_medium column to user_pii if missing
+            try:
+                from sqlalchemy import text
+                with db.engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE user_pii ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(255)"))
+                    conn.commit()
+                print("✓ user_pii.utm_medium column verified")
+            except Exception as ex:
+                print("⚠ Could not add user_pii.utm_medium (may already exist):", ex)
             
             # Check if admin user exists
             admin_count = User.query.filter_by(role='admin').count()

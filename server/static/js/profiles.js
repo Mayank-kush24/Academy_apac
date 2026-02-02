@@ -243,6 +243,10 @@ window.viewProfileDetails = function(profileId) {
                         <span class="detail-value">${escapeHtml(profile.organization_name || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
+                        <span class="detail-label">BOB match:</span>
+                        <span class="detail-value">${profile.bob_match ? 'Yes' : 'No'}</span>
+                    </div>
+                    <div class="detail-row">
                         <span class="detail-label">Designation:</span>
                         <span class="detail-value">${escapeHtml(profile.designation || 'N/A')}</span>
                     </div>
@@ -253,6 +257,10 @@ window.viewProfileDetails = function(profileId) {
                     <div class="detail-row">
                         <span class="detail-label">Domain:</span>
                         <span class="detail-value">${escapeHtml(profile.domain || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">UTM medium:</span>
+                        <span class="detail-value">${escapeHtml(profile.utm_medium || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Class Stream:</span>
@@ -314,6 +322,27 @@ window.viewProfileDetails = function(profileId) {
                         <span class="detail-label">Updated At:</span>
                         <span class="detail-value">${formatDateTime(profile.updated_at) || 'N/A'}</span>
                     </div>
+                </div>
+                
+                <div class="detail-section profile-cohort-grid-section">
+                    <h4><i class="fas fa-th-large"></i> Cohort progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Cohort progress by activity">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>COHORT 1</th>
+                                <th>COHORT 2</th>
+                                <th>COHORT 3</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td class="grid-row-label">WEBINAR</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td></td><td></td><td></td></tr>
+                        </tbody>
+                    </table>
                 </div>
                 
                 <div class="detail-section detail-section-logs">
@@ -506,7 +535,7 @@ async function loadProfiles() {
         const tbody = document.getElementById('profilesListBody');
         if (tbody) {
             tbody.innerHTML = 
-                '<tr><td colspan="8" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+                '<tr><td colspan="10" class="error-state">Failed to load profiles. Please try again.</td></tr>';
         }
     }
 }
@@ -518,7 +547,7 @@ function renderProfiles(profiles) {
     const tbody = document.getElementById('profilesListBody');
     
     if (profiles.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No profiles found matching your criteria.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No profiles found matching your criteria.</td></tr>';
         return;
     }
     
@@ -541,7 +570,13 @@ function renderProfiles(profiles) {
                 <span class="profile-list-org">${escapeHtml(profile.organization_name || 'N/A')}</span>
             </td>
             <td>
+                <span class="profile-list-bob">${profile.bob_match ? 'Yes' : 'No'}</span>
+            </td>
+            <td>
                 <span class="profile-list-domain">${escapeHtml(profile.domain || 'N/A')}</span>
+            </td>
+            <td>
+                <span class="profile-list-utm">${escapeHtml(profile.utm_medium || 'N/A')}</span>
             </td>
             <td>
                 <span class="profile-list-location">${escapeHtml(formatLocation(profile))}</span>
@@ -681,6 +716,10 @@ async function viewProfileDetails(profileId) {
                         <span class="detail-value">${escapeHtml(profile.organization_name || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
+                        <span class="detail-label">BOB match:</span>
+                        <span class="detail-value">${profile.bob_match ? 'Yes' : 'No'}</span>
+                    </div>
+                    <div class="detail-row">
                         <span class="detail-label">Designation:</span>
                         <span class="detail-value">${escapeHtml(profile.designation || 'N/A')}</span>
                     </div>
@@ -691,6 +730,10 @@ async function viewProfileDetails(profileId) {
                     <div class="detail-row">
                         <span class="detail-label">Domain:</span>
                         <span class="detail-value">${escapeHtml(profile.domain || 'N/A')}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">UTM medium:</span>
+                        <span class="detail-value">${escapeHtml(profile.utm_medium || 'N/A')}</span>
                     </div>
                     <div class="detail-row">
                         <span class="detail-label">Class Stream:</span>
@@ -752,6 +795,27 @@ async function viewProfileDetails(profileId) {
                         <span class="detail-label">Updated At:</span>
                         <span class="detail-value">${formatDateTime(profile.updated_at) || 'N/A'}</span>
                     </div>
+                </div>
+                
+                <div class="detail-section profile-cohort-grid-section">
+                    <h4><i class="fas fa-th-large"></i> Cohort progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Cohort progress by activity">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>COHORT 1</th>
+                                <th>COHORT 2</th>
+                                <th>COHORT 3</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td class="grid-row-label">WEBINAR</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td></td><td></td><td></td></tr>
+                        </tbody>
+                    </table>
                 </div>
                 
                 <div class="detail-section detail-section-logs">
@@ -820,6 +884,60 @@ function closeProfileModal() {
 // Make functions globally available immediately
 window.closeProfileModal = closeProfileModal;
 
+/** Human-readable labels for filter keys (for Applied filters display) */
+var FILTER_LABELS = {
+    search: 'Search',
+    organization: 'Organization',
+    domain: 'Domain',
+    country: 'Country',
+    state: 'State',
+    city: 'City',
+    gender: 'Gender',
+    class_stream: 'Class Stream',
+    designation: 'Designation',
+    occupation: 'Occupation',
+    has_github: 'Has GitHub',
+    has_linkedin: 'Has LinkedIn',
+    bob_match: 'BOB match'
+};
+
+/**
+ * Get display value for a filter (e.g. "Yes" for has_github true)
+ */
+function getFilterDisplayValue(key, value) {
+    if (key === 'has_github' || key === 'has_linkedin' || key === 'bob_match') {
+        if (value === 'true') return 'Yes';
+        if (value === 'false') return 'No';
+    }
+    return value;
+}
+
+/**
+ * Update the "Applied filters" section under the filter form
+ */
+function updateAppliedFiltersDisplay() {
+    var wrap = document.getElementById('appliedFiltersWrap');
+    var listEl = document.getElementById('appliedFiltersList');
+    if (!wrap || !listEl) return;
+    var applied = [];
+    Object.keys(currentFilters).forEach(function (key) {
+        var val = currentFilters[key];
+        if (!val) return;
+        var label = FILTER_LABELS[key] || key;
+        var displayVal = getFilterDisplayValue(key, val);
+        applied.push({ key: key, label: label, value: displayVal });
+    });
+    if (applied.length === 0) {
+        wrap.style.display = 'none';
+        listEl.innerHTML = '';
+        return;
+    }
+    wrap.style.display = 'flex';
+    listEl.innerHTML = applied.map(function (a) {
+        return '<span class="applied-filter-chip">' + escapeHtml(a.label) + ': ' + escapeHtml(a.value) + '</span>';
+    }).join('');
+}
+
 /**
  * Apply filters
  */
@@ -836,17 +954,19 @@ function applyFilters() {
         designation: document.getElementById('filterDesignation').value,
         occupation: document.getElementById('filterOccupation').value,
         has_github: document.getElementById('filterGithub').value,
-        has_linkedin: document.getElementById('filterLinkedin').value
+        has_linkedin: document.getElementById('filterLinkedin').value,
+        bob_match: document.getElementById('filterBob').value
     };
     
     // Remove empty filters
-    Object.keys(currentFilters).forEach(key => {
+    Object.keys(currentFilters).forEach(function (key) {
         if (!currentFilters[key]) {
             delete currentFilters[key];
         }
     });
     
     currentPage = 1;
+    updateAppliedFiltersDisplay();
     loadProfiles();
 }
 
@@ -877,9 +997,11 @@ function clearFilters() {
     document.getElementById('filterOccupation').value = '';
     document.getElementById('filterGithub').value = '';
     document.getElementById('filterLinkedin').value = '';
+    document.getElementById('filterBob').value = '';
     
     currentFilters = {};
     currentPage = 1;
+    updateAppliedFiltersDisplay();
     loadProfiles();
 }
 
@@ -949,9 +1071,12 @@ function updatePagination(pagination) {
  */
 function updateResultsCount(pagination) {
     const countEl = document.getElementById('resultsCount');
-    const start = (pagination.page - 1) * pagination.per_page + 1;
-    const end = Math.min(pagination.page * pagination.per_page, pagination.total);
-    countEl.textContent = `Showing ${start}-${end} of ${pagination.total} profiles`;
+    const total = pagination.total || 0;
+    const start = total === 0 ? 0 : (pagination.page - 1) * pagination.per_page + 1;
+    const end = total === 0 ? 0 : Math.min(pagination.page * pagination.per_page, total);
+    countEl.textContent = total === 0
+        ? 'Showing 0 of 0 profiles'
+        : `Showing ${start}-${end} of ${total.toLocaleString()} profiles`;
 }
 
 /**

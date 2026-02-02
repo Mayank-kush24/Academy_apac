@@ -3,11 +3,46 @@
  */
 
 let editingUserId = null;
+let pagesList = [];
 
-// Load users on page load
+// Load users and pages on page load
 document.addEventListener('DOMContentLoaded', function() {
     loadUsers();
+    loadPages();
+    document.getElementById('useRoleAccess').addEventListener('change', function() {
+        document.getElementById('pageAccessGroup').style.display = this.checked ? 'none' : 'block';
+        if (!this.checked) renderPageCheckboxes();
+    });
 });
+
+/**
+ * Load list of pages for page-access UI
+ */
+async function loadPages() {
+    try {
+        const response = await authenticatedFetch('/api/users/pages');
+        if (response.ok) {
+            const data = await response.json();
+            pagesList = data.pages || [];
+        }
+    } catch (e) {
+        console.warn('Could not load pages list', e);
+    }
+}
+
+/**
+ * Render page access checkboxes from pagesList
+ */
+function renderPageCheckboxes() {
+    const container = document.getElementById('pageAccessCheckboxes');
+    if (!container || !pagesList.length) return;
+    container.innerHTML = pagesList.map(p => `
+        <label class="page-access-item">
+            <input type="checkbox" name="allowed_page" value="${escapeHtml(p.id)}">
+            ${escapeHtml(p.label)}
+        </label>
+    `).join('');
+}
 
 /**
  * Load all users
@@ -68,6 +103,9 @@ function openCreateModal() {
     document.getElementById('userId').value = '';
     document.getElementById('passwordRequired').style.display = 'inline';
     document.getElementById('userPassword').required = true;
+    document.getElementById('useRoleAccess').checked = true;
+    document.getElementById('pageAccessGroup').style.display = 'none';
+    renderPageCheckboxes();
     document.getElementById('userModal').style.display = 'flex';
 }
 
@@ -98,6 +136,21 @@ async function editUser(userId) {
         document.getElementById('userPassword').value = '';
         document.getElementById('passwordRequired').style.display = 'none';
         document.getElementById('userPassword').required = false;
+        const useRole = document.getElementById('useRoleAccess');
+        const pageGroup = document.getElementById('pageAccessGroup');
+        if (user.allowed_pages && Array.isArray(user.allowed_pages) && user.allowed_pages.length > 0) {
+            useRole.checked = false;
+            pageGroup.style.display = 'block';
+            renderPageCheckboxes();
+            user.allowed_pages.forEach(function(id) {
+                const cb = document.querySelector('input[name="allowed_page"][value="' + id + '"]');
+                if (cb) cb.checked = true;
+            });
+        } else {
+            useRole.checked = true;
+            pageGroup.style.display = 'none';
+            renderPageCheckboxes();
+        }
         document.getElementById('userModal').style.display = 'flex';
     } catch (error) {
         showError('Failed to load user: ' + error.message);
@@ -128,6 +181,12 @@ document.getElementById('userForm').addEventListener('submit', async function(e)
     const password = document.getElementById('userPassword').value;
     if (password || !editingUserId) {
         formData.password = password;
+    }
+    
+    if (document.getElementById('useRoleAccess').checked) {
+        formData.allowed_pages = null;
+    } else {
+        formData.allowed_pages = Array.from(document.querySelectorAll('input[name="allowed_page"]:checked')).map(function(cb) { return cb.value; });
     }
     
     const errorDiv = document.getElementById('formError');

@@ -37,11 +37,11 @@
                 <!-- CORE Section -->
                 <div class="nav-section">
                     <div class="nav-category">CORE</div>
-                    <a href="/" class="nav-item">
+                    <a href="/" class="nav-item" id="navHome" data-page-id="home" style="display: none;">
                         <i class="nav-icon fas fa-home"></i>
                         <span>Home</span>
                     </a>
-                    <a href="/dashboard" class="nav-item">
+                    <a href="/dashboard" class="nav-item" id="navDashboard" data-page-id="dashboard" style="display: none;">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <span>Dashboard</span>
                     </a>
@@ -50,11 +50,11 @@
                 <!-- DATA Section -->
                 <div class="nav-section">
                     <div class="nav-category">DATA</div>
-                    <a href="/profiles" class="nav-item">
+                    <a href="/profiles" class="nav-item" id="navProfiles" data-page-id="profiles" style="display: none;">
                         <i class="nav-icon fas fa-user-circle"></i>
                         <span>Profiles</span>
                     </a>
-                    <a href="/import" class="nav-item" id="navImport" style="display: none;">
+                    <a href="/import" class="nav-item" id="navImport" data-page-id="import" style="display: none;">
                         <i class="nav-icon fas fa-file-upload"></i>
                         <span>Import Data</span>
                     </a>
@@ -63,7 +63,7 @@
                 <!-- ADMIN Section -->
                 <div class="nav-section">
                     <div class="nav-category">ADMIN</div>
-                    <a href="/users" class="nav-item" id="navUsers" style="display: none;">
+                    <a href="/users" class="nav-item" id="navUsers" data-page-id="users" style="display: none;">
                         <i class="nav-icon fas fa-users-cog"></i>
                         <span>User Management</span>
                     </a>
@@ -201,16 +201,21 @@
                     userInfoEl.textContent = data.user.name + ' (' + data.user.role + ')';
                 }
                 
-                // Show/hide menu items based on role
-                const navImport = document.getElementById('navImport');
-                const navUsers = document.getElementById('navUsers');
-                
-                if (navImport && (data.user.role === 'admin' || data.user.role === 'editor')) {
-                    navImport.style.display = 'block';
-                }
-                if (navUsers && data.user.role === 'admin') {
-                    navUsers.style.display = 'block';
-                }
+                // Show/hide menu items based on allowed_pages (or role if not set)
+                const allowed = data.user.allowed_pages;
+                const role = data.user.role;
+                document.querySelectorAll('.nav-item[data-page-id]').forEach(function(el) {
+                    const pageId = el.getAttribute('data-page-id');
+                    let show = false;
+                    if (allowed && Array.isArray(allowed) && allowed.length > 0) {
+                        show = allowed.indexOf(pageId) !== -1;
+                    } else {
+                        if (pageId === 'home' || pageId === 'dashboard' || pageId === 'profiles') show = true;
+                        if (pageId === 'import' && (role === 'admin' || role === 'editor')) show = true;
+                        if (pageId === 'users' && role === 'admin') show = true;
+                    }
+                    el.style.display = show ? 'block' : 'none';
+                });
             })
             .catch(error => {
                 console.error('Auth check failed:', error);

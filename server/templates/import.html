@@ -30,7 +30,7 @@
                         <div class="file-upload-content">
                             <span class="file-upload-icon"><i class="fas fa-file-excel"></i></span>
                             <span class="file-upload-text">Drag and drop your Excel file here, or <strong>browse</strong></span>
-                            <span class="file-upload-hint">.xlsx or .xls up to 10MB</span>
+                            <span class="file-upload-hint">.xlsx or .xls (no size limit)</span>
                         </div>
                         <div class="file-name-display" id="fileNameDisplay" aria-live="polite"></div>
                     </div>
@@ -145,6 +145,35 @@
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Book of Business list (XLSX upload) -->
+    <div class="bob-import-section" style="margin-top: 32px;">
+        <div class="glass-card import-step-card">
+            <div class="chart-header">
+                <h3 class="chart-title"><i class="fas fa-book-open"></i> Book of Business List</h3>
+                <p class="chart-subtitle">Upload an XLSX file with company names (one per row, first column). This replaces the current list and recalculates BOB match for all profiles.</p>
+            </div>
+            <form id="bobUploadForm" enctype="multipart/form-data">
+                <div class="form-group file-upload-group">
+                    <label class="file-upload-label">Select XLSX File (company names)</label>
+                    <div class="file-upload-zone bob-upload-zone" id="bobFileUploadZone" role="button" tabindex="0" aria-label="Select BOB XLSX file">
+                        <input type="file" id="bobExcelFile" name="bob_file" accept=".xlsx,.xls" class="file-upload-input" aria-label="BOB Excel file">
+                        <div class="file-upload-content">
+                            <span class="file-upload-icon"><i class="fas fa-file-excel"></i></span>
+                            <span class="file-upload-text">Drag and drop XLSX here, or <strong>browse</strong></span>
+                            <span class="file-upload-hint">.xlsx or .xls, no size limit (encoding preserved for e.g. Chinese names)</span>
+                        </div>
+                        <div class="file-name-display" id="bobFileNameDisplay" aria-live="polite"></div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary import-upload-btn" id="bobUploadBtn">
+                    <i class="fas fa-upload"></i> Import Book of Business
+                </button>
+            </form>
+            <div id="bobUploadError" class="error-message" style="display: none;"></div>
+            <div id="bobUploadSuccess" class="success-message" style="display: none;"></div>
         </div>
     </div>
 </div>

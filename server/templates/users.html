@@ -85,6 +85,19 @@
                 </select>
             </div>
             
+            <div class="form-group">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="useRoleAccess" name="useRoleAccess" checked>
+                    Use role-based access (default pages for this role)
+                </label>
+                <p class="form-hint">Uncheck to choose which pages this user can see.</p>
+            </div>
+            
+            <div class="form-group" id="pageAccessGroup" style="display: none;">
+                <label>Page access</label>
+                <div id="pageAccessCheckboxes" class="page-access-list"></div>
+            </div>
+            
             <div id="formError" class="error-message" style="display: none;"></div>
             
             <div class="modal-footer">
