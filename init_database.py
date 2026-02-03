@@ -78,6 +78,22 @@ def init_database():
                 print("✓ user_pii.utm_medium column verified")
             except Exception as ex:
                 print("⚠ Could not add user_pii.utm_medium (may already exist):", ex)
+
+            # Indexes for dashboard/analytics (faster filters and aggregations)
+            try:
+                from sqlalchemy import text
+                with db.engine.connect() as conn:
+                    for idx_name, idx_sql in [
+                        ('idx_user_pii_registered_at', 'CREATE INDEX IF NOT EXISTS idx_user_pii_registered_at ON user_pii(registered_at)'),
+                        ('idx_user_pii_created_at', 'CREATE INDEX IF NOT EXISTS idx_user_pii_created_at ON user_pii(created_at)'),
+                        ('idx_user_pii_country', 'CREATE INDEX IF NOT EXISTS idx_user_pii_country ON user_pii(country)'),
+                        ('idx_user_pii_bob_match', 'CREATE INDEX IF NOT EXISTS idx_user_pii_bob_match ON user_pii(bob_match)'),
+                    ]:
+                        conn.execute(text(idx_sql))
+                        conn.commit()
+                print("✓ user_pii indexes verified")
+            except Exception as ex:
+                print("⚠ Could not create user_pii indexes (may already exist):", ex)
             
             # Check if admin user exists
             admin_count = User.query.filter_by(role='admin').count()

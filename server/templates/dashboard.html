@@ -86,8 +86,10 @@
                 </div>
                 <div class="kpi-content">
                     <div class="kpi-label">Top India Location</div>
-                    <div class="kpi-value kpi-value-text" id="topIndiaLocation">-</div>
-                    <div class="kpi-meta" id="topIndiaLocationMeta">State & City</div>
+                    <div class="kpi-india-lines" id="topIndiaLocationLines">
+                        <div class="kpi-india-line" id="topIndiaStateLine">—</div>
+                        <div class="kpi-india-line" id="topIndiaCityLine">—</div>
+                    </div>
                     <div class="kpi-change positive" id="topIndiaLocationChange">
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
@@ -102,6 +104,7 @@
                 <div class="kpi-content">
                     <div class="kpi-label">Top APAC Country</div>
                     <div class="kpi-value kpi-value-text" id="topApacCountry">-</div>
+                    <div class="kpi-meta" id="topApacCountryMeta"></div>
                     <div class="kpi-sparkline">
                         <canvas id="topApacCountryMiniChart" width="120" height="32"></canvas>
                     </div>
@@ -109,6 +112,40 @@
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Region registrations: SEA, ANZ, East Asia (just below top cards) -->
+        <div class="region-registrations-row">
+            <div class="glass-card region-card">
+                <div class="region-card-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="region-card-content">
+                    <div class="region-card-label">SEA (Southeast Asia)</div>
+                    <div class="region-card-value" id="seaRegistrations">-</div>
+                    <div class="region-card-meta" id="seaTopCountry">Top: —</div>
+                </div>
+            </div>
+            <div class="glass-card region-card">
+                <div class="region-card-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="region-card-content">
+                    <div class="region-card-label">ANZ (Australia & New Zealand)</div>
+                    <div class="region-card-value" id="anzRegistrations">-</div>
+                    <div class="region-card-meta" id="anzTopCountry">Top: —</div>
+                </div>
+            </div>
+            <div class="glass-card region-card">
+                <div class="region-card-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="region-card-content">
+                    <div class="region-card-label">East Asia</div>
+                    <div class="region-card-value" id="eastAsiaRegistrations">-</div>
+                    <div class="region-card-meta" id="eastAsiaTopCountry">Top: —</div>
                 </div>
             </div>
         </div>

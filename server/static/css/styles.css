@@ -3575,10 +3575,28 @@ body {
     padding-right: 16px;
 }
 
-/* Align action column to center */
+/* Align action column to center; keep Actions column visible (sticky on the right) */
 .profiles-list-table th:last-child,
 .profiles-list-table td:last-child {
     text-align: center;
+    position: sticky;
+    right: 0;
+    background: #FFFFFF;
+    box-shadow: -4px 0 8px rgba(0, 0, 0, 0.06);
+    z-index: 5;
+    min-width: 56px;
+}
+.profiles-list-table thead th:last-child {
+    background: #FAFBFC;
+}
+.profiles-list-table tbody tr:nth-child(even) td:last-child {
+    background: #FAFBFC;
+}
+.profiles-list-table tbody tr:nth-child(odd) td:last-child {
+    background: #FFFFFF;
+}
+.profiles-list-table tbody tr:hover td:last-child {
+    background: #F3F4F6 !important;
 }
 
 /* Subtle Zebra Striping */
@@ -3830,7 +3848,7 @@ body {
     flex: 1;
 }
 
-/* Cohort progress grid (profile modal, before Activity Log) */
+/* Track progress grid (profile modal, before Activity Log) */
 .profile-cohort-grid-section {
     grid-column: 1 / -1;
 }

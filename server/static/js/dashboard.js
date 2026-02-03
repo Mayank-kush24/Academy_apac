@@ -3,8 +3,11 @@
  */
 
 let charts = {};
-let isLoading = false; // Prevent multiple simultaneous loads
-let currentPeriod = 'all'; // Default period (entire dataset)
+let isLoading = false;
+let currentPeriod = 'all';
+let lastLoadedPeriod = null;
+let periodDebounceTimer = null;
+const PERIOD_DEBOUNCE_MS = 280;
 
 // Load dashboard data on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -87,63 +90,53 @@ function setPeriod(period) {
         }
     });
     
-    // Reload dashboard data with new period
-    loadDashboardData();
+    if (periodDebounceTimer) clearTimeout(periodDebounceTimer);
+    periodDebounceTimer = setTimeout(function() {
+        periodDebounceTimer = null;
+        loadDashboardData();
+    }, PERIOD_DEBOUNCE_MS);
 }
 
 /**
- * Load dashboard summary and charts
+ * Load dashboard summary and charts (single combined request, cached on server)
  */
 async function loadDashboardData() {
-    // Prevent multiple simultaneous loads
-    if (isLoading) {
-        return;
-    }
-    
+    if (isLoading) return;
+    if (lastLoadedPeriod === currentPeriod && lastLoadedPeriod !== null) return;
     isLoading = true;
-    
-    // Show loading state (if old structure exists)
+
     const loadingIndicator = document.querySelector('.command-bar');
-    if (loadingIndicator) {
-        loadingIndicator.style.opacity = '0.7';
-    }
-    
+    if (loadingIndicator) loadingIndicator.style.opacity = '0.7';
+
     try {
-        // Load summary with period parameter
-        const summaryUrl = `/api/dashboard/summary?period=${currentPeriod}`;
-        const summaryResponse = await authenticatedFetch(summaryUrl);
+        const dataUrl = `/api/dashboard/data?period=${currentPeriod}`;
+        const response = await authenticatedFetch(dataUrl);
         let summary = null;
-        if (summaryResponse.ok) {
-            summary = await summaryResponse.json();
-        } else {
+        let chartsData = null;
+        if (response.ok) {
+            const data = await response.json();
+            summary = data.summary || null;
+            chartsData = data.charts || null;
+        }
+        if (!summary) {
             summary = {
-                total_users: 0,
-                unique_organizations: 0,
-                top_domain: 'N/A',
-                top_city: 'N/A',
-                average_age: null,
-                apac_except_india_users: 0,
-                top_india_state: 'N/A',
-                top_india_city: 'N/A',
-                top_apac_country: 'N/A',
-                previous_period_total_users: null,
-                previous_period_apac_users: null,
-                previous_period_average_age: null
+                total_users: 0, unique_organizations: 0, top_domain: 'N/A', top_city: 'N/A',
+                average_age: null, apac_except_india_users: 0, top_india_state: 'N/A',
+                top_india_city: 'N/A', top_apac_country: 'N/A',
+                sea_registrations: 0, sea_top_country: 'N/A', anz_registrations: 0, anz_top_country: 'N/A',
+                east_asia_registrations: 0, east_asia_top_country: 'N/A',
+                previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
             };
         }
-        
-        const chartsUrl = `/api/dashboard/charts?period=${currentPeriod}`;
-        const chartsResponse = await authenticatedFetch(chartsUrl);
-        let chartsData = null;
-        if (chartsResponse.ok) {
-            chartsData = await chartsResponse.json();
-        } else {
+        if (!chartsData) {
             chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], top_cities: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
+        lastLoadedPeriod = currentPeriod;
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
+        lastLoadedPeriod = null;
         // Show empty state instead of error
         updateKPICards({
             total_users: 0,
@@ -154,7 +147,13 @@ async function loadDashboardData() {
             apac_except_india_users: 0,
             top_india_state: 'N/A',
             top_india_city: 'N/A',
-            top_apac_country: 'N/A'
+            top_apac_country: 'N/A',
+            sea_registrations: 0,
+            sea_top_country: 'N/A',
+            anz_registrations: 0,
+            anz_top_country: 'N/A',
+            east_asia_registrations: 0,
+            east_asia_top_country: 'N/A'
         });
         renderCharts({
             registration_trends: [],
@@ -212,25 +211,29 @@ function updateKPICards(summary, chartsData) {
     updateKPITrend('averageAgeChange', avgAge || 0, summary.previous_period_average_age, '—');
     renderMiniChart('averageAgeMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(avgAge || 0));
 
-    const topIndiaLocationEl = document.getElementById('topIndiaLocation');
-    const topIndiaLocationMetaEl = document.getElementById('topIndiaLocationMeta');
-    if (topIndiaLocationEl) {
+    const topIndiaStateLineEl = document.getElementById('topIndiaStateLine');
+    const topIndiaCityLineEl = document.getElementById('topIndiaCityLine');
+    if (topIndiaStateLineEl) {
         const state = summary.top_india_state || 'N/A';
-        const city = summary.top_india_city || 'N/A';
-        if (state !== 'N/A' && city !== 'N/A') topIndiaLocationEl.textContent = `${city}, ${state}`;
-        else if (state !== 'N/A') topIndiaLocationEl.textContent = state;
-        else if (city !== 'N/A') topIndiaLocationEl.textContent = city;
-        else topIndiaLocationEl.textContent = 'N/A';
+        const stateCount = summary.top_india_state_count;
+        const stateReg = (stateCount != null && stateCount !== undefined) ? formatNumber(stateCount) + ' reg' : '—';
+        topIndiaStateLineEl.textContent = state + ' : ' + stateReg;
     }
-    if (topIndiaLocationMetaEl) {
-        const state = summary.top_india_state || 'N/A';
+    if (topIndiaCityLineEl) {
         const city = summary.top_india_city || 'N/A';
-        topIndiaLocationMetaEl.textContent = (state !== 'N/A' && city !== 'N/A') ? `${state} State` : 'India';
+        const cityCount = summary.top_india_city_count;
+        const cityReg = (cityCount != null && cityCount !== undefined) ? formatNumber(cityCount) + ' reg' : '—';
+        topIndiaCityLineEl.textContent = city + ' : ' + cityReg;
     }
     updateKPITrend('topIndiaLocationChange', null, null, '—');
 
     const topApacCountryEl = document.getElementById('topApacCountry');
+    const topApacCountryMetaEl = document.getElementById('topApacCountryMeta');
     if (topApacCountryEl) topApacCountryEl.textContent = summary.top_apac_country || 'N/A';
+    if (topApacCountryMetaEl) {
+        const count = summary.top_apac_country_count;
+        topApacCountryMetaEl.textContent = (count != null && count !== undefined) ? formatNumber(count) + ' registration' + (count !== 1 ? 's' : '') : '';
+    }
     updateKPITrend('topApacCountryChange', null, null, '—');
     renderMiniChart('topApacCountryMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(0));
 
@@ -239,6 +242,22 @@ function updateKPICards(summary, chartsData) {
         const bobCount = summary.book_of_business_registrations;
         bookOfBusinessEl.textContent = (bobCount !== undefined && bobCount !== null) ? formatNumber(bobCount) : '-';
     }
+
+    // Region cards: SEA, ANZ, East Asia
+    const seaRegEl = document.getElementById('seaRegistrations');
+    if (seaRegEl) seaRegEl.textContent = (summary.sea_registrations !== undefined && summary.sea_registrations !== null) ? formatNumber(summary.sea_registrations) : '-';
+    const seaTopEl = document.getElementById('seaTopCountry');
+    if (seaTopEl) seaTopEl.textContent = 'Top: ' + (summary.sea_top_country || '—');
+
+    const anzRegEl = document.getElementById('anzRegistrations');
+    if (anzRegEl) anzRegEl.textContent = (summary.anz_registrations !== undefined && summary.anz_registrations !== null) ? formatNumber(summary.anz_registrations) : '-';
+    const anzTopEl = document.getElementById('anzTopCountry');
+    if (anzTopEl) anzTopEl.textContent = 'Top: ' + (summary.anz_top_country || '—');
+
+    const eastAsiaRegEl = document.getElementById('eastAsiaRegistrations');
+    if (eastAsiaRegEl) eastAsiaRegEl.textContent = (summary.east_asia_registrations !== undefined && summary.east_asia_registrations !== null) ? formatNumber(summary.east_asia_registrations) : '-';
+    const eastAsiaTopEl = document.getElementById('eastAsiaTopCountry');
+    if (eastAsiaTopEl) eastAsiaTopEl.textContent = 'Top: ' + (summary.east_asia_top_country || '—');
 
     updateHeaderUserInfo();
 }
@@ -631,10 +650,16 @@ function renderApacMapHeatmap(countryData) {
                 .scale(width * 0.42)
                 .translate([width / 2, height / 2]);
             var path = d3.geoPath().projection(projection);
-            /* Use sqrt scale so lower-count countries get visible oranges; India (highest) stays darkest. */
+            /* Color scale: 0–1 so we can apply a floor for non-India countries (data is India-skewed). */
             var maxSqrt = Math.sqrt(Math.max(maxCount || 1, 1));
             var colorScale = d3.scaleSequential(d3.interpolateOranges)
-                .domain([0, maxSqrt]);
+                .domain([0, 1]);
+            /* Give any country with registrations at least 0.25 on the scale so they show a visible shade; India stays darkest at 1. */
+            function colorValue(count) {
+                if (count <= 0) return 0;
+                var t = Math.sqrt(count) / maxSqrt;
+                return 0.25 + 0.75 * Math.min(t, 1);
+            }
 
             var svg = d3.select(container)
                 .append('svg')
@@ -652,7 +677,7 @@ function renderApacMapHeatmap(countryData) {
                 .attr('fill', function (d) {
                     var name = (d.properties && d.properties.name) ? d.properties.name : '';
                     var count = countForCountry(name);
-                    return colorScale(count > 0 ? Math.sqrt(count) : 0);
+                    return colorScale(colorValue(count));
                 })
                 .attr('stroke', '#000')
                 .attr('stroke-width', 1)
@@ -1080,6 +1105,12 @@ window.exportData = async function exportData(event) {
             csvContent += `Top India State,${summary.top_india_state || 'N/A'}\n`;
             csvContent += `Top India City,${summary.top_india_city || 'N/A'}\n`;
             csvContent += `Top APAC Country,${summary.top_apac_country || 'N/A'}\n`;
+            csvContent += `SEA Registrations,${summary.sea_registrations ?? ''}\n`;
+            csvContent += `SEA Top Country,${summary.sea_top_country || 'N/A'}\n`;
+            csvContent += `ANZ Registrations,${summary.anz_registrations ?? ''}\n`;
+            csvContent += `ANZ Top Country,${summary.anz_top_country || 'N/A'}\n`;
+            csvContent += `East Asia Registrations,${summary.east_asia_registrations ?? ''}\n`;
+            csvContent += `East Asia Top Country,${summary.east_asia_top_country || 'N/A'}\n`;
             csvContent += `Unique Organizations,${summary.unique_organizations}\n`;
             csvContent += `Top Domain,${summary.top_domain}\n`;
             csvContent += `Top City,${summary.top_city}\n\n`;
@@ -1398,13 +1429,17 @@ function renderBarChart(canvasId, title, data) {
     const chartContainer = ctx.parentElement;
     if (chartContainer) {
         chartContainer.style.pointerEvents = 'auto';
-        // Set explicit height for bar charts (medium size for ranking cards)
+        // Ranking cards (Top Cities, Top Organizations): fill entire card via flex
         const isRanking = chartContainer.closest('.chart-ranking');
-        const height = isRanking ? '280px' : '360px';
-        chartContainer.style.height = height;
-        chartContainer.style.minHeight = height;
-        chartContainer.style.maxHeight = height;
-        ctx.style.height = height;
+        if (isRanking) {
+            ctx.style.height = '100%';
+        } else {
+            const height = '360px';
+            chartContainer.style.height = height;
+            chartContainer.style.minHeight = height;
+            chartContainer.style.maxHeight = height;
+            ctx.style.height = height;
+        }
         ctx.style.width = '100%';
     }
     const messageEl = chartContainer.querySelector('.empty-chart-message');

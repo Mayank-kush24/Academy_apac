@@ -11,34 +11,58 @@ from server.utils.cache import cache_result
 
 bp = Blueprint('dashboard', __name__)
 
+# Module-level cached combined dashboard (summary + charts) - one cache entry per period
+@cache_result(ttl=300)
+def _get_dashboard_data_cached(period):
+    """Fetch summary and charts in one go; cached for 5 min."""
+    summary = _fetch_summary_data(period)
+    charts = _fetch_charts_data(period, summary=summary)
+    return {'summary': summary, 'charts': charts}
+
+
+@bp.route('/data', methods=['GET'])
+@require_page_access('dashboard')
+def get_dashboard_data():
+    """Combined dashboard summary + charts (single request, cached)."""
+    try:
+        period = request.args.get('period', 'all')
+        result = _get_dashboard_data_cached(period)
+        return jsonify(result), 200
+    except Exception:
+        return jsonify({
+            'summary': {
+                'total_users': 0, 'apac_except_india_users': 0, 'top_india_state': 'N/A',
+                'top_india_city': 'N/A', 'top_india_state_count': None, 'top_india_city_count': None, 'top_india_location_count': None, 'top_apac_country': 'N/A',
+                'top_apac_country_count': None,
+                'sea_registrations': 0, 'sea_top_country': 'N/A',
+                'anz_registrations': 0, 'anz_top_country': 'N/A',
+                'east_asia_registrations': 0, 'east_asia_top_country': 'N/A'
+            },
+            'charts': {
+                'registration_trends': [], 'gender_distribution': [],
+                'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
+                'occupation_distribution': [], 'top_domains': [], 'top_cities': [], 'top_organizations': [],
+                'india_state_registrations': [], 'apac_country_registrations': []
+            }
+        }), 200
+
 
 @bp.route('/summary', methods=['GET'])
 @require_page_access('dashboard')
 def get_summary():
-    """Get dashboard summary statistics (cached)"""
-    from server.utils.cache import cache_result
-    
-    @cache_result(ttl=300)  # Cache for 5 minutes
-    def _get_summary(period):
-        """Internal function to fetch summary (cached)"""
-        return _fetch_summary_data(period)
-    
+    """Get dashboard summary statistics. Prefer GET /data for single round-trip + cache."""
     try:
         period = request.args.get('period', 'all')
-        result = _get_summary(period)
+        result = _fetch_summary_data(period)
         return jsonify(result), 200
-    except Exception as e:
-        # Return empty data instead of error
+    except Exception:
         return jsonify({
-            'total_users': 0,
-            'unique_organizations': 0,
-            'top_domain': 'N/A',
-            'top_city': 'N/A',
-            'average_age': None,
-            'apac_except_india_users': 0,
-            'top_india_state': 'N/A',
-            'top_india_city': 'N/A',
-            'top_apac_country': 'N/A'
+            'total_users': 0, 'unique_organizations': 0, 'top_domain': 'N/A', 'top_city': 'N/A',
+            'average_age': None, 'apac_except_india_users': 0, 'top_india_state': 'N/A',
+            'top_india_city': 'N/A', 'top_apac_country': 'N/A',
+            'sea_registrations': 0, 'sea_top_country': 'N/A',
+            'anz_registrations': 0, 'anz_top_country': 'N/A',
+            'east_asia_registrations': 0, 'east_asia_top_country': 'N/A'
         }), 200
 
 
@@ -303,6 +327,18 @@ def _fetch_summary_data(period):
             'Singapore', 'South Korea', 'Sri Lanka', 'Taiwan', 'Thailand',
             'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
         ]
+        # SEA (Southeast Asia)
+        SEA_COUNTRIES = [
+            'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
+            'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
+        ]
+        # ANZ (Australia & New Zealand)
+        ANZ_COUNTRIES = ['Australia', 'New Zealand']
+        # East Asia
+        EAST_ASIA_COUNTRIES = [
+            'China', 'Hong Kong', 'Japan', 'South Korea', 'North Korea',
+            'Taiwan', 'Mongolia'
+        ]
         
         # Users from APAC except India
         apac_except_india_count = 0
@@ -330,9 +366,11 @@ def _fetch_summary_data(period):
             traceback.print_exc()
             apac_except_india_count = 0
         
-        # Top state and city from India
+        # Top state and city from India (with counts)
         top_india_state = None
         top_india_city = None
+        top_india_state_count = None
+        top_india_city_count = None
         try:
             india_state_query = db.session.query(
                 UserPII.state,
@@ -347,7 +385,9 @@ def _fetch_summary_data(period):
             top_india_state_result = india_state_query.group_by(
                 UserPII.state
             ).order_by(desc('count')).first()
-            top_india_state = top_india_state_result[0] if top_india_state_result else None
+            if top_india_state_result:
+                top_india_state = top_india_state_result[0]
+                top_india_state_count = top_india_state_result[1]
             
             india_city_query = db.session.query(
                 UserPII.city,
@@ -362,14 +402,19 @@ def _fetch_summary_data(period):
             top_india_city_result = india_city_query.group_by(
                 UserPII.city
             ).order_by(desc('count')).first()
-            top_india_city = top_india_city_result[0] if top_india_city_result else None
+            if top_india_city_result:
+                top_india_city = top_india_city_result[0]
+                top_india_city_count = top_india_city_result[1]
         except Exception as e:
             print(f"Error calculating India stats: {e}")
             top_india_state = None
             top_india_city = None
+            top_india_state_count = None
+            top_india_city_count = None
         
-        # Top country from APAC except India
+        # Top country from APAC except India (with count)
         top_apac_country = None
+        top_apac_country_count = None
         try:
             # Filter for APAC countries (case-insensitive), excluding India
             apac_conditions = [UserPII.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
@@ -388,13 +433,60 @@ def _fetch_summary_data(period):
             top_apac_country_result = apac_country_query.group_by(
                 UserPII.country
             ).order_by(desc('count')).first()
-            top_apac_country = top_apac_country_result[0] if top_apac_country_result else None
+            if top_apac_country_result:
+                top_apac_country = top_apac_country_result[0]
+                top_apac_country_count = top_apac_country_result[1]
         except Exception as e:
             print(f"Error calculating top APAC country: {e}")
             import traceback
             traceback.print_exc()
             top_apac_country = None
-        
+            top_apac_country_count = None
+
+        # SEA, ANZ, East Asia: per-region count and top country (base_query has date filter)
+        sea_registrations = 0
+        sea_top_country = None
+        anz_registrations = 0
+        anz_top_country = None
+        east_asia_registrations = 0
+        east_asia_top_country = None
+        try:
+            for region_name, countries in [
+                ('sea', SEA_COUNTRIES),
+                ('anz', ANZ_COUNTRIES),
+                ('east_asia', EAST_ASIA_COUNTRIES)
+            ]:
+                conds = [UserPII.country.ilike(f'%{c}%') for c in countries]
+                region_query = base_query.filter(
+                    UserPII.country.isnot(None),
+                    UserPII.country != '',
+                    or_(*conds)
+                )
+                count = region_query.count() or 0
+                top_q = db.session.query(
+                    UserPII.country,
+                    func.count(UserPII.id).label('count')
+                ).filter(
+                    UserPII.country.isnot(None),
+                    UserPII.country != '',
+                    or_(*conds)
+                )
+                if date_cond is not None:
+                    top_q = top_q.filter(date_cond)
+                top_result = top_q.group_by(UserPII.country).order_by(desc('count')).first()
+                top_country = top_result[0] if top_result else None
+                if region_name == 'sea':
+                    sea_registrations = count
+                    sea_top_country = top_country
+                elif region_name == 'anz':
+                    anz_registrations = count
+                    anz_top_country = top_country
+                else:
+                    east_asia_registrations = count
+                    east_asia_top_country = top_country
+        except Exception as e:
+            print(f"Error calculating region stats (SEA/ANZ/East Asia): {e}")
+
         # Previous period metrics for week-on-week / period-on-period
         prev_total_users = None
         prev_apac_users = None
@@ -442,7 +534,17 @@ def _fetch_summary_data(period):
             'apac_except_india_users': apac_except_india_count,
             'top_india_state': top_india_state or 'N/A',
             'top_india_city': top_india_city or 'N/A',
+            'top_india_state_count': top_india_state_count,
+            'top_india_city_count': top_india_city_count,
+            'top_india_location_count': top_india_city_count if top_india_city_count is not None else top_india_state_count,
             'top_apac_country': top_apac_country or 'N/A',
+            'top_apac_country_count': top_apac_country_count,
+            'sea_registrations': sea_registrations,
+            'sea_top_country': sea_top_country or 'N/A',
+            'anz_registrations': anz_registrations,
+            'anz_top_country': anz_top_country or 'N/A',
+            'east_asia_registrations': east_asia_registrations,
+            'east_asia_top_country': east_asia_top_country or 'N/A',
             'book_of_business_registrations': book_of_business_registrations,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
@@ -459,7 +561,17 @@ def _fetch_summary_data(period):
             'apac_except_india_users': 0,
             'top_india_state': 'N/A',
             'top_india_city': 'N/A',
+            'top_india_state_count': None,
+            'top_india_city_count': None,
+            'top_india_location_count': None,
             'top_apac_country': 'N/A',
+            'top_apac_country_count': None,
+            'sea_registrations': 0,
+            'sea_top_country': 'N/A',
+            'anz_registrations': 0,
+            'anz_top_country': 'N/A',
+            'east_asia_registrations': 0,
+            'east_asia_top_country': 'N/A',
             'book_of_business_registrations': 0,
             'previous_period_total_users': None,
             'previous_period_apac_users': None,
@@ -538,8 +650,8 @@ def get_charts():
         }), 200
 
 
-def _fetch_charts_data(period):
-    """Internal function to fetch charts data. period: 'all', 'month', '7d', '30d', '90d'."""
+def _fetch_charts_data(period, summary=None):
+    """Internal function to fetch charts data. If summary is provided (e.g. from combined /data), reuse total_users for registration source to avoid extra count query."""
     try:
         cutoff_date = _get_period_dates(period)
         date_cond = _date_filter_condition(cutoff_date)
@@ -570,11 +682,11 @@ def _fetch_charts_data(period):
         # Registration source bifurcation: utm_medium = 'google' -> Google, else -> Hack2skill
         registration_source_bifurcation = []
         try:
-            total_users_period = base_query.count() or 0
+            total_users_period = (summary.get('total_users', 0) or 0) if summary else (base_query.count() or 0)
             google_count = base_query.filter(UserPII.utm_medium.isnot(None)).filter(
                 func.lower(func.trim(UserPII.utm_medium)) == 'google'
             ).count() or 0
-            hack2skill_count = total_users_period - google_count
+            hack2skill_count = max(0, total_users_period - google_count)
             registration_source_bifurcation = [
                 {'label': 'Google', 'value': google_count},
                 {'label': 'Hack2skill', 'value': hack2skill_count}

@@ -325,14 +325,14 @@ window.viewProfileDetails = function(profileId) {
                 </div>
                 
                 <div class="detail-section profile-cohort-grid-section">
-                    <h4><i class="fas fa-th-large"></i> Cohort progress</h4>
-                    <table class="profile-cohort-grid" aria-label="Cohort progress by activity">
+                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
                         <thead>
                             <tr>
-                                <th></th>
                                 <th>COHORT 1</th>
-                                <th>COHORT 2</th>
-                                <th>COHORT 3</th>
+                                <th>Track 1</th>
+                                <th>Track 2</th>
+                                <th>Track 3</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -535,7 +535,7 @@ async function loadProfiles() {
         const tbody = document.getElementById('profilesListBody');
         if (tbody) {
             tbody.innerHTML = 
-                '<tr><td colspan="10" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+                '<tr><td colspan="9" class="error-state">Failed to load profiles. Please try again.</td></tr>';
         }
     }
 }
@@ -547,7 +547,7 @@ function renderProfiles(profiles) {
     const tbody = document.getElementById('profilesListBody');
     
     if (profiles.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No profiles found matching your criteria.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No profiles found matching your criteria.</td></tr>';
         return;
     }
     
@@ -580,9 +580,6 @@ function renderProfiles(profiles) {
             </td>
             <td>
                 <span class="profile-list-location">${escapeHtml(formatLocation(profile))}</span>
-            </td>
-            <td>
-                <span class="profile-list-designation">${escapeHtml(profile.designation || 'N/A')}</span>
             </td>
             <td>
                 <div class="profile-list-social">
@@ -798,14 +795,14 @@ async function viewProfileDetails(profileId) {
                 </div>
                 
                 <div class="detail-section profile-cohort-grid-section">
-                    <h4><i class="fas fa-th-large"></i> Cohort progress</h4>
-                    <table class="profile-cohort-grid" aria-label="Cohort progress by activity">
+                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
                         <thead>
                             <tr>
-                                <th></th>
                                 <th>COHORT 1</th>
-                                <th>COHORT 2</th>
-                                <th>COHORT 3</th>
+                                <th>Track 1</th>
+                                <th>Track 2</th>
+                                <th>Track 3</th>
                             </tr>
                         </thead>
                         <tbody>

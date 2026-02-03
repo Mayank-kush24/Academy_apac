@@ -14,6 +14,7 @@ from server.utils.excel_parser import (
     import_data
 )
 from server.utils.bob_match import recalculate_bob_match, _normalize
+from server.utils.cache import clear_cache
 
 bp = Blueprint('import', __name__)
 
@@ -133,6 +134,12 @@ def execute_import():
         except Exception:
             pass
         
+        # Invalidate dashboard cache so next load shows fresh data
+        try:
+            clear_cache('_get_dashboard_data_cached')
+        except Exception:
+            pass
+        
         # Clean up temp file
         try:
             os.remove(file_path)
@@ -200,6 +207,11 @@ def import_bob_companies():
             db.session.commit()
 
         updated = recalculate_bob_match()
+
+        try:
+            clear_cache('_get_dashboard_data_cached')
+        except Exception:
+            pass
 
         return jsonify({
             'companies_imported': len(company_names),
