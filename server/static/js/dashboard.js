@@ -129,7 +129,7 @@ async function loadDashboardData() {
             };
         }
         if (!chartsData) {
-            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], top_cities: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
+            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
@@ -162,6 +162,7 @@ async function loadDashboardData() {
             occupation_distribution: [],
             top_domains: [],
             top_cities: [],
+            top_cities_outside_india: [],
             top_organizations: [],
             india_state_registrations: [],
             apac_country_registrations: []
@@ -185,6 +186,11 @@ function updateKPICards(summary, chartsData) {
     const formatNumber = (num) => {
         if (typeof num !== 'number') return num;
         return num.toLocaleString();
+    };
+    const escapeHtml = (s) => {
+        const el = document.createElement('span');
+        el.textContent = s;
+        return el.innerHTML;
     };
     const trendValues = (chartsData && chartsData.registration_trends && Array.isArray(chartsData.registration_trends))
         ? chartsData.registration_trends.map(t => t.value)
@@ -217,22 +223,32 @@ function updateKPICards(summary, chartsData) {
         const state = summary.top_india_state || 'N/A';
         const stateCount = summary.top_india_state_count;
         const stateReg = (stateCount != null && stateCount !== undefined) ? formatNumber(stateCount) + ' reg' : '—';
-        topIndiaStateLineEl.textContent = state + ' : ' + stateReg;
+        topIndiaStateLineEl.innerHTML = escapeHtml(state) + ' <span class="kpi-count-muted">: ' + escapeHtml(stateReg) + '</span>';
     }
     if (topIndiaCityLineEl) {
         const city = summary.top_india_city || 'N/A';
         const cityCount = summary.top_india_city_count;
         const cityReg = (cityCount != null && cityCount !== undefined) ? formatNumber(cityCount) + ' reg' : '—';
-        topIndiaCityLineEl.textContent = city + ' : ' + cityReg;
+        topIndiaCityLineEl.innerHTML = escapeHtml(city) + ' <span class="kpi-count-muted">: ' + escapeHtml(cityReg) + '</span>';
     }
     updateKPITrend('topIndiaLocationChange', null, null, '—');
 
-    const topApacCountryEl = document.getElementById('topApacCountry');
-    const topApacCountryMetaEl = document.getElementById('topApacCountryMeta');
-    if (topApacCountryEl) topApacCountryEl.textContent = summary.top_apac_country || 'N/A';
-    if (topApacCountryMetaEl) {
-        const count = summary.top_apac_country_count;
-        topApacCountryMetaEl.textContent = (count != null && count !== undefined) ? formatNumber(count) + ' registration' + (count !== 1 ? 's' : '') : '';
+    const topOutsideIndiaCountryLineEl = document.getElementById('topOutsideIndiaCountryLine');
+    const topOutsideIndiaCityLineEl = document.getElementById('topOutsideIndiaCityLine');
+    if (topOutsideIndiaCountryLineEl) {
+        const country = summary.top_apac_country || 'N/A';
+        const countryCount = summary.top_apac_country_count;
+        const countryReg = (countryCount != null && countryCount !== undefined) ? formatNumber(countryCount) + ' reg' : '—';
+        topOutsideIndiaCountryLineEl.innerHTML = escapeHtml(country) + ' <span class="kpi-count-muted">: ' + escapeHtml(countryReg) + '</span>';
+    }
+    if (topOutsideIndiaCityLineEl && chartsData && Array.isArray(chartsData.top_cities_outside_india) && chartsData.top_cities_outside_india.length > 0) {
+        const first = chartsData.top_cities_outside_india[0];
+        const label = first.label || '';
+        const value = first.value != null && first.value !== undefined ? first.value : 0;
+        const regText = formatNumber(value) + ' reg';
+        topOutsideIndiaCityLineEl.innerHTML = label ? (escapeHtml(label) + ' <span class="kpi-count-muted">: ' + escapeHtml(regText) + '</span>') : '—';
+    } else if (topOutsideIndiaCityLineEl) {
+        topOutsideIndiaCityLineEl.textContent = '—';
     }
     updateKPITrend('topApacCountryChange', null, null, '—');
     renderMiniChart('topApacCountryMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(0));
@@ -404,13 +420,6 @@ function renderCharts(data, summary = null) {
         showEmptyChart('registrationSourceChart', 'No registration source data available');
     }
     
-    // Occupation distribution (Donut)
-    if (data.occupation_distribution && data.occupation_distribution.length > 0) {
-        renderDonutChart('occupationChart', 'Occupation Distribution', data.occupation_distribution, { palette: 'occupation' });
-    } else {
-        showEmptyChart('occupationChart', 'No occupation data available');
-    }
-    
     // Top Domains (Bar Chart) - User Segmentation only (no separate Top Domains card)
     if (data.top_domains && data.top_domains.length > 0) {
         renderBarChart('domainsChart', 'Top Domains', data.top_domains);
@@ -423,6 +432,13 @@ function renderCharts(data, summary = null) {
         renderBarChart('citiesChart', 'Top Cities', data.top_cities);
     } else {
         showEmptyChart('citiesChart', 'No city data available');
+    }
+
+    // Top cities outside India (Bar Chart) – label format "City (Country)"
+    if (data.top_cities_outside_india && data.top_cities_outside_india.length > 0) {
+        renderBarChart('citiesOutsideIndiaChart', 'Top cities outside India', data.top_cities_outside_india);
+    } else {
+        showEmptyChart('citiesOutsideIndiaChart', 'No city data outside India');
     }
     
     // Top Organizations (Bar Chart)
@@ -591,7 +607,8 @@ var APAC_GEO_NAMES = new Set([
     'hong kong', 'indonesia', 'japan', 'laos', 'malaysia', 'maldives', 'mongolia', 'myanmar',
     'nepal', 'new zealand', 'north korea', 'pakistan', 'papua new guinea', 'philippines',
     'singapore', 'south korea', 'sri lanka', 'taiwan', 'thailand', 'timor-leste', 'vietnam',
-    'korea, republic of', 'lao pdr', 'viet nam', 'brunei darussalam', "democratic people's republic of korea"
+    'korea, republic of', 'lao pdr', 'viet nam', 'brunei darussalam', "democratic people's republic of korea",
+    'republic of singapore'
 ]);
 
 /** Map GeoJSON country name (lowercase) to API lookup key. */
@@ -602,6 +619,7 @@ function apacGeoNameToKey(name) {
     if (n === 'lao pdr') return 'laos';
     if (n === 'viet nam') return 'vietnam';
     if (n === 'brunei darussalam') return 'brunei';
+    if (n === 'republic of singapore') return 'singapore';
     return n;
 }
 
@@ -635,8 +653,14 @@ function renderApacMapHeatmap(countryData) {
                 container.innerHTML = '<p class="chart-empty">Unable to load world map data.</p>';
                 return;
             }
+            /* Exclude India: only show APAC outside India (“Outside Indian Registrations”). */
+            function isIndia(geoName) {
+                var n = (geoName || '').toLowerCase().trim();
+                return n === 'india';
+            }
             var apacFeatures = geojson.features.filter(function (f) {
                 var name = (f.properties && f.properties.name) ? String(f.properties.name).trim() : '';
+                if (isIndia(name)) return false;
                 return APAC_GEO_NAMES.has(name.toLowerCase()) || APAC_GEO_NAMES.has(apacGeoNameToKey(name));
             });
             if (apacFeatures.length === 0) {
@@ -650,15 +674,14 @@ function renderApacMapHeatmap(countryData) {
                 .scale(width * 0.42)
                 .translate([width / 2, height / 2]);
             var path = d3.geoPath().projection(projection);
-            /* Color scale: 0–1 so we can apply a floor for non-India countries (data is India-skewed). */
+            /* Color scale: max is top country (no India), so top country = darkest. */
             var maxSqrt = Math.sqrt(Math.max(maxCount || 1, 1));
             var colorScale = d3.scaleSequential(d3.interpolateOranges)
                 .domain([0, 1]);
-            /* Give any country with registrations at least 0.25 on the scale so they show a visible shade; India stays darkest at 1. */
             function colorValue(count) {
                 if (count <= 0) return 0;
                 var t = Math.sqrt(count) / maxSqrt;
-                return 0.25 + 0.75 * Math.min(t, 1);
+                return 0.2 + 0.8 * Math.min(t, 1);
             }
 
             var svg = d3.select(container)
@@ -1511,7 +1534,7 @@ function renderBarChart(canvasId, title, data) {
                 padding: {
                     top: 4,
                     right: 8,
-                    bottom: 80, // Increased bottom padding to accommodate rotated labels
+                    bottom: 120, // Extra space for rotated X-axis labels (e.g. City (Country))
                     left: 4
                 }
             },

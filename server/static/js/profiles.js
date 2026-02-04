@@ -1008,13 +1008,17 @@ function clearFilters() {
 function toggleFilters() {
     const content = document.getElementById('filtersContent');
     const icon = document.getElementById('filterToggleIcon');
-    
-    if (content.style.display === 'none') {
-        content.style.display = 'block';
+    if (!content || !icon) return;
+
+    const isCollapsed = content.classList.contains('filters-content--collapsed');
+    if (isCollapsed) {
+        content.classList.remove('filters-content--collapsed');
+        content.setAttribute('aria-expanded', 'true');
         icon.classList.remove('fa-chevron-down');
         icon.classList.add('fa-chevron-up');
     } else {
-        content.style.display = 'none';
+        content.classList.add('filters-content--collapsed');
+        content.setAttribute('aria-expanded', 'false');
         icon.classList.remove('fa-chevron-up');
         icon.classList.add('fa-chevron-down');
     }

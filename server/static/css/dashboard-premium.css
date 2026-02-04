@@ -313,7 +313,7 @@
 .kpi-hero {
     padding: 24px;
     display: flex;
-    gap: 16px;
+    gap: 20px;
     align-items: flex-start;
     animation: slideInUp 0.5s ease-out;
     animation-fill-mode: both;
@@ -460,12 +460,17 @@
     color: white;
     font-size: 20px;
     flex-shrink: 0;
+    align-self: flex-start;
     box-shadow: 0 4px 12px rgba(255, 122, 24, 0.3);
 }
 
 .kpi-content {
     flex: 1;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
 }
 
 .kpi-label {
@@ -475,7 +480,16 @@
     color: #9ca3af;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
+}
+
+/* Overline-style label for location/country cards (smaller, more letter-spacing) */
+.kpi-label-overline {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    color: #94a3b8;
+    margin-bottom: 2px;
 }
 
 .kpi-value {
@@ -484,25 +498,32 @@
     font-weight: 700;
     color: #1a1a1a;
     line-height: 1.2;
-    margin-bottom: 12px;
+    margin-bottom: 0;
     letter-spacing: -0.02em;
 }
 
 .kpi-value-text {
-    font-size: 20px;
-    font-weight: 600;
+    font-size: 18px;
+    font-weight: 700;
     line-height: 1.3;
+    color: #1a1a1a;
+}
+
+/* Muted registration count (e.g. " : 964 reg") for focus on location name */
+.kpi-count-muted {
+    color: #64748b;
+    font-weight: 500;
 }
 
 /* Top India Location: two lines (state : count, city : count) */
 .kpi-india-lines {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 4px;
 }
 .kpi-india-line {
     font-size: 15px;
-    font-weight: 600;
+    font-weight: 700;
     color: #1a1a1a;
     line-height: 1.35;
 }
@@ -514,15 +535,16 @@
     font-family: 'Inter', sans-serif;
     font-size: 11px;
     font-weight: 500;
-    color: #9ca3af;
+    color: #64748b;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-top: 4px;
+    margin-top: 0;
 }
 
 .kpi-sparkline {
     height: 32px;
-    margin-bottom: 8px;
+    margin-top: 4px;
+    margin-bottom: 0;
     opacity: 0.6;
 }
 
@@ -585,7 +607,7 @@
 /* Registration source + Gender bifurcation side by side */
 .bifurcation-row {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(2, 1fr);
     gap: 24px;
     margin-bottom: 32px;
 }
@@ -784,11 +806,16 @@
     margin-bottom: 32px;
 }
 
+/* Single card row (e.g. Top Organizations below cities) */
+.ranking-row-single {
+    grid-template-columns: 1fr;
+}
+
 .chart-ranking {
     padding: 24px;
     display: flex;
     flex-direction: column;
-    min-height: 420px;
+    min-height: 520px;
 }
 
 .chart-ranking .chart-header {
@@ -798,7 +825,7 @@
 /* Chart fills remaining card space (Top Cities, Top Organizations) */
 .ranking-row .chart-ranking .chart-container-medium {
     flex: 1;
-    min-height: 280px;
+    min-height: 380px;
     height: auto;
     position: relative;
     display: flex;
@@ -808,6 +835,14 @@
 .ranking-row .chart-ranking .chart-container-medium canvas {
     width: 100% !important;
     height: 100% !important;
+}
+
+/* Taller chart for full-width Top Organizations card */
+.ranking-row-single .chart-ranking {
+    min-height: 640px;
+}
+.ranking-row-single .chart-ranking .chart-container-medium {
+    min-height: 500px;
 }
 
 .chart-container-medium {
@@ -1259,7 +1294,58 @@
 
 .users-page .table-container {
     overflow-x: auto;
+    overflow-y: auto;
     border-radius: 12px;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Users table: min-width so horizontal scroll appears on small screens */
+.users-page .data-table {
+    min-width: 640px;
+}
+
+/* Responsive: scrollable Users page on small screens */
+@media (max-width: 1024px) {
+    .users-page {
+        overflow-x: auto;
+        overflow-y: visible;
+        -webkit-overflow-scrolling: touch;
+        min-height: 0;
+    }
+    .users-page .table-container {
+        max-height: calc(100vh - 280px);
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .users-page .data-table {
+        min-width: 640px;
+    }
+}
+
+@media (max-width: 640px) {
+    .users-page {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .users-page .dashboard-header {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+    .users-page .glass-card.chart-primary {
+        padding: 16px;
+    }
+    .users-page .table-container {
+        max-height: calc(100vh - 260px);
+        margin: 0 -8px;
+        border-radius: 8px;
+        overflow-x: auto;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    .users-page .data-table {
+        min-width: 600px;
+    }
 }
 
 /* Profiles page - filters and list cards */

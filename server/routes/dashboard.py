@@ -41,7 +41,7 @@ def get_dashboard_data():
             'charts': {
                 'registration_trends': [], 'gender_distribution': [],
                 'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
-                'occupation_distribution': [], 'top_domains': [], 'top_cities': [], 'top_organizations': [],
+                'occupation_distribution': [], 'top_domains': [], 'top_cities': [], 'top_cities_outside_india': [], 'top_organizations': [],
                 'india_state_registrations': [], 'apac_country_registrations': []
             }
         }), 200
@@ -636,6 +636,7 @@ def get_charts():
             'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
             'top_domains': [],
             'top_cities': [],
+            'top_cities_outside_india': [],
             'top_states': [],
             'country_distribution': [],
             'top_organizations': [],
@@ -732,6 +733,33 @@ def _fetch_charts_data(period, summary=None):
         except:
             top_cities_data = []
         
+        # Top cities outside India (top 10), label: "City (Country)"
+        top_cities_outside_india_data = []
+        try:
+            cities_outside_query = db.session.query(
+                UserPII.city,
+                UserPII.country,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.city.isnot(None),
+                UserPII.city != '',
+                UserPII.country.isnot(None),
+                UserPII.country != '',
+                ~UserPII.country.ilike('%India%')
+            )
+            if date_cond is not None:
+                cities_outside_query = cities_outside_query.filter(date_cond)
+            cities_outside = cities_outside_query.group_by(
+                UserPII.city,
+                UserPII.country
+            ).order_by(desc('count')).limit(10).all()
+            top_cities_outside_india_data = [
+                {'label': f'{c[0]} ({c[1]})', 'value': c[2]}
+                for c in cities_outside
+            ]
+        except Exception:
+            top_cities_outside_india_data = []
+        
         # Top states (top 10)
         top_states_data = []
         try:
@@ -770,15 +798,26 @@ def _fetch_charts_data(period, summary=None):
         except:
             country_distribution = []
         
-        # Top organizations (top 10)
+        # Top organizations (top 10) – only PROFESSIONAL, STARTUP, FREELANCE (exclude students); exclude NA/N/A
         top_organizations_data = []
         try:
+            occupation_filter = or_(
+                UserPII.occupation.ilike('%professional%'),
+                UserPII.occupation.ilike('%startup%'),
+                UserPII.occupation.ilike('%freelance%')
+            )
+            exclude_na = ~or_(
+                func.lower(func.trim(UserPII.organization_name)) == 'na',
+                func.lower(func.trim(UserPII.organization_name)) == 'n/a'
+            )
             orgs_query = db.session.query(
                 UserPII.organization_name,
                 func.count(UserPII.id).label('count')
             ).filter(
                 UserPII.organization_name.isnot(None),
-                UserPII.organization_name != ''
+                UserPII.organization_name != '',
+                occupation_filter,
+                exclude_na
             )
             if date_cond is not None:
                 orgs_query = orgs_query.filter(date_cond)
@@ -786,7 +825,7 @@ def _fetch_charts_data(period, summary=None):
                 UserPII.organization_name
             ).order_by(desc('count')).limit(10).all()
             top_organizations_data = [{'label': o[0], 'value': o[1]} for o in top_orgs]
-        except:
+        except Exception:
             top_organizations_data = []
         
         # Class stream distribution
@@ -1034,23 +1073,24 @@ def _fetch_charts_data(period, summary=None):
         except Exception:
             india_state_registrations = []
 
-        # APAC country-wise registration counts (for heatmap) – India + APAC countries
+        # APAC country-wise registration counts (for heatmap) – outside India only (“Outside Indian Registrations”)
         apac_country_registrations = []
         try:
-            APAC_FOR_MAP = [
-                'India', 'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
+            APAC_FOR_MAP_EXCL_INDIA = [
+                'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
                 'Fiji', 'Hong Kong', 'Indonesia', 'Japan', 'Laos', 'Malaysia', 'Maldives',
                 'Mongolia', 'Myanmar', 'Nepal', 'New Zealand', 'North Korea', 'Pakistan',
                 'Papua New Guinea', 'Philippines', 'Singapore', 'South Korea', 'Sri Lanka',
                 'Taiwan', 'Thailand', 'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
             ]
-            apac_conditions = [UserPII.country.ilike(f'%{c}%') for c in APAC_FOR_MAP]
+            apac_conditions = [UserPII.country.ilike(f'%{c}%') for c in APAC_FOR_MAP_EXCL_INDIA]
             apac_country_query = db.session.query(
                 UserPII.country,
                 func.count(UserPII.id).label('count')
             ).filter(
                 UserPII.country.isnot(None),
-                UserPII.country != ''
+                UserPII.country != '',
+                ~UserPII.country.ilike('%India%')
             )
             if apac_conditions:
                 apac_country_query = apac_country_query.filter(or_(*apac_conditions))
@@ -1066,6 +1106,7 @@ def _fetch_charts_data(period, summary=None):
             'registration_source_bifurcation': registration_source_bifurcation,
             'top_domains': top_domains_data,
             'top_cities': top_cities_data,
+            'top_cities_outside_india': top_cities_outside_india_data,
             'top_states': top_states_data,
             'country_distribution': country_distribution,
             'top_organizations': top_organizations_data,
@@ -1085,6 +1126,7 @@ def _fetch_charts_data(period, summary=None):
             'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
             'top_domains': [],
             'top_cities': [],
+            'top_cities_outside_india': [],
             'top_states': [],
             'country_distribution': [],
             'top_organizations': [],

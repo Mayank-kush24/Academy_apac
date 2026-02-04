@@ -85,7 +85,7 @@
                     <i class="fas fa-map-marker-alt"></i>
                 </div>
                 <div class="kpi-content">
-                    <div class="kpi-label">Top India Location</div>
+                    <div class="kpi-label kpi-label-overline">Top India Location</div>
                     <div class="kpi-india-lines" id="topIndiaLocationLines">
                         <div class="kpi-india-line" id="topIndiaStateLine">—</div>
                         <div class="kpi-india-line" id="topIndiaCityLine">—</div>
@@ -102,9 +102,11 @@
                     <i class="fas fa-flag"></i>
                 </div>
                 <div class="kpi-content">
-                    <div class="kpi-label">Top APAC Country</div>
-                    <div class="kpi-value kpi-value-text" id="topApacCountry">-</div>
-                    <div class="kpi-meta" id="topApacCountryMeta"></div>
+                    <div class="kpi-label kpi-label-overline">Outside India</div>
+                    <div class="kpi-india-lines" id="topOutsideIndiaLines">
+                        <div class="kpi-india-line" id="topOutsideIndiaCountryLine">—</div>
+                        <div class="kpi-india-line" id="topOutsideIndiaCityLine">—</div>
+                    </div>
                     <div class="kpi-sparkline">
                         <canvas id="topApacCountryMiniChart" width="120" height="32"></canvas>
                     </div>
@@ -225,7 +227,7 @@
             </div>
         </div>
 
-        <!-- Registration source + Gender + Occupation (3 equal doughnut charts) -->
+        <!-- Registration source + Gender (2 equal doughnut charts) -->
         <div class="bifurcation-row">
             <div class="glass-card chart-donut bifurcation-donut">
                 <div class="chart-header">
@@ -245,15 +247,6 @@
                 </div>
                 <div class="chart-container-donut">
                     <canvas id="genderChart"></canvas>
-                </div>
-            </div>
-            <div class="glass-card chart-donut bifurcation-donut">
-                <div class="chart-header">
-                    <h3 class="chart-title">Occupation Distribution</h3>
-                    <p class="chart-subtitle">Breakdown by occupation</p>
-                </div>
-                <div class="chart-container-donut">
-                    <canvas id="occupationChart"></canvas>
                 </div>
             </div>
         </div>
@@ -312,7 +305,7 @@
             <div class="glass-card chart-secondary apac-map-card">
                 <div class="chart-header">
                     <div>
-                        <h3 class="chart-title">APAC Region Registrations</h3>
+                        <h3 class="chart-title">Outside Indian Registrations</h3>
                         <p class="chart-subtitle">Hover or click a country to see registration count</p>
                     </div>
                 </div>
@@ -323,7 +316,7 @@
             </div>
         </div>
 
-        <!-- Row 3: Ranking & Distribution (3 cards) -->
+        <!-- Row 3: Top Cities + Top cities outside India -->
         <div class="ranking-row">
             <div class="glass-card chart-ranking">
                 <div class="chart-header">
@@ -334,6 +327,18 @@
                 </div>
             </div>
 
+            <div class="glass-card chart-ranking">
+                <div class="chart-header">
+                    <h3 class="chart-title">Top cities outside India</h3>
+                </div>
+                <div class="chart-container-medium">
+                    <canvas id="citiesOutsideIndiaChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Row 3b: Top Organizations (below cities) -->
+        <div class="ranking-row ranking-row-single">
             <div class="glass-card chart-ranking">
                 <div class="chart-header">
                     <h3 class="chart-title">Top Organizations</h3>

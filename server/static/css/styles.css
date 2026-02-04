@@ -3362,6 +3362,18 @@ body {
 
 .filters-content {
     display: block;
+    overflow: hidden;
+    max-height: 2000px;
+    opacity: 1;
+    transition: max-height 0.35s ease-out, opacity 0.25s ease-out;
+}
+
+.filters-content.filters-content--collapsed {
+    max-height: 0;
+    opacity: 0;
+    margin-top: 0;
+    padding-top: 0;
+    transition: max-height 0.35s ease-in, opacity 0.2s ease-in;
 }
 
 .search-bar {
