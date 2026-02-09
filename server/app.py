@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
 from server.config import Config
 from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
-from server.routes import auth, users, import_data, dashboard, profiles, audit
+from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab
 
 def create_app():
     """Create and configure Flask application"""
@@ -84,6 +84,7 @@ def create_app():
     app.register_blueprint(dashboard.bp, url_prefix='/api/dashboard')
     app.register_blueprint(profiles.bp, url_prefix='/api/profiles')
     app.register_blueprint(audit.bp, url_prefix='/api/admin')
+    app.register_blueprint(skilllab.bp, url_prefix='/api/skilllab')
     
     # Serve static files
     @app.route('/static/<path:filename>')
@@ -152,6 +153,12 @@ def create_app():
     def profiles_page():
         """User profiles page"""
         return render_template('profiles.html')
+
+    # Skill Lab credits page
+    @app.route('/skill-lab-credits')
+    def skill_lab_credits_page():
+        """Skill Lab credits page (Skill Lab / Skillboost profiles)"""
+        return render_template('skill_lab_credits.html')
     
     return app
 

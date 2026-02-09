@@ -2283,6 +2283,134 @@ body {
     border-bottom: none;
 }
 
+.import-errors-list {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+    background: rgba(255, 193, 7, 0.08);
+}
+
+.import-errors-list .import-errors-ul {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.import-errors-list .import-errors-ul li {
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+/* Skill Lab verification in profile list and detail */
+.skillboost-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+}
+.skillboost-badge.verified {
+    background: rgba(34, 197, 94, 0.2);
+    color: #22c55e;
+}
+.skillboost-badge.failed {
+    background: rgba(239, 68, 68, 0.2);
+    color: #ef4444;
+}
+.skillboost-badge.partial {
+    background: rgba(234, 179, 8, 0.2);
+    color: #eab308;
+}
+/* Skill Lab section - rectangular card layout */
+.detail-section.skillboost-section-wrap { padding-bottom: 4px; }
+.skillboost-section-card {
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 10px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.6);
+    margin-top: 10px;
+}
+.skillboost-summary-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    background: rgba(59, 130, 246, 0.08);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    font-size: 0.875rem;
+}
+.skillboost-summary-label {
+    font-weight: 600;
+    color: var(--text-primary, #111);
+}
+.skillboost-summary-value {
+    color: var(--text-muted, #6b7280);
+    font-weight: 500;
+}
+.skillboost-profile-card {
+    padding: 14px 16px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.skillboost-profile-card:last-child { border-bottom: none; }
+.skillboost-profile-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    margin-bottom: 12px;
+}
+.skillboost-profile-link {
+    font-size: 0.875rem;
+    color: #2563eb;
+    word-break: break-all;
+    max-width: 100%;
+}
+.skillboost-profile-link:hover { text-decoration: underline; }
+.skillboost-status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+.skillboost-status-badge.skillboost-verified {
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
+}
+.skillboost-status-badge.skillboost-failed {
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+}
+.skillboost-status-badge.skillboost-pending {
+    background: rgba(234, 179, 8, 0.15);
+    color: #ca8a04;
+}
+/* Horizontal rows like Track progress / Timestamps (label left, value right) */
+.skillboost-detail-rows {
+    margin-top: 4px;
+}
+.skillboost-detail-rows .detail-row {
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+.skillboost-detail-rows .detail-row:last-child {
+    border-bottom: none;
+}
+.skillboost-detail-rows .detail-value {
+    word-break: break-word;
+    text-align: right;
+}
+.skillboost-detail-rows .detail-value .text-muted {
+    color: var(--text-muted, #6b7280);
+}
+/* Legacy - keep for any remaining refs */
+.skillboost-verification-summary { margin-bottom: 10px; font-size: 14px; }
+.skillboost-profile-row .skillboost-status.skillboost-verified { color: #22c55e; }
+.skillboost-profile-row .skillboost-status.skillboost-failed { color: #ef4444; }
+.skillboost-profile-row .skillboost-status.skillboost-pending { color: #eab308; }
+
 /* Modal - Glassmorphism */
 .modal {
     display: none;

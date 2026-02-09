@@ -98,6 +98,60 @@ class User(db.Model):
         }
 
 
+class CreditLink(db.Model):
+    """
+    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 2000) users.
+    """
+    __tablename__ = 'credit_links'
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    link_url = db.Column(db.String(1024), nullable=True)  # URL or identifier sent via Sendy
+    display_order = db.Column(db.Integer, default=0, nullable=False)  # 1-5, order when allocating
+    max_allocations = db.Column(db.Integer, default=2000, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'link_url': self.link_url,
+            'display_order': self.display_order,
+            'max_allocations': self.max_allocations,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class SkillboostProfile(db.Model):
+    """
+    Skill Lab / Google Skills Boost profile links per user (email).
+    PK: (email, google_cloud_skills_boost_profile_link).
+    Do not overwrite rows where valid = TRUE when importing.
+    Email is not FK to user_pii so we can import all XLSX rows; profile page shows
+    skillboost_profiles for a user by email when that user exists in user_pii.
+    """
+    __tablename__ = 'skillboost_profile'
+
+    email = db.Column(db.String(255), nullable=False, primary_key=True)
+    google_cloud_skills_boost_profile_link = db.Column(db.String(1024), nullable=False, primary_key=True)
+    valid = db.Column(db.Boolean, default=False, nullable=False)  # verification result
+    remarks = db.Column(db.String(1024), nullable=True)
+    credit_link_id = db.Column(db.Integer, db.ForeignKey('credit_links.id'), nullable=True)  # which of 5 links allocated
+    email_sent_at = db.Column(db.DateTime, nullable=True)  # when credit email was marked dispatched (Sendy)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        return {
+            'email': self.email,
+            'google_cloud_skills_boost_profile_link': self.google_cloud_skills_boost_profile_link,
+            'valid': bool(self.valid),
+            'remarks': self.remarks,
+            'credit_link_id': self.credit_link_id,
+            'email_sent_at': self.email_sent_at.isoformat() if self.email_sent_at else None,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
 class ActivityLog(db.Model):
     """Table for storing activity logs (create/update/delete on any tracked table)"""
     __tablename__ = 'activity_logs'

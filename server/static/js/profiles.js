@@ -193,6 +193,7 @@ window.viewProfileDetails = function(profileId) {
         }
         
         console.log('Profile data:', profile);
+        const skillboost_profiles = data.skillboost_profiles || [];
         
         // Populate modal
         const modalNameEl = document.getElementById('modalProfileName');
@@ -306,6 +307,33 @@ window.viewProfileDetails = function(profileId) {
                             ` : 'N/A'}
                         </span>
                     </div>
+                </div>
+                
+                <div class="detail-section skillboost-section-wrap">
+                    <h4><i class="fas fa-graduation-cap"></i> Skill Lab / Skillboost profiles</h4>
+                    ${skillboost_profiles.length === 0 ? '<p class="detail-value text-muted">No Skill Lab profiles for this user.</p>' : (function(){
+                        var v = 0, p = 0, f = 0;
+                        skillboost_profiles.forEach(function(sp) { if (sp.valid) v++; else if (sp.remarks) f++; else p++; });
+                        var summary = '<div class="skillboost-summary-bar"><span class="skillboost-summary-label">Verification status</span><span class="skillboost-summary-value">' + v + ' verified, ' + p + ' pending, ' + f + ' failed</span></div>';
+                        return '<div class="skillboost-section-card">' + summary + skillboost_profiles.map(function(sp) {
+                            var status = sp.valid ? 'Verified' : (sp.remarks ? 'Failed' : 'Pending');
+                            var statusClass = sp.valid ? 'skillboost-verified' : (sp.remarks ? 'skillboost-failed' : 'skillboost-pending');
+                            var linkVal = sp.google_cloud_skills_boost_profile_link || '';
+                            var linkEsc = escapeHtml(linkVal);
+                            var remarks = sp.remarks ? escapeHtml(sp.remarks) : '';
+                            var linkHtml = linkVal ? '<a href="' + linkEsc + '" target="_blank" class="skillboost-profile-link">' + linkEsc + '</a>' : '<span class="text-muted">No profile link provided</span>';
+                            var allocatedLink = (sp.link_display_order != null) ? ('Link ' + sp.link_display_order + (sp.link_url ? ' – ' + escapeHtml((sp.link_url || '').slice(0, 60)) + ((sp.link_url || '').length > 60 ? '…' : '') : '')) : '<span class="text-muted">—</span>';
+                            var emailSent = sp.email_sent_at ? formatDateTime(sp.email_sent_at) : '<span class="text-muted">No</span>';
+                            var allocatedAt = sp.allocated_at ? formatDateTime(sp.allocated_at) : '<span class="text-muted">—</span>';
+                            return '<div class="skillboost-profile-card">' +
+                                '<div class="skillboost-profile-header">' + linkHtml + ' <span class="skillboost-status-badge ' + statusClass + '">' + escapeHtml(status) + '</span>' + (remarks ? ' <span class="skillboost-remarks text-muted">' + remarks + '</span>' : '') + '</div>' +
+                                '<div class="skillboost-detail-rows">' +
+                                '<div class="detail-row"><span class="detail-label">Allocated credit link</span><span class="detail-value">' + allocatedLink + '</span></div>' +
+                                '<div class="detail-row"><span class="detail-label">Email sent</span><span class="detail-value">' + emailSent + '</span></div>' +
+                                '<div class="detail-row"><span class="detail-label">Allocated at</span><span class="detail-value">' + allocatedAt + '</span></div>' +
+                                '</div></div>';
+                        }).join('') + '</div>';
+                    })()}
                 </div>
                 
                 <div class="detail-section">
@@ -535,7 +563,7 @@ async function loadProfiles() {
         const tbody = document.getElementById('profilesListBody');
         if (tbody) {
             tbody.innerHTML = 
-                '<tr><td colspan="9" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+                '<tr><td colspan="10" class="error-state">Failed to load profiles. Please try again.</td></tr>';
         }
     }
 }
@@ -547,11 +575,19 @@ function renderProfiles(profiles) {
     const tbody = document.getElementById('profilesListBody');
     
     if (profiles.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty-state">No profiles found matching your criteria.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No profiles found matching your criteria.</td></tr>';
         return;
     }
     
-    tbody.innerHTML = profiles.map(profile => `
+    tbody.innerHTML = profiles.map(profile => {
+        const v = profile.skillboost_verification || { total: 0, verified: 0, pending: 0, failed: 0 };
+        let skillLabHtml = '—';
+        if (v.total > 0) {
+            if (v.verified === v.total) skillLabHtml = '<span class="skillboost-badge verified" title="All verified">' + v.verified + '/' + v.total + ' verified</span>';
+            else if (v.failed === v.total) skillLabHtml = '<span class="skillboost-badge failed" title="All failed">' + v.total + ' failed</span>';
+            else skillLabHtml = '<span class="skillboost-badge partial" title="Verified: ' + v.verified + ', Pending: ' + v.pending + ', Failed: ' + v.failed + '">' + v.verified + '/' + v.total + ' verified</span>';
+        }
+        return `
         <tr class="profile-list-row">
             <td>
                 <div class="profile-list-name">
@@ -582,6 +618,9 @@ function renderProfiles(profiles) {
                 <span class="profile-list-location">${escapeHtml(formatLocation(profile))}</span>
             </td>
             <td>
+                <span class="profile-list-skilllab">${skillLabHtml}</span>
+            </td>
+            <td>
                 <div class="profile-list-social">
                     ${profile.github_url ? `
                         <a href="${escapeHtml(profile.github_url)}" target="_blank" class="social-link-list" title="GitHub">
@@ -604,7 +643,8 @@ function renderProfiles(profiles) {
                 </div>
             </td>
         </tr>
-    `).join('');
+    `;
+    }).join('');
 }
 
 /**
@@ -660,6 +700,7 @@ async function viewProfileDetails(profileId) {
         console.log('Profile data received:', data);
         
         const profile = data.profile;
+        const skillboost_profiles = data.skillboost_profiles || [];
         
         if (!profile) {
             throw new Error('Profile not found in response');
@@ -776,6 +817,33 @@ async function viewProfileDetails(profileId) {
                             ` : 'N/A'}
                         </span>
                     </div>
+                </div>
+                
+                <div class="detail-section skillboost-section-wrap">
+                    <h4><i class="fas fa-graduation-cap"></i> Skill Lab / Skillboost profiles</h4>
+                    ${skillboost_profiles.length === 0 ? '<p class="detail-value text-muted">No Skill Lab profiles for this user.</p>' : (function(){
+                        var v = 0, p = 0, f = 0;
+                        skillboost_profiles.forEach(function(sp) { if (sp.valid) v++; else if (sp.remarks) f++; else p++; });
+                        var summary = '<div class="skillboost-summary-bar"><span class="skillboost-summary-label">Verification status</span><span class="skillboost-summary-value">' + v + ' verified, ' + p + ' pending, ' + f + ' failed</span></div>';
+                        return '<div class="skillboost-section-card">' + summary + skillboost_profiles.map(function(sp) {
+                            var status = sp.valid ? 'Verified' : (sp.remarks ? 'Failed' : 'Pending');
+                            var statusClass = sp.valid ? 'skillboost-verified' : (sp.remarks ? 'skillboost-failed' : 'skillboost-pending');
+                            var linkVal = sp.google_cloud_skills_boost_profile_link || '';
+                            var linkEsc = escapeHtml(linkVal);
+                            var remarks = sp.remarks ? escapeHtml(sp.remarks) : '';
+                            var linkHtml = linkVal ? '<a href="' + linkEsc + '" target="_blank" class="skillboost-profile-link">' + linkEsc + '</a>' : '<span class="text-muted">No profile link provided</span>';
+                            var allocatedLink = (sp.link_display_order != null) ? ('Link ' + sp.link_display_order + (sp.link_url ? ' – ' + escapeHtml((sp.link_url || '').slice(0, 60)) + ((sp.link_url || '').length > 60 ? '…' : '') : '')) : '<span class="text-muted">—</span>';
+                            var emailSent = sp.email_sent_at ? formatDateTime(sp.email_sent_at) : '<span class="text-muted">No</span>';
+                            var allocatedAt = sp.allocated_at ? formatDateTime(sp.allocated_at) : '<span class="text-muted">—</span>';
+                            return '<div class="skillboost-profile-card">' +
+                                '<div class="skillboost-profile-header">' + linkHtml + ' <span class="skillboost-status-badge ' + statusClass + '">' + escapeHtml(status) + '</span>' + (remarks ? ' <span class="skillboost-remarks text-muted">' + remarks + '</span>' : '') + '</div>' +
+                                '<div class="skillboost-detail-rows">' +
+                                '<div class="detail-row"><span class="detail-label">Allocated credit link</span><span class="detail-value">' + allocatedLink + '</span></div>' +
+                                '<div class="detail-row"><span class="detail-label">Email sent</span><span class="detail-value">' + emailSent + '</span></div>' +
+                                '<div class="detail-row"><span class="detail-label">Allocated at</span><span class="detail-value">' + allocatedAt + '</span></div>' +
+                                '</div></div>';
+                        }).join('') + '</div>';
+                    })()}
                 </div>
                 
                 <div class="detail-section">

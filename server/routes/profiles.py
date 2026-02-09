@@ -2,8 +2,8 @@
 User profiles routes (for viewing user_pii data)
 """
 from flask import Blueprint, request, jsonify
-from sqlalchemy import or_, and_, func, text
-from server.models import db, UserPII, ActivityLog
+from sqlalchemy import or_, and_, func, text, case
+from server.models import db, UserPII, ActivityLog, SkillboostProfile, CreditLink
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role, require_page_access
 
@@ -127,6 +127,36 @@ def get_profiles():
         )
         
         profiles = [profile.to_dict() for profile in pagination.items]
+        emails = [p['email'] for p in profiles]
+        # Skill Lab verification summary per email (total, verified, pending, failed)
+        skillboost_summary = {}
+        if emails:
+            try:
+                rows = db.session.query(
+                    SkillboostProfile.email,
+                    func.count(SkillboostProfile.email).label('total'),
+                    func.sum(case((SkillboostProfile.valid == True, 1), else_=0)).label('verified'),
+                    func.sum(case((
+                        and_(SkillboostProfile.valid == False, SkillboostProfile.remarks.isnot(None), SkillboostProfile.remarks != ''),
+                        1
+                    ), else_=0)).label('failed'),
+                ).filter(SkillboostProfile.email.in_(emails)).group_by(SkillboostProfile.email).all()
+                for row in rows:
+                    verified = int(row.verified or 0)
+                    total = int(row.total or 0)
+                    failed = int(row.failed or 0)
+                    pending = max(0, total - verified - failed)
+                    skillboost_summary[row.email] = {
+                        'total': total,
+                        'verified': verified,
+                        'pending': pending,
+                        'failed': failed,
+                    }
+            except Exception:
+                pass
+        for p in profiles:
+            s = skillboost_summary.get(p['email']) or {'total': 0, 'verified': 0, 'pending': 0, 'failed': 0}
+            p['skillboost_verification'] = s
         
         return jsonify({
             'profiles': profiles,
@@ -221,14 +251,33 @@ def get_filter_options():
 @bp.route('/<profile_id>', methods=['GET'])
 @require_page_access('profiles')
 def get_profile_detail(profile_id):
-    """Get detailed profile information"""
+    """Get detailed profile information including Skill Lab / Skillboost profiles for this user (by email)."""
     try:
         profile = UserPII.query.filter_by(id=profile_id).first()
         if not profile:
             return jsonify({'error': 'Profile not found'}), 404
         
+        # Skill Lab / Skillboost profiles for this user (by email), with credit link info
+        skillboost_profiles = []
+        try:
+            rows = (
+                db.session.query(SkillboostProfile, CreditLink)
+                .outerjoin(CreditLink, SkillboostProfile.credit_link_id == CreditLink.id)
+                .filter(SkillboostProfile.email == profile.email)
+                .order_by(SkillboostProfile.created_at.desc())
+            ).all()
+            for sp, link in rows:
+                d = sp.to_dict()
+                d['link_url'] = link.link_url if link else None
+                d['link_display_order'] = link.display_order if link else None
+                d['allocated_at'] = sp.updated_at.isoformat() if (sp.credit_link_id and sp.updated_at) else None
+                skillboost_profiles.append(d)
+        except Exception:
+            pass
+        
         return jsonify({
-            'profile': profile.to_dict()
+            'profile': profile.to_dict(),
+            'skillboost_profiles': skillboost_profiles
         }), 200
         
     except Exception as e:
@@ -237,6 +286,7 @@ def get_profile_detail(profile_id):
 
 def _master_log_to_profile_log(row):
     """Map a master_logs row to the format expected by the profile activity UI."""
+    table_name = (getattr(row, 'table_name', None) or '').strip()
     op = (getattr(row, 'operation_type', None) or '').upper()
     if op == 'INSERT':
         action = 'create'
@@ -247,12 +297,20 @@ def _master_log_to_profile_log(row):
     else:
         action = 'create'
     changed_by = getattr(row, 'changed_by', None) or 'system'
-    if op == 'INSERT':
-        summary = f"Created by {changed_by}"
-    elif op == 'UPDATE':
-        summary = f"Updated by {changed_by}"
+    if table_name == 'skillboost_profile':
+        if op == 'INSERT':
+            summary = f"Skill Lab profile added by {changed_by}"
+        elif op == 'UPDATE':
+            summary = f"Skill Lab verification updated by {changed_by}"
+        else:
+            summary = f"Skill Lab profile removed by {changed_by}"
     else:
-        summary = f"Deleted by {changed_by}"
+        if op == 'INSERT':
+            summary = f"Created by {changed_by}"
+        elif op == 'UPDATE':
+            summary = f"Updated by {changed_by}"
+        else:
+            summary = f"Deleted by {changed_by}"
     ts = getattr(row, 'timestamp', None)
     created_at = ts.isoformat() if ts else None
     changes = []
@@ -274,13 +332,14 @@ def _master_log_to_profile_log(row):
         'summary': summary,
         'changes': changes,
         'changed_by': changed_by,
+        'table_name': table_name or None,
     }
 
 
 @bp.route('/<profile_id>/logs', methods=['GET'])
 @require_page_access('profiles')
 def get_profile_logs(profile_id):
-    """Get activity logs for a profile from master_logs (user_pii record)."""
+    """Get activity logs for a profile from master_logs (user_pii + skillboost_profile by email)."""
     try:
         profile = UserPII.query.filter_by(id=profile_id).first()
         if not profile:
@@ -290,26 +349,39 @@ def get_profile_logs(profile_id):
         per_page = min(request.args.get('per_page', 50, type=int), 100)
         offset = (page - 1) * per_page
         record_id = str(profile_id)
+        profile_email = (profile.email or '').strip()
 
         try:
-            # Prefer master_logs (PostgreSQL triggers)
+            # master_logs: user_pii by id + skillboost_profile by email (verification shows on profile)
             total = db.session.execute(
                 text("""
-                    SELECT COUNT(*) FROM master_logs
-                    WHERE table_name = 'user_pii' AND record_identifier = :rid
+                    SELECT (
+                        (SELECT COUNT(*) FROM master_logs
+                         WHERE table_name = 'user_pii' AND record_identifier = :rid)
+                        +
+                        (SELECT COUNT(*) FROM master_logs
+                         WHERE table_name = 'skillboost_profile'
+                           AND (new_values->>'email' = :email OR old_values->>'email' = :email))
+                    ) AS cnt
                 """),
-                {"rid": record_id}
+                {"rid": record_id, "email": profile_email}
             ).scalar() or 0
             rows = db.session.execute(
                 text("""
-                    SELECT log_id, table_name, operation_type, record_identifier,
-                           old_values, new_values, changed_by, timestamp, additional_info
-                    FROM master_logs
-                    WHERE table_name = 'user_pii' AND record_identifier = :rid
-                    ORDER BY log_id DESC
+                    (SELECT log_id, table_name, operation_type, record_identifier,
+                            old_values, new_values, changed_by, timestamp, additional_info
+                     FROM master_logs
+                     WHERE table_name = 'user_pii' AND record_identifier = :rid)
+                    UNION ALL
+                    (SELECT log_id, table_name, operation_type, record_identifier,
+                            old_values, new_values, changed_by, timestamp, additional_info
+                     FROM master_logs
+                     WHERE table_name = 'skillboost_profile'
+                       AND (new_values->>'email' = :email OR old_values->>'email' = :email))
+                    ORDER BY timestamp DESC
                     LIMIT :limit OFFSET :offset
                 """),
-                {"rid": record_id, "limit": per_page, "offset": offset}
+                {"rid": record_id, "email": profile_email, "limit": per_page, "offset": offset}
             ).fetchall()
             logs = [_master_log_to_profile_log(row) for row in rows]
             pages = (total + per_page - 1) // per_page if per_page else 0

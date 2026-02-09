@@ -3,12 +3,137 @@ Excel parsing and field mapping utilities
 """
 import pandas as pd
 from datetime import datetime
-from server.models import UserPII
+from sqlalchemy.exc import DataError, IntegrityError
+from server.models import UserPII, SkillboostProfile
+
+
+# Substring to auto-detect Skill Lab / Google Skills Boost sheet (case-insensitive)
+SKILLBOOST_SHEET_SUBSTRING = "Share your Google Skills Pu"
+
+
+def get_sheet_names(file_path):
+    """Return list of worksheet names and count for the given Excel file."""
+    try:
+        if str(file_path).lower().endswith('.xlsx'):
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, read_only=True)
+            names = list(wb.sheetnames)
+            wb.close()
+            return names
+        xl = pd.ExcelFile(file_path)
+        return list(xl.sheet_names)
+    except Exception:
+        return []
+
+
+def find_sheet_by_substring(file_path, substring):
+    """
+    Find worksheet name that contains the given substring (case-insensitive).
+    Returns the first matching sheet name, or None if none match.
+    """
+    try:
+        if str(file_path).lower().endswith('.xlsx'):
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, read_only=True)
+            for name in wb.sheetnames:
+                if substring.lower() in name.lower():
+                    wb.close()
+                    return name
+            wb.close()
+        else:
+            xl = pd.ExcelFile(file_path)
+            for name in xl.sheet_names:
+                if substring.lower() in name.lower():
+                    return name
+    except Exception:
+        pass
+    return None
+
+
+def get_skillboost_preview(file_path):
+    """
+    Preview Skill Lab XLSX: sheet count, sheet names, detected sheet name and row count.
+    Returns dict: sheet_count, sheet_names, detected_sheet_name, detected_sheet_rows, columns, error.
+    """
+    sheet_names = get_sheet_names(file_path)
+    sheet_count = len(sheet_names)
+    result = {
+        'sheet_count': sheet_count,
+        'sheet_names': sheet_names,
+        'detected_sheet_name': None,
+        'detected_sheet_rows': None,
+        'columns': None,
+        'error': None,
+    }
+    if not sheet_names:
+        result['error'] = 'Could not read any worksheets from the file.'
+        return result
+    detected = find_sheet_by_substring(file_path, SKILLBOOST_SHEET_SUBSTRING)
+    if not detected:
+        result['error'] = f'No worksheet whose name contains "{SKILLBOOST_SHEET_SUBSTRING}" found.'
+        return result
+    result['detected_sheet_name'] = detected
+    try:
+        df = parse_excel_sheet(file_path, detected)
+        result['detected_sheet_rows'] = len(df) if df is not None else 0
+        result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
+    except Exception as e:
+        result['error'] = f'Error reading sheet "{detected}": {str(e)}'
+    return result
+
+
+def parse_excel_sheet(file_path, sheet_name):
+    """
+    Parse a specific sheet from an Excel file into a DataFrame.
+    """
+    try:
+        if str(file_path).lower().endswith('.xlsx'):
+            df = pd.read_excel(file_path, engine='openpyxl', sheet_name=sheet_name)
+        else:
+            df = pd.read_excel(file_path, sheet_name=sheet_name)
+        return df
+    except Exception as e:
+        raise Exception(f"Error parsing sheet '{sheet_name}': {str(e)}")
+
+
+def _find_email_column(columns):
+    """Return column name that best matches 'email' (case-insensitive, strip)."""
+    for col in columns:
+        if col is None:
+            continue
+        if str(col).strip().lower() == 'email':
+            return col
+    for col in columns:
+        if col and 'email' in str(col).lower():
+            return col
+    return None
+
+
+def _find_profile_link_column(columns):
+    """
+    Return column name that best matches profile link (contains 'profile', 'link', or 'skills').
+    Prefer names like 'Share your Google Skills Boost public profile...' or 'Skillboost public view link'.
+    """
+    cols_with = []
+    for col in columns:
+        if col is None:
+            continue
+        s = str(col).lower()
+        if 'profile' in s or 'link' in s or 'skills' in s:
+            cols_with.append(col)
+    if not cols_with:
+        return None
+    # Prefer one that has "profile" and ("link" or "skills")
+    for c in cols_with:
+        s = str(c).lower()
+        if 'profile' in s and ('link' in s or 'skills' in s):
+            return c
+    return cols_with[0]
 
 
 def parse_excel(file_path):
     """
-    Parse Excel file and return DataFrame
+    Parse Excel file and return DataFrame (all rows, no limit).
     
     Args:
         file_path: Path to Excel file
@@ -17,7 +142,11 @@ def parse_excel(file_path):
         pandas DataFrame
     """
     try:
-        df = pd.read_excel(file_path)
+        # Use openpyxl for .xlsx to read all rows reliably; no nrows limit
+        if str(file_path).lower().endswith('.xlsx'):
+            df = pd.read_excel(file_path, engine='openpyxl', sheet_name=0)
+        else:
+            df = pd.read_excel(file_path, sheet_name=0)
         return df
     except Exception as e:
         raise Exception(f"Error parsing Excel file: {str(e)}")
@@ -46,11 +175,41 @@ def get_db_fields():
     ]
 
 
+# Max string lengths for UserPII columns (match model) to avoid "data too long" errors
+USERPII_STRING_MAX_LENGTHS = {
+    'organization_name': 255,
+    'class_stream': 255,
+    'domain': 255,
+    'designation': 255,
+    'name': 255,
+    'email': 255,
+    'mobile_number': 50,
+    'country': 100,
+    'state': 100,
+    'city': 100,
+    'gender': 50,
+    'occupation': 255,
+    'github_url': 500,
+    'linkedin_url': 500,
+    'utm_medium': 255,
+}
+
+
+def truncate_record_strings(data):
+    """Truncate string values in data to column max lengths. Modifies data in place."""
+    for key, max_len in USERPII_STRING_MAX_LENGTHS.items():
+        if key not in data or data[key] is None:
+            continue
+        val = data[key]
+        if isinstance(val, str) and len(val) > max_len:
+            data[key] = val[:max_len]
+
+
 def normalize_field_name(name):
     """
     Normalize field name for matching
     - Convert to lowercase
-    - Remove spaces, underscores, hyphens
+    - Remove spaces, underscores, hyphens, slashes
     - Remove special characters
     """
     if not name:
@@ -60,6 +219,7 @@ def normalize_field_name(name):
     normalized = normalized.replace('_', '')
     normalized = normalized.replace('-', '')
     normalized = normalized.replace('.', '')
+    normalized = normalized.replace('/', '')
     return normalized
 
 
@@ -75,13 +235,36 @@ def auto_map_fields(excel_columns):
     """
     db_fields = get_db_fields()
     mapping = {}
-    
+
+    # Columns to skip (do not map to any DB field). Normalized names.
+    skip_columns_normalized = {
+        'collegeschoolstate',   # College/School State
+        'collegeschoolcity',    # College/School city
+        'profilename',          # Profile Name
+    }
+
+    # Explicit Excel header -> DB field (normalized header -> db field)
+    explicit_column_map = {
+        'timestamp': 'registered_at',
+        'collegeschoolcompanystartupname': 'organization_name',  # College/School/Company/Startup Name
+    }
+
     # Create normalized versions for matching
     normalized_db_fields = {normalize_field_name(field): field for field in db_fields}
-    
+
     for excel_col in excel_columns:
         normalized_excel = normalize_field_name(excel_col)
-        
+
+        # Skip columns (do not map)
+        if normalized_excel in skip_columns_normalized:
+            mapping[excel_col] = None
+            continue
+
+        # Explicit mappings (Timestamp -> registered_at, College/School/Company/Startup Name -> organization_name)
+        if normalized_excel in explicit_column_map:
+            mapping[excel_col] = explicit_column_map[normalized_excel]
+            continue
+
         # Try exact match first
         if normalized_excel in normalized_db_fields:
             mapping[excel_col] = normalized_db_fields[normalized_excel]
@@ -92,8 +275,8 @@ def auto_map_fields(excel_columns):
                 if normalized_excel in norm_db or norm_db in normalized_excel:
                     matched = db_field
                     break
-            
-            # Common aliases
+
+            # Common aliases (do not override explicit/skip)
             if not matched:
                 alias_map = {
                     'org': 'organization_name',
@@ -110,14 +293,14 @@ def auto_map_fields(excel_columns):
                     'utmmedium': 'utm_medium',
                     'utm_medium': 'utm_medium',
                 }
-                
+
                 for alias, db_field in alias_map.items():
                     if alias in normalized_excel:
                         matched = db_field
                         break
-            
+
             mapping[excel_col] = matched if matched else None
-    
+
     return mapping
 
 
@@ -138,7 +321,7 @@ def parse_date(date_value):
     return None
 
 
-def import_data(df, mappings, mode='create'):
+def import_data(df, mappings, mode='create', progress_callback=None):
     """
     Import data from DataFrame to database with batch processing for performance
     
@@ -146,6 +329,7 @@ def import_data(df, mappings, mode='create'):
         df: pandas DataFrame
         mappings: Dictionary mapping Excel columns to DB fields
         mode: 'create', 'create_update', or 'update_only'
+        progress_callback: Optional callable(created, updated, skipped) called periodically during import
         
     Returns:
         Dictionary with import summary
@@ -158,11 +342,19 @@ def import_data(df, mappings, mode='create'):
     skipped = 0
     errors = []
     
+    def report_progress():
+        if progress_callback:
+            try:
+                progress_callback(created, updated, skipped)
+            except Exception:
+                pass
+    
     # Filter out None mappings (unmapped columns)
     active_mappings = {k: v for k, v in mappings.items() if v is not None}
     
     # Batch size for database operations (commit every N records)
     BATCH_SIZE = 1000
+    PROGRESS_INTERVAL = 100  # Report progress every N rows
     
     # For create_update mode, fetch existing emails in batches to reduce queries
     existing_emails_set = set()
@@ -180,6 +372,7 @@ def import_data(df, mappings, mode='create'):
     
     # Track emails we've already processed in this batch to avoid duplicates within the same file
     processed_emails_in_batch = set()
+    last_reported = 0
     
     for index, row in df.iterrows():
         try:
@@ -206,6 +399,8 @@ def import_data(df, mappings, mode='create'):
                         value = str(value).strip() if value else None
                     
                     data[db_field] = value
+            
+            truncate_record_strings(data)
             
             # Email is required
             if not data.get('email'):
@@ -259,10 +454,13 @@ def import_data(df, mappings, mode='create'):
                         errors.append(f"Row {index + 2}: Email not found")
                     continue
             
-            # Batch commit for inserts (use individual add() so activity logs are created)
+            # Batch commit for inserts (create_update: on conflict process one-by-one so batch isn't lost)
             if len(records_to_insert) >= BATCH_SIZE:
                 try:
                     if mode == 'create_update':
+                        # Try batch insert first; on unique constraint rollback and process one-by-one
+                        batch_ok = True
+                        first_conflict_email = None
                         for record in records_to_insert:
                             try:
                                 user = UserPII(**record)
@@ -270,33 +468,72 @@ def import_data(df, mappings, mode='create'):
                                 db.session.flush()
                             except Exception as insert_error:
                                 db.session.rollback()
+                                batch_ok = False
+                                first_conflict_email = record.get('email')
                                 if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
-                                    existing_user = UserPII.query.filter_by(email=record.get('email')).first()
+                                    existing_user = UserPII.query.filter_by(email=first_conflict_email).first()
                                     if existing_user:
                                         for key, value in record.items():
                                             setattr(existing_user, key, value)
+                                        db.session.commit()
                                         updated += 1
                                         created -= 1
+                                    else:
+                                        if len(errors) < 100:
+                                            errors.append(f"Row: {first_conflict_email} - {str(insert_error)}")
                                 else:
-                                    raise insert_error
-                        db.session.commit()
+                                    if len(errors) < 100:
+                                        errors.append(f"Insert error {first_conflict_email}: {str(insert_error)}")
+                                break
+                        if batch_ok:
+                            db.session.commit()
+                            records_to_insert = []
+                        else:
+                            # Process remaining records one-by-one (skip already-handled conflict)
+                            for record in records_to_insert:
+                                if record.get('email') == first_conflict_email:
+                                    continue
+                                try:
+                                    user = UserPII(**record)
+                                    db.session.add(user)
+                                    db.session.flush()
+                                    db.session.commit()
+                                    created += 1
+                                except Exception as insert_error:
+                                    db.session.rollback()
+                                    if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
+                                        existing_user = UserPII.query.filter_by(email=record.get('email')).first()
+                                        if existing_user:
+                                            for key, value in record.items():
+                                                setattr(existing_user, key, value)
+                                            db.session.commit()
+                                            updated += 1
+                                            created -= 1
+                                        else:
+                                            if len(errors) < 100:
+                                                errors.append(f"Row: {record.get('email')} - {str(insert_error)}")
+                                    else:
+                                        if len(errors) < 100:
+                                            errors.append(f"Insert error {record.get('email')}: {str(insert_error)}")
+                            records_to_insert = []
                     else:
                         for record in records_to_insert:
                             user = UserPII(**record)
                             db.session.add(user)
                         db.session.commit()
-                    records_to_insert = []
+                        records_to_insert = []
                 except Exception as e:
                     db.session.rollback()
                     if len(errors) < 100:
                         errors.append(f"Batch insert error: {str(e)}")
             
-            # Batch commit for updates (process in smaller chunks)
+            # Batch commit for updates: one query to fetch all users in batch, then update in memory
             if len(records_to_update) >= BATCH_SIZE:
                 try:
-                    # Process updates in batches
+                    emails_batch = [e for e, _ in records_to_update]
+                    users_map = {u.email: u for u in UserPII.query.filter(UserPII.email.in_(emails_batch)).all()}
                     for update_email, update_data in records_to_update:
-                        existing_user = UserPII.query.filter_by(email=update_email).first()
+                        existing_user = users_map.get(update_email)
                         if existing_user:
                             for key, value in update_data.items():
                                 setattr(existing_user, key, value)
@@ -307,12 +544,18 @@ def import_data(df, mappings, mode='create'):
                     if len(errors) < 100:
                         errors.append(f"Batch update error: {str(e)}")
             
+            # Report progress periodically
+            processed = created + updated + skipped
+            if processed - last_reported >= PROGRESS_INTERVAL:
+                last_reported = processed
+                report_progress()
+            
         except Exception as e:
             skipped += 1
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
     
-    # Commit remaining records (individual add() so activity logs are created)
+    # Commit remaining records (create_update: one-by-one so no batch lost on unique constraint)
     try:
         if records_to_insert:
             if mode == 'create_update':
@@ -321,6 +564,7 @@ def import_data(df, mappings, mode='create'):
                         user = UserPII(**record)
                         db.session.add(user)
                         db.session.flush()
+                        db.session.commit()
                     except Exception as insert_error:
                         db.session.rollback()
                         if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
@@ -328,31 +572,144 @@ def import_data(df, mappings, mode='create'):
                             if existing_user:
                                 for key, value in record.items():
                                     setattr(existing_user, key, value)
+                                db.session.commit()
                                 updated += 1
                                 created -= 1
+                            else:
+                                if len(errors) < 100:
+                                    errors.append(f"Row: {record.get('email')} - {str(insert_error)}")
                         else:
-                            raise insert_error
+                            if len(errors) < 100:
+                                errors.append(f"Insert error {record.get('email')}: {str(insert_error)}")
             else:
                 for record in records_to_insert:
                     user = UserPII(**record)
                     db.session.add(user)
+                db.session.commit()
         
         if records_to_update:
+            emails_batch = [e for e, _ in records_to_update]
+            users_map = {u.email: u for u in UserPII.query.filter(UserPII.email.in_(emails_batch)).all()}
             for update_email, update_data in records_to_update:
-                existing_user = UserPII.query.filter_by(email=update_email).first()
+                existing_user = users_map.get(update_email)
                 if existing_user:
                     for key, value in update_data.items():
                         setattr(existing_user, key, value)
-        
-        db.session.commit()
+            db.session.commit()
+    except (DataError, IntegrityError) as e:
+        db.session.rollback()
+        err_msg = str(e).split('\n')[0][:200] if str(e) else 'Database constraint or data length error'
+        if 'truncat' in str(e).lower() or 'too long' in str(e).lower() or 'overflow' in str(e).lower():
+            err_msg = 'One or more values exceed column max length (e.g. organization_name 255 chars). Data is truncated automatically; if this persists, check the row data.'
+        raise Exception(f"Database error: {err_msg}")
     except Exception as e:
         db.session.rollback()
         raise Exception(f"Database error: {str(e)}")
     
+    report_progress()  # Final progress
     return {
         'total_rows': total_rows,
         'created': created,
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100]  # Limit errors to first 100
+    }
+
+
+def import_skillboost_profile(df, email_col, profile_link_col, progress_callback=None):
+    """
+    Import Skill Lab / Google Skills Boost profiles from a DataFrame into skillboost_profile.
+    - Create new rows for (email, link) that don't exist.
+    - Update only when existing row has valid = FALSE; never overwrite valid = TRUE.
+    - Email: required; strip, lowercase. Link: optional; if missing/empty store empty string (import row).
+    - Skips only rows with missing email (or duplicate in file / already verified).
+    - All emails are imported (no skip for email not in user_pii).
+    """
+    from server.models import db
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    if not email_col or email_col not in df.columns:
+        raise Exception("Email column not found in sheet")
+    if not profile_link_col or profile_link_col not in df.columns:
+        raise Exception("Profile link column not found in sheet")
+
+    # Existing (email, link) -> row for skillboost_profile (link may be '' for missing)
+    existing = {}
+    try:
+        for row in SkillboostProfile.query.all():
+            key = (row.email, row.google_cloud_skills_boost_profile_link or '')
+            existing[key] = row
+    except Exception:
+        pass
+    inserted_this_run = set()
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(email_col)
+            link_val = row.get(profile_link_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing email")
+                continue
+            email = str(email_val).strip().lower()
+            if not email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing email")
+                continue
+            # Profile link optional: use empty string when missing so we still import the row
+            if pd.isna(link_val):
+                link = ''
+            else:
+                link = str(link_val).strip()
+            if len(link) > 1024:
+                link = link[:1024]
+            key = (email, link)
+            if key in existing:
+                rec = existing[key]
+                if rec.valid:
+                    skipped += 1
+                    continue
+                if key in inserted_this_run:
+                    skipped += 1
+                    continue
+                rec.updated_at = datetime.utcnow()
+                db.session.commit()
+                updated += 1
+                continue
+            # New row
+            rec = SkillboostProfile(
+                email=email,
+                google_cloud_skills_boost_profile_link=link,
+                valid=False,
+                remarks=None,
+            )
+            db.session.add(rec)
+            db.session.commit()
+            existing[key] = rec
+            inserted_this_run.add(key)
+            created += 1
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
     }

@@ -4,7 +4,7 @@ Dashboard analytics routes
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
-from server.models import db, UserPII
+from server.models import db, UserPII, SkillboostProfile
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
@@ -36,7 +36,8 @@ def get_dashboard_data():
                 'top_apac_country_count': None,
                 'sea_registrations': 0, 'sea_top_country': 'N/A',
                 'anz_registrations': 0, 'anz_top_country': 'N/A',
-                'east_asia_registrations': 0, 'east_asia_top_country': 'N/A'
+                'east_asia_registrations': 0, 'east_asia_top_country': 'N/A',
+                'india_registrations': 0
             },
             'charts': {
                 'registration_trends': [], 'gender_distribution': [],
@@ -62,7 +63,8 @@ def get_summary():
             'top_india_city': 'N/A', 'top_apac_country': 'N/A',
             'sea_registrations': 0, 'sea_top_country': 'N/A',
             'anz_registrations': 0, 'anz_top_country': 'N/A',
-            'east_asia_registrations': 0, 'east_asia_top_country': 'N/A'
+            'east_asia_registrations': 0, 'east_asia_top_country': 'N/A',
+            'india_registrations': 0
         }), 200
 
 
@@ -251,6 +253,36 @@ def _fetch_summary_data(period):
             book_of_business_registrations = bob_query.count() or 0
         except Exception:
             book_of_business_registrations = 0
+
+        # Skill Lab / Skillboost profiles: total, verified, verification rate (all rows in skillboost_profile)
+        total_skillboost_profiles = 0
+        verified_skillboost_profiles = 0
+        skillboost_verification_rate = None
+        # Skill Lab credits: allocated, not sent, sent (verified + credit_link_id set)
+        skillboost_credits_allocated = 0
+        skillboost_credits_not_sent = 0
+        skillboost_credits_sent = 0
+        try:
+            total_skillboost_profiles = SkillboostProfile.query.count() or 0
+            verified_skillboost_profiles = SkillboostProfile.query.filter(SkillboostProfile.valid == True).count() or 0
+            if total_skillboost_profiles > 0:
+                skillboost_verification_rate = round(100.0 * verified_skillboost_profiles / total_skillboost_profiles, 1)
+            skillboost_credits_allocated = SkillboostProfile.query.filter(
+                SkillboostProfile.valid == True,
+                SkillboostProfile.credit_link_id.isnot(None)
+            ).count() or 0
+            skillboost_credits_not_sent = SkillboostProfile.query.filter(
+                SkillboostProfile.valid == True,
+                SkillboostProfile.credit_link_id.isnot(None),
+                SkillboostProfile.email_sent_at.is_(None)
+            ).count() or 0
+            skillboost_credits_sent = SkillboostProfile.query.filter(
+                SkillboostProfile.valid == True,
+                SkillboostProfile.credit_link_id.isnot(None),
+                SkillboostProfile.email_sent_at.isnot(None)
+            ).count() or 0
+        except Exception:
+            pass
         
         # Top organization
         top_org = None
@@ -487,6 +519,18 @@ def _fetch_summary_data(period):
         except Exception as e:
             print(f"Error calculating region stats (SEA/ANZ/East Asia): {e}")
 
+        # India: count and top state (same period filter)
+        india_registrations = 0
+        try:
+            india_query = base_query.filter(
+                UserPII.country.isnot(None),
+                UserPII.country != '',
+                UserPII.country.ilike('%India%')
+            )
+            india_registrations = india_query.count() or 0
+        except Exception as e:
+            print(f"Error calculating India stats: {e}")
+
         # Previous period metrics for week-on-week / period-on-period
         prev_total_users = None
         prev_apac_users = None
@@ -545,7 +589,14 @@ def _fetch_summary_data(period):
             'anz_top_country': anz_top_country or 'N/A',
             'east_asia_registrations': east_asia_registrations,
             'east_asia_top_country': east_asia_top_country or 'N/A',
+            'india_registrations': india_registrations,
             'book_of_business_registrations': book_of_business_registrations,
+            'total_skillboost_profiles': total_skillboost_profiles,
+            'verified_skillboost_profiles': verified_skillboost_profiles,
+            'skillboost_verification_rate': skillboost_verification_rate,
+            'skillboost_credits_allocated': skillboost_credits_allocated,
+            'skillboost_credits_not_sent': skillboost_credits_not_sent,
+            'skillboost_credits_sent': skillboost_credits_sent,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
             'previous_period_average_age': prev_avg_age
@@ -572,7 +623,14 @@ def _fetch_summary_data(period):
             'anz_top_country': 'N/A',
             'east_asia_registrations': 0,
             'east_asia_top_country': 'N/A',
+            'india_registrations': 0,
             'book_of_business_registrations': 0,
+            'total_skillboost_profiles': 0,
+            'verified_skillboost_profiles': 0,
+            'skillboost_verification_rate': None,
+            'skillboost_credits_allocated': 0,
+            'skillboost_credits_not_sent': 0,
+            'skillboost_credits_sent': 0,
             'previous_period_total_users': None,
             'previous_period_apac_users': None,
             'previous_period_average_age': None

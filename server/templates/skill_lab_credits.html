@@ -1,0 +1,483 @@
+{% extends "base.html" %}
+
+{% block title %}Skill Lab credits - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<div class="dashboard-premium" id="skillLabCreditsPage">
+    <div class="dashboard-container">
+        <!-- Header -->
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div>
+                    <h1 class="page-title">Skill Lab credits</h1>
+                    <p class="page-subtitle">Verified Google Skills Boost / Skill Lab profile links only</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Manage credit links (5 links, 2000 users each) -->
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+            <div style="padding: 1rem 1.25rem;">
+                <h3 style="margin: 0 0 1rem 0;"><i class="fas fa-link"></i> Manage credit links (up to 5)</h3>
+                <p style="font-size: 0.875rem; color: var(--text-muted, #6b7280); margin-bottom: 1rem;">Each link can be allocated to a maximum number of users. Set link URL and max allocations, then Save. Run "Allocate credits" to assign links to verified profiles.</p>
+                <div id="creditLinksForm">
+                    <table class="data-table" style="margin-bottom: 1rem;">
+                        <thead>
+                            <tr>
+                                <th>Link</th>
+                                <th>Link URL</th>
+                                <th>Max allocations</th>
+                                <th>Current</th>
+                            </tr>
+                        </thead>
+                        <tbody id="creditLinksTableBody">
+                            <tr><td colspan="4" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                    <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                        <button type="button" class="btn btn-primary" id="saveCreditLinksBtn" onclick="saveCreditLinks()">
+                            <i class="fas fa-save"></i> Save links
+                        </button>
+                        <button type="button" class="btn btn-secondary" id="allocateCreditsBtn" onclick="allocateCredits()" title="Assign credit links to verified profiles without one">
+                            <i class="fas fa-tasks"></i> Allocate credits
+                        </button>
+                    </div>
+                    <div id="allocateProgress" style="display: none; margin-top: 1rem; padding: 1rem; border-radius: 8px; background: var(--glass-bg, rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.1);">
+                        <div style="margin-bottom: 8px;">
+                            <span id="allocateProgressText">Allocating... 0 / 0</span>
+                        </div>
+                        <div style="height: 12px; background: rgba(0,0,0,0.2); border-radius: 6px; overflow: hidden;">
+                            <div id="allocateProgressBar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #4ade80, #22c55e); transition: width 0.2s ease;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-section" style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+            <div class="glass-card" style="flex: 1; min-width: 160px; padding: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(34, 197, 94, 0.15); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-check-circle" style="font-size: 1.5rem; color: #22c55e;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.875rem; color: var(--text-muted, #6b7280); font-weight: 500;">Valid profiles</div>
+                        <div id="statValidProfiles" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="flex: 1; min-width: 160px; padding: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-link" style="font-size: 1.5rem; color: #3b82f6;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.875rem; color: var(--text-muted, #6b7280); font-weight: 500;">Allocated</div>
+                        <div id="statAllocated" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="flex: 1; min-width: 160px; padding: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(234, 179, 8, 0.15); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-clock" style="font-size: 1.5rem; color: #eab308;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.875rem; color: var(--text-muted, #6b7280); font-weight: 500;">Not sent</div>
+                        <div id="statNotSent" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="flex: 1; min-width: 160px; padding: 1.25rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(34, 197, 94, 0.15); display: flex; align-items: center; justify-content: center;">
+                        <i class="fas fa-paper-plane" style="font-size: 1.5rem; color: #22c55e;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.875rem; color: var(--text-muted, #6b7280); font-weight: 500;">Sent</div>
+                        <div id="statSent" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="glass-card filters-card-glass" style="margin-bottom: 1.5rem;">
+            <div class="filters-header">
+                <h3><i class="fas fa-filter"></i> Search & filter</h3>
+            </div>
+            <div class="filters-content">
+                <div class="search-bar" style="display: flex; gap: 1rem; flex-wrap: wrap; align-items: center;">
+                    <div style="flex: 1; min-width: 200px; position: relative;">
+                        <i class="fas fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-muted, #6b7280);"></i>
+                        <input type="text" id="searchInput" placeholder="Search by email..." class="filter-input" style="padding-left: 36px; width: 100%;">
+                    </div>
+                    <select id="sentFilter" class="filter-select" style="min-width: 120px;">
+                        <option value="">All</option>
+                        <option value="not_sent">Not sent</option>
+                        <option value="sent">Sent</option>
+                    </select>
+                    <button type="button" class="btn btn-primary" onclick="loadCredits(1)">
+                        <i class="fas fa-search"></i> Search
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="exportCredits()" title="Download CSV with current filters">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="exportNotSent()" title="Download list of allocated credits not yet marked as sent (for Sendy)">
+                        <i class="fas fa-file-download"></i> Download not sent
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Mark as sent (after sending via Sendy) -->
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+            <div style="padding: 1rem 1.25rem;">
+                <h3 style="margin: 0 0 0.5rem 0;"><i class="fas fa-paper-plane"></i> Mark emails as sent</h3>
+                <p style="font-size: 0.875rem; color: var(--text-muted, #6b7280); margin-bottom: 1rem;">After sending credit emails via Sendy, upload a CSV/Excel or text file with one email per line to mark those as dispatched.</p>
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+                    <input type="file" id="markSentFile" accept=".csv,.xlsx,.xls,.txt" style="max-width: 280px;">
+                    <button type="button" class="btn btn-primary" onclick="markSentUpload()">
+                        <i class="fas fa-upload"></i> Upload
+                    </button>
+                    <span id="markSentResult" style="font-size: 0.875rem;"></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="glass-card">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Profile link</th>
+                            <th>Allocated link</th>
+                            <th>Email sent</th>
+                            <th>Status</th>
+                            <th>Remarks</th>
+                            <th>Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody id="creditsTableBody">
+                        <tr><td colspan="8" class="text-center">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="paginationBar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; flex-wrap: wrap; gap: 0.5rem;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    const token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+    const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+    function getStatusBadge(valid, remarks) {
+        if (valid) return '<span class="skillboost-badge verified">Verified</span>';
+        if (remarks && remarks.trim()) return '<span class="skillboost-badge failed">Failed</span>';
+        return '<span class="skillboost-badge partial">Pending</span>';
+    }
+
+    function renderTable(credits) {
+        const tbody = document.getElementById('creditsTableBody');
+        if (!credits || credits.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">No Skill Lab credits found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = credits.map(function(r) {
+            const name = (r.name && r.name.trim()) ? escapeHtml(r.name) : '<span class="text-muted">—</span>';
+            const link = r.google_cloud_skills_boost_profile_link || '';
+            const linkDisplay = link ? ('<a href="' + escapeHtml(link) + '" target="_blank" rel="noopener">' + escapeHtml(link.length > 60 ? link.slice(0, 57) + '...' : link) + '</a>') : '<span class="text-muted">No profile link</span>';
+            const allocatedLink = r.link_display_order != null ? ('Link ' + r.link_display_order + (r.link_url ? ' ' + escapeHtml((r.link_url || '').slice(0, 40)) + ((r.link_url || '').length > 40 ? '...' : '') : '')) : '<span class="text-muted">—</span>';
+            const emailSent = r.email_sent_at ? new Date(r.email_sent_at).toLocaleString() : '<span class="text-muted">No</span>';
+            const status = getStatusBadge(r.valid, r.remarks);
+            const remarks = (r.remarks && r.remarks.trim()) ? escapeHtml(r.remarks) : '<span class="text-muted">—</span>';
+            const updated = r.updated_at ? new Date(r.updated_at).toLocaleString() : '—';
+            return '<tr><td>' + name + '</td><td>' + escapeHtml(r.email) + '</td><td>' + linkDisplay + '</td><td>' + allocatedLink + '</td><td>' + emailSent + '</td><td>' + status + '</td><td>' + remarks + '</td><td>' + updated + '</td></tr>';
+        }).join('');
+    }
+
+    function escapeHtml(s) {
+        if (!s) return '';
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+    }
+
+    function renderPagination(pagination) {
+        const bar = document.getElementById('paginationBar');
+        if (!pagination || pagination.pages <= 1) {
+            bar.innerHTML = '<span class="text-muted">Page ' + (pagination ? pagination.page : 1) + ' of ' + (pagination ? pagination.pages : 1) + '</span>';
+            return;
+        }
+        const total = pagination.total, page = pagination.page, pages = pagination.pages, perPage = pagination.per_page;
+        const from = (page - 1) * perPage + 1, to = Math.min(page * perPage, total);
+        let html = '<span class="text-muted">Showing ' + from + '–' + to + ' of ' + total + '</span>';
+        html += '<div style="display: flex; gap: 0.5rem;">';
+        if (pagination.has_prev) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadCredits(' + (page - 1) + ')">Previous</button>';
+        html += '<span class="text-muted">Page ' + page + ' of ' + pages + '</span>';
+        if (pagination.has_next) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadCredits(' + (page + 1) + ')">Next</button>';
+        html += '</div>';
+        bar.innerHTML = html;
+    }
+
+    window.loadCredits = function(page) {
+        page = page || 1;
+        const search = document.getElementById('searchInput').value.trim();
+        const sentFilter = (document.getElementById('sentFilter') && document.getElementById('sentFilter').value) || '';
+        const params = new URLSearchParams({ page: page, per_page: 20 });
+        if (search) params.set('search', search);
+        if (sentFilter) params.set('sent', sentFilter);
+
+        document.getElementById('creditsTableBody').innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+
+        fetch('/api/skilllab/credits?' + params.toString(), { headers: headers })
+            .then(function(res) {
+                if (!res.ok) {
+                    var msg = res.status === 401 ? 'Please log in again' : res.status === 403 ? 'Access denied' : 'Request failed';
+                    return res.json().then(function(body) { throw new Error(body.error || msg); }).catch(function(e) {
+                        if (e instanceof SyntaxError || !e.message) throw new Error(msg);
+                        throw e;
+                    });
+                }
+                return res.json();
+            })
+            .then(function(data) {
+                renderTable(data.credits);
+                renderPagination(data.pagination);
+                var statEl = document.getElementById('statValidProfiles');
+                if (statEl && typeof data.total_verified === 'number') statEl.textContent = data.total_verified;
+                statEl = document.getElementById('statAllocated');
+                if (statEl && typeof data.total_allocated === 'number') statEl.textContent = data.total_allocated;
+                statEl = document.getElementById('statNotSent');
+                if (statEl && typeof data.total_not_sent === 'number') statEl.textContent = data.total_not_sent;
+                statEl = document.getElementById('statSent');
+                if (statEl && typeof data.total_sent === 'number') statEl.textContent = data.total_sent;
+            })
+            .catch(function(err) {
+                document.getElementById('creditsTableBody').innerHTML = '<tr><td colspan="8" class="text-center" style="color: #ef4444;">' + escapeHtml(err.message) + '</td></tr>';
+                document.getElementById('paginationBar').innerHTML = '';
+            });
+    };
+
+    document.getElementById('searchInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') loadCredits(1);
+    });
+
+    window.exportCredits = function() {
+        const search = document.getElementById('searchInput').value.trim();
+        const params = new URLSearchParams();
+        if (search) params.set('search', search);
+        const url = '/api/skilllab/credits/export' + (params.toString() ? '?' + params.toString() : '');
+        fetch(url, { headers: headers })
+            .then(function(res) {
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Export failed'); });
+                return res.text();
+            })
+            .then(function(csvText) {
+                var blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+                var link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'skill-lab-credits-' + new Date().toISOString().slice(0, 10) + '.csv';
+                link.click();
+                URL.revokeObjectURL(link.href);
+            })
+            .catch(function(err) {
+                alert(err.message || 'Export failed');
+            });
+    };
+
+    function loadCreditLinks() {
+        fetch('/api/skilllab/credit-links', { headers: headers })
+            .then(function(res) {
+                if (!res.ok) throw new Error('Failed to load links');
+                return res.json();
+            })
+            .then(function(data) {
+                var list = data.credit_links || [];
+                var tbody = document.getElementById('creditLinksTableBody');
+                var rows = [];
+                for (var i = 1; i <= 5; i++) {
+                    var link = list[i - 1] || {};
+                    var url = (link.link_url || '').trim();
+                    var maxAlloc = link.max_allocations != null ? link.max_allocations : 2000;
+                    var current = link.current_allocations != null ? link.current_allocations : 0;
+                    rows.push('<tr><td>Link ' + i + '</td><td><input type="text" class="filter-input" style="width:100%;" id="linkUrl' + i + '" value="' + escapeHtml(url) + '" placeholder="URL or identifier"></td><td><input type="number" class="filter-input" style="width:80px;" id="linkMax' + i + '" value="' + maxAlloc + '" min="1" max="100000"></td><td>' + current + ' / ' + maxAlloc + '</td></tr>');
+                }
+                tbody.innerHTML = rows.join('');
+            })
+            .catch(function() {
+                document.getElementById('creditLinksTableBody').innerHTML = '<tr><td colspan="4" class="text-center">Could not load links.</td></tr>';
+            });
+    }
+
+    window.saveCreditLinks = function() {
+        var links = [];
+        for (var i = 1; i <= 5; i++) {
+            var urlEl = document.getElementById('linkUrl' + i);
+            var maxEl = document.getElementById('linkMax' + i);
+            if (!urlEl || !maxEl) continue;
+            var url = (urlEl.value || '').trim();
+            var maxAlloc = parseInt(maxEl.value, 10) || 2000;
+            links.push({ link_url: url || null, display_order: i, max_allocations: Math.max(1, Math.min(100000, maxAlloc)) });
+        }
+        document.getElementById('saveCreditLinksBtn').disabled = true;
+        fetch('/api/skilllab/credit-links', {
+            method: 'POST',
+            headers: Object.assign({}, headers, { 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ links: links })
+        })
+            .then(function(res) {
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Save failed'); });
+                return res.json();
+            })
+            .then(function() {
+                loadCreditLinks();
+                loadCredits(1);
+                alert('Credit links saved.');
+            })
+            .catch(function(err) {
+                alert(err.message || 'Save failed');
+            })
+            .finally(function() {
+                document.getElementById('saveCreditLinksBtn').disabled = false;
+            });
+    };
+
+    window.allocateCredits = function() {
+        var btn = document.getElementById('allocateCreditsBtn');
+        var progressEl = document.getElementById('allocateProgress');
+        var progressBar = document.getElementById('allocateProgressBar');
+        var progressText = document.getElementById('allocateProgressText');
+        if (btn) btn.disabled = true;
+        if (progressEl) { progressEl.style.display = 'block'; progressEl.style.visibility = 'visible'; }
+        if (progressBar) progressBar.style.width = '0%';
+        if (progressText) progressText.textContent = 'Allocating... 0 / 0';
+        fetch('/api/skilllab/allocate?stream=1', { method: 'POST', headers: headers })
+            .then(function(res) {
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Allocate failed'); });
+                return res.body.getReader();
+            })
+            .then(function(reader) {
+                var decoder = new TextDecoder();
+                var buffer = '';
+                var result = null;
+                function processChunk(str) {
+                    var parts = str.split('\n\n');
+                    for (var i = 0; i < parts.length; i++) {
+                        var line = parts[i].trim();
+                        if (!line.startsWith('data:')) continue;
+                        var payload = line.replace(/^data:\s*/, '').trim();
+                        if (!payload) continue;
+                        try {
+                            var data = JSON.parse(payload);
+                            if (data.done) {
+                                result = data;
+                                return;
+                            }
+                            var total = data.total || 0;
+                            var current = data.current || 0;
+                            var pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                            if (progressBar) progressBar.style.width = pct + '%';
+                            if (progressText) progressText.textContent = 'Allocating... ' + (current || 0).toLocaleString() + ' / ' + (total || 0).toLocaleString() + ' (allocated: ' + (data.allocated || 0) + ', skipped: ' + (data.skipped_no_capacity || 0) + ')';
+                        } catch (e) { /* skip */ }
+                    }
+                }
+                function readMore() {
+                    return reader.read().then(function(opt) {
+                        if (opt.done) {
+                            if (buffer) processChunk(buffer);
+                            if (progressEl) progressEl.style.display = 'none';
+                            if (btn) btn.disabled = false;
+                            loadCreditLinks();
+                            loadCredits(1);
+                            if (result) alert('Allocated: ' + (result.allocated || 0) + (result.skipped_no_capacity ? '. Skipped (no capacity): ' + result.skipped_no_capacity : ''));
+                            return;
+                        }
+                        buffer += decoder.decode(opt.value, { stream: true });
+                        var idx = buffer.lastIndexOf('\n\n');
+                        if (idx !== -1) {
+                            processChunk(buffer.substring(0, idx + 2));
+                            buffer = buffer.substring(idx + 2);
+                        }
+                        if (result) {
+                            if (progressEl) progressEl.style.display = 'none';
+                            if (btn) btn.disabled = false;
+                            loadCreditLinks();
+                            loadCredits(1);
+                            alert('Allocated: ' + (result.allocated || 0) + (result.skipped_no_capacity ? '. Skipped (no capacity): ' + result.skipped_no_capacity : ''));
+                            return;
+                        }
+                        return readMore();
+                    });
+                }
+                return readMore();
+            })
+            .catch(function(err) {
+                if (progressEl) progressEl.style.display = 'none';
+                if (btn) btn.disabled = false;
+                alert(err.message || 'Allocate failed');
+            });
+    };
+
+    window.exportNotSent = function() {
+        fetch('/api/skilllab/credits/export-not-sent', { headers: headers })
+            .then(function(res) {
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Download failed'); });
+                return res.text();
+            })
+            .then(function(csvText) {
+                var blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+                var link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = 'skill-lab-credits-not-sent-' + new Date().toISOString().slice(0, 10) + '.csv';
+                link.click();
+                URL.revokeObjectURL(link.href);
+            })
+            .catch(function(err) {
+                alert(err.message || 'Download failed');
+            });
+    };
+
+    window.markSentUpload = function() {
+        var input = document.getElementById('markSentFile');
+        if (!input || !input.files || !input.files[0]) {
+            alert('Please select a file');
+            return;
+        }
+        var formData = new FormData();
+        formData.append('file', input.files[0]);
+        document.getElementById('markSentResult').textContent = 'Uploading...';
+        fetch('/api/skilllab/credits/mark-sent', {
+            method: 'POST',
+            headers: { 'Authorization': headers['Authorization'] },
+            body: formData
+        })
+            .then(function(res) {
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Upload failed'); });
+                return res.json();
+            })
+            .then(function(data) {
+                document.getElementById('markSentResult').textContent = 'Marked ' + (data.updated || 0) + ' as sent.';
+                input.value = '';
+                loadCredits(1);
+                loadCreditLinks();
+            })
+            .catch(function(err) {
+                document.getElementById('markSentResult').textContent = '';
+                alert(err.message || 'Upload failed');
+            });
+    };
+
+    loadCreditLinks();
+    loadCredits(1);
+})();
+</script>
+{% endblock %}

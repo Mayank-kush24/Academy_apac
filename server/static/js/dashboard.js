@@ -7,7 +7,7 @@ let isLoading = false;
 let currentPeriod = 'all';
 let lastLoadedPeriod = null;
 let periodDebounceTimer = null;
-const PERIOD_DEBOUNCE_MS = 280;
+const PERIOD_DEBOUNCE_MS = 150;
 
 // Load dashboard data on page load
 document.addEventListener('DOMContentLoaded', function() {
@@ -46,6 +46,7 @@ function initializeDashboard() {
     periodButtons.forEach(btn => {
         btn.addEventListener('click', function() {
             const period = this.getAttribute('data-period');
+            if (period === currentPeriod) return;
             setPeriod(period);
         });
     });
@@ -93,7 +94,9 @@ function setPeriod(period) {
     if (periodDebounceTimer) clearTimeout(periodDebounceTimer);
     periodDebounceTimer = setTimeout(function() {
         periodDebounceTimer = null;
-        loadDashboardData();
+        requestAnimationFrame(function() {
+            loadDashboardData();
+        });
     }, PERIOD_DEBOUNCE_MS);
 }
 
@@ -124,7 +127,9 @@ async function loadDashboardData() {
                 average_age: null, apac_except_india_users: 0, top_india_state: 'N/A',
                 top_india_city: 'N/A', top_apac_country: 'N/A',
                 sea_registrations: 0, sea_top_country: 'N/A', anz_registrations: 0, anz_top_country: 'N/A',
-                east_asia_registrations: 0, east_asia_top_country: 'N/A',
+                east_asia_registrations: 0, east_asia_top_country: 'N/A', india_registrations: 0,
+                total_skillboost_profiles: 0, verified_skillboost_profiles: 0, skillboost_verification_rate: null,
+                skillboost_credits_allocated: 0, skillboost_credits_not_sent: 0, skillboost_credits_sent: 0,
                 previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
             };
         }
@@ -153,7 +158,14 @@ async function loadDashboardData() {
             anz_registrations: 0,
             anz_top_country: 'N/A',
             east_asia_registrations: 0,
-            east_asia_top_country: 'N/A'
+            east_asia_top_country: 'N/A',
+            india_registrations: 0,
+            total_skillboost_profiles: 0,
+            verified_skillboost_profiles: 0,
+            skillboost_verification_rate: null,
+            skillboost_credits_allocated: 0,
+            skillboost_credits_not_sent: 0,
+            skillboost_credits_sent: 0
         });
         renderCharts({
             registration_trends: [],
@@ -259,6 +271,29 @@ function updateKPICards(summary, chartsData) {
         bookOfBusinessEl.textContent = (bobCount !== undefined && bobCount !== null) ? formatNumber(bobCount) : '-';
     }
 
+    const totalSkillboostEl = document.getElementById('totalSkillboostProfiles');
+    if (totalSkillboostEl) {
+        const total = summary.total_skillboost_profiles;
+        totalSkillboostEl.textContent = (total !== undefined && total !== null) ? formatNumber(total) : '-';
+    }
+    const skillboostMetaEl = document.getElementById('skillboostVerificationMeta');
+    if (skillboostMetaEl) {
+        const verified = summary.verified_skillboost_profiles;
+        const rate = summary.skillboost_verification_rate;
+        const total = summary.total_skillboost_profiles;
+        if (total !== undefined && total !== null && verified !== undefined && verified !== null) {
+            skillboostMetaEl.textContent = 'Verified: ' + formatNumber(verified) + (rate != null ? ' / ' + rate + '%' : '');
+        } else {
+            skillboostMetaEl.textContent = 'Verified: — / —%';
+        }
+    }
+    const creditsAllocatedEl = document.getElementById('skillboostCreditsAllocated');
+    if (creditsAllocatedEl) creditsAllocatedEl.textContent = (summary.skillboost_credits_allocated !== undefined && summary.skillboost_credits_allocated !== null) ? formatNumber(summary.skillboost_credits_allocated) : '-';
+    const creditsNotSentEl = document.getElementById('skillboostCreditsNotSent');
+    if (creditsNotSentEl) creditsNotSentEl.textContent = (summary.skillboost_credits_not_sent !== undefined && summary.skillboost_credits_not_sent !== null) ? formatNumber(summary.skillboost_credits_not_sent) : '-';
+    const creditsSentEl = document.getElementById('skillboostCreditsSent');
+    if (creditsSentEl) creditsSentEl.textContent = (summary.skillboost_credits_sent !== undefined && summary.skillboost_credits_sent !== null) ? formatNumber(summary.skillboost_credits_sent) : '-';
+
     // Region cards: SEA, ANZ, East Asia
     const seaRegEl = document.getElementById('seaRegistrations');
     if (seaRegEl) seaRegEl.textContent = (summary.sea_registrations !== undefined && summary.sea_registrations !== null) ? formatNumber(summary.sea_registrations) : '-';
@@ -274,6 +309,11 @@ function updateKPICards(summary, chartsData) {
     if (eastAsiaRegEl) eastAsiaRegEl.textContent = (summary.east_asia_registrations !== undefined && summary.east_asia_registrations !== null) ? formatNumber(summary.east_asia_registrations) : '-';
     const eastAsiaTopEl = document.getElementById('eastAsiaTopCountry');
     if (eastAsiaTopEl) eastAsiaTopEl.textContent = 'Top: ' + (summary.east_asia_top_country || '—');
+
+    const indiaRegEl = document.getElementById('indiaRegistrations');
+    if (indiaRegEl) indiaRegEl.textContent = (summary.india_registrations !== undefined && summary.india_registrations !== null) ? formatNumber(summary.india_registrations) : '-';
+    const indiaTopEl = document.getElementById('indiaTopState');
+    if (indiaTopEl) indiaTopEl.textContent = 'Top: ' + (summary.top_india_state || '—');
 
     updateHeaderUserInfo();
 }
@@ -1134,6 +1174,8 @@ window.exportData = async function exportData(event) {
             csvContent += `ANZ Top Country,${summary.anz_top_country || 'N/A'}\n`;
             csvContent += `East Asia Registrations,${summary.east_asia_registrations ?? ''}\n`;
             csvContent += `East Asia Top Country,${summary.east_asia_top_country || 'N/A'}\n`;
+            csvContent += `India Registrations,${summary.india_registrations ?? ''}\n`;
+            csvContent += `India Top State,${summary.top_india_state || 'N/A'}\n`;
             csvContent += `Unique Organizations,${summary.unique_organizations}\n`;
             csvContent += `Top Domain,${summary.top_domain}\n`;
             csvContent += `Top City,${summary.top_city}\n\n`;
@@ -1293,13 +1335,29 @@ function renderDonutChart(canvasId, title, data, opts) {
     const palette = opts.palette || 'gender';
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
-    
-    // Destroy existing chart if it exists
-    if (charts[canvasId]) {
-        charts[canvasId].destroy();
+    const labels = data.map(item => item.label);
+    const values = data.map(item => item.value);
+    const total = values.reduce((a, b) => a + b, 0);
+    var colors;
+    if (palette === 'registration') {
+        var registrationPalette = { 'Google': '#4285F4', 'Hack2skill': '#ff7a18' };
+        colors = labels.map(function (l) { return registrationPalette[l] || '#94a3b8'; });
+    } else if (palette === 'occupation') {
+        var occupationPalette = ['#059669', '#0ea5e9', '#e11d48', '#6366f1', '#d97706', '#14b8a6', '#8b5cf6', '#f43f5e'];
+        colors = labels.map(function (_, i) { return occupationPalette[i % occupationPalette.length]; });
+    } else {
+        var genderPalette = ['#0d9488', '#7c3aed', '#f59e0b', '#64748b', '#06b6d4'];
+        colors = labels.map(function (_, i) { return genderPalette[i % genderPalette.length]; });
     }
-    
-    // Same size for all doughnut charts (e.g. when in bifurcation row)
+    const existing = charts[canvasId];
+    if (existing && existing.config && existing.config.type === 'doughnut') {
+        existing.data.labels = labels;
+        existing.data.datasets[0].data = values;
+        existing.data.datasets[0].backgroundColor = colors;
+        existing.update('none');
+        return;
+    }
+    if (existing) existing.destroy();
     const donutHeight = 280;
     ctx.style.display = 'block';
     const chartContainer = ctx.parentElement;
@@ -1312,24 +1370,6 @@ function renderDonutChart(canvasId, title, data, opts) {
     }
     const messageEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
     if (messageEl) messageEl.remove();
-    
-    const labels = data.map(item => item.label);
-    const values = data.map(item => item.value);
-    const total = values.reduce((a, b) => a + b, 0);
-    
-    // Distinct palettes per chart type
-    var colors;
-    if (palette === 'registration') {
-        var registrationPalette = { 'Google': '#4285F4', 'Hack2skill': '#ff7a18' };
-        colors = labels.map(function (l) { return registrationPalette[l] || '#94a3b8'; });
-    } else if (palette === 'occupation') {
-        var occupationPalette = ['#059669', '#0ea5e9', '#e11d48', '#6366f1', '#d97706', '#14b8a6', '#8b5cf6', '#f43f5e'];
-        colors = labels.map(function (_, i) { return occupationPalette[i % occupationPalette.length]; });
-    } else {
-        var genderPalette = ['#0d9488', '#7c3aed', '#f59e0b', '#64748b', '#06b6d4'];
-        colors = labels.map(function (_, i) { return genderPalette[i % genderPalette.length]; });
-    }
-    
     charts[canvasId] = new Chart(ctx, {
         type: 'doughnut',
         data: {
@@ -1440,19 +1480,32 @@ function renderDonutChart(canvasId, title, data, opts) {
 function renderBarChart(canvasId, title, data) {
     const ctx = document.getElementById(canvasId);
     if (!ctx) return;
-    
-    // Destroy existing chart if it exists
-    if (charts[canvasId]) {
-        charts[canvasId].destroy();
+    const chartContainer = ctx.parentElement;
+    const labels = data.map(item => item.label);
+    const values = data.map(item => item.value);
+    const sortedIndices = values.map((v, i) => ({ value: v, index: i })).sort((a, b) => b.value - a.value);
+    const brandAccent = '#ff7a18';
+    const grayscaleColors = ['rgba(229, 231, 235, 0.7)', 'rgba(209, 213, 219, 0.7)', 'rgba(156, 163, 175, 0.7)', 'rgba(107, 114, 128, 0.7)', 'rgba(75, 85, 99, 0.7)', 'rgba(55, 65, 81, 0.7)'];
+    const backgroundColors = values.map((v, i) => {
+        if (sortedIndices[0].index === i) return brandAccent;
+        const rank = sortedIndices.findIndex(item => item.index === i);
+        const grayIndex = Math.min(rank - 1, grayscaleColors.length - 1);
+        return grayscaleColors[grayIndex] || '#E5E7EB';
+    });
+    const existing = charts[canvasId];
+    if (existing && existing.config && existing.config.type === 'bar') {
+        existing.data.labels = labels;
+        existing.data.datasets[0].label = title;
+        existing.data.datasets[0].data = values;
+        existing.data.datasets[0].backgroundColor = backgroundColors;
+        existing.update('none');
+        return;
     }
-    
-    // Show canvas and ensure pointer events
+    if (existing) existing.destroy();
     ctx.style.display = 'block';
     ctx.style.pointerEvents = 'auto';
-    const chartContainer = ctx.parentElement;
     if (chartContainer) {
         chartContainer.style.pointerEvents = 'auto';
-        // Ranking cards (Top Cities, Top Organizations): fill entire card via flex
         const isRanking = chartContainer.closest('.chart-ranking');
         if (isRanking) {
             ctx.style.height = '100%';
@@ -1465,50 +1518,12 @@ function renderBarChart(canvasId, title, data) {
         }
         ctx.style.width = '100%';
     }
-    const messageEl = chartContainer.querySelector('.empty-chart-message');
+    const messageEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
     if (messageEl) messageEl.remove();
-    
-    const labels = data.map(item => item.label);
-    const values = data.map(item => item.value);
-    const maxValue = Math.max(...values);
-    const minValue = Math.min(...values);
-    
-    // Analytical grayscale with one brand accent
-    // Top value gets brand accent, others use grayscale
-    const sortedIndices = values.map((v, i) => ({ value: v, index: i }))
-        .sort((a, b) => b.value - a.value);
-    
-    const brandAccent = '#ff7a18'; // Orange primary
-    const brandAccentLight = '#ff9f43'; // Orange light
-    const grayscaleColors = [
-        'rgba(229, 231, 235, 0.7)', // Light gray
-        'rgba(209, 213, 219, 0.7)', // Medium-light gray
-        'rgba(156, 163, 175, 0.7)', // Medium gray
-        'rgba(107, 114, 128, 0.7)', // Medium-dark gray
-        'rgba(75, 85, 99, 0.7)', // Dark gray
-        'rgba(55, 65, 81, 0.7)'  // Darker gray
-    ];
-    
-    // Assign colors: top value gets accent, others use grayscale
-    const backgroundColors = values.map((v, i) => {
-        if (sortedIndices[0].index === i) return brandAccent;
-        // Use grayscale based on value ranking
-        const rank = sortedIndices.findIndex(item => item.index === i);
-        const grayIndex = Math.min(rank - 1, grayscaleColors.length - 1);
-        return grayscaleColors[grayIndex] || '#E5E7EB';
-    });
-    
-    // Keep full labels - don't truncate, let Chart.js handle wrapping
-    const displayLabels = labels;
-    
-    // Always use rotated labels for better readability with long names
-    const needsRotation = true; // Always rotate for better label visibility
-    
-    // Calculate optimal bar thickness based on container size
     const containerWidth = chartContainer ? chartContainer.offsetWidth : 300;
     const barCount = values.length;
     const optimalBarThickness = Math.min(60, Math.max(30, (containerWidth - 40) / barCount * 0.6));
-    
+    const displayLabels = labels;
     charts[canvasId] = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -1692,13 +1707,17 @@ function renderLineChart(canvasId, title, data) {
         console.error('Canvas element not found:', canvasId);
         return;
     }
-    
-    // Destroy existing chart if it exists
-    if (charts[canvasId]) {
-        charts[canvasId].destroy();
+    const labels = data.map(item => item.label);
+    const values = data.map(item => item.value);
+    const existing = charts[canvasId];
+    if (existing && existing.config && existing.config.type === 'line') {
+        existing.data.labels = labels;
+        existing.data.datasets[0].label = title;
+        existing.data.datasets[0].data = values;
+        existing.update('none');
+        return;
     }
-    
-    // Show canvas and ensure pointer events are enabled
+    if (existing) existing.destroy();
     canvas.style.display = 'block';
     canvas.style.pointerEvents = 'auto';
     canvas.style.cursor = 'crosshair';
@@ -1709,8 +1728,6 @@ function renderLineChart(canvasId, title, data) {
     const messageEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
     if (messageEl) messageEl.remove();
     
-    const labels = data.map(item => item.label);
-    const values = data.map(item => item.value);
     const dates = data.map(item => item.date || item.label);
     
     // Calculate step size for x-axis labels

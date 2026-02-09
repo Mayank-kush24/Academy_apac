@@ -10,8 +10,9 @@ project_root = os.path.dirname(os.path.abspath(__file__))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from sqlalchemy import text
 from server.app import create_app
-from server.models import db, User, UserPII, ActivityLog, BobCompany
+from server.models import db, User, UserPII, ActivityLog, BobCompany, SkillboostProfile, CreditLink
 
 def init_database():
     """Initialize database and create all tables"""
@@ -49,9 +50,58 @@ def init_database():
             else:
                 print("✗ 'bob_companies' table NOT found")
             
+            if 'skillboost_profile' in tables:
+                print("✓ 'skillboost_profile' table exists")
+                # Drop FK to user_pii so we can import all Skill Lab emails (not only those in user_pii)
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE skillboost_profile DROP CONSTRAINT IF EXISTS fk_skillboost_profile_email"))
+                        conn.commit()
+                    print("✓ skillboost_profile: FK to user_pii removed (import all emails)")
+                except Exception as ex:
+                    print("⚠ Could not drop skillboost_profile FK (may already be dropped):", ex)
+                # Ensure master_logs and skillboost_profile trigger exist (profile verification logs)
+                try:
+                    schema_path = os.path.join(project_root, 'schema.sql')
+                    if os.path.isfile(schema_path):
+                        with open(schema_path, 'r', encoding='utf-8') as f:
+                            schema_sql = f.read()
+                        with db.engine.connect() as conn:
+                            conn.execute(text(schema_sql))
+                            conn.commit()
+                        print("✓ master_logs + skillboost_profile trigger applied (profile verification logs)")
+                    else:
+                        _apply_skillboost_master_logs(db)
+                except Exception as ex:
+                    try:
+                        _apply_skillboost_master_logs(db)
+                    except Exception as ex2:
+                        print("⚠ Could not apply master_logs for skillboost_profile (run schema.sql manually):", ex2)
+                # Add credit_link_id and email_sent_at to skillboost_profile (credit allocation + Sendy tracking)
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE skillboost_profile ADD COLUMN IF NOT EXISTS credit_link_id INTEGER REFERENCES credit_links(id)"))
+                        conn.commit()
+                    print("✓ skillboost_profile.credit_link_id column verified")
+                except Exception as ex:
+                    print("⚠ Could not add skillboost_profile.credit_link_id (create credit_links first or already exists):", ex)
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE skillboost_profile ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP"))
+                        conn.commit()
+                    print("✓ skillboost_profile.email_sent_at column verified")
+                except Exception as ex:
+                    print("⚠ Could not add skillboost_profile.email_sent_at (may already exist):", ex)
+            else:
+                print("✗ 'skillboost_profile' table NOT found")
+
+            if 'credit_links' in tables:
+                print("✓ 'credit_links' table exists")
+            else:
+                print("✗ 'credit_links' table NOT found")
+            
             # Add allowed_pages column to users if missing (dynamic page access)
             try:
-                from sqlalchemy import text
                 with db.engine.connect() as conn:
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_pages JSONB"))
                     conn.commit()
@@ -111,6 +161,74 @@ def init_database():
             print("2. DATABASE_URL in .env file is correct")
             print("3. Database exists and user has proper permissions")
             sys.exit(1)
+
+def _apply_skillboost_master_logs(db):
+    """Apply master_logs table, get_record_identifier, log_activity, and skillboost_profile trigger."""
+    with db.engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS master_logs (
+                log_id           SERIAL PRIMARY KEY,
+                table_name       VARCHAR(128) NOT NULL,
+                operation_type   VARCHAR(16) NOT NULL CHECK (operation_type IN ('INSERT', 'UPDATE', 'DELETE')),
+                record_identifier TEXT NOT NULL,
+                old_values       JSONB,
+                new_values       JSONB,
+                changed_by       VARCHAR(255),
+                "timestamp"      TIMESTAMP NOT NULL DEFAULT (NOW() AT TIME ZONE 'utc'),
+                additional_info  JSONB
+            );
+        """))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_master_logs_table_name ON master_logs (table_name);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_master_logs_timestamp ON master_logs (\"timestamp\");"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_master_logs_changed_by ON master_logs (changed_by);"))
+        conn.commit()
+    with db.engine.connect() as conn:
+        conn.execute(text("""
+            CREATE OR REPLACE FUNCTION get_record_identifier(p_table_name TEXT, p_row RECORD)
+            RETURNS TEXT AS $$
+            BEGIN
+                IF p_table_name = 'user_pii' THEN RETURN COALESCE((p_row).id::TEXT, '');
+                ELSIF p_table_name = 'users' THEN RETURN COALESCE((p_row).id::TEXT, '');
+                ELSIF p_table_name = 'skillboost_profile' THEN
+                    RETURN COALESCE((p_row).email, '') || '|' || COALESCE((p_row).google_cloud_skills_boost_profile_link, '');
+                ELSE RETURN COALESCE((p_row).id::TEXT, '');
+                END IF;
+            EXCEPTION WHEN OTHERS THEN RETURN 'unknown';
+            END;
+            $$ LANGUAGE plpgsql;
+        """))
+        conn.commit()
+    with db.engine.connect() as conn:
+        conn.execute(text("""
+            CREATE OR REPLACE FUNCTION log_activity()
+            RETURNS TRIGGER AS $$
+            DECLARE v_table_name VARCHAR(128); v_operation VARCHAR(16); v_record_id TEXT;
+                    v_old JSONB; v_new JSONB; v_changed_by VARCHAR(255); v_additional JSONB;
+            BEGIN
+                v_table_name := TG_TABLE_NAME; v_operation := TG_OP;
+                IF TG_OP = 'DELETE' THEN v_record_id := get_record_identifier(TG_TABLE_NAME, OLD); v_old := to_jsonb(OLD); v_new := NULL;
+                ELSIF TG_OP = 'UPDATE' THEN v_record_id := get_record_identifier(TG_TABLE_NAME, NEW); v_old := to_jsonb(OLD); v_new := to_jsonb(NEW);
+                ELSE v_record_id := get_record_identifier(TG_TABLE_NAME, NEW); v_old := NULL; v_new := to_jsonb(NEW);
+                END IF;
+                BEGIN v_changed_by := NULLIF(TRIM(current_setting('app.current_user', true)), ''); EXCEPTION WHEN OTHERS THEN v_changed_by := 'system'; END;
+                IF v_changed_by IS NULL THEN v_changed_by := 'system'; END IF;
+                BEGIN v_additional := NULLIF(TRIM(current_setting('app.current_user_extra', true)), '')::jsonb; EXCEPTION WHEN OTHERS THEN v_additional := NULL; END;
+                INSERT INTO master_logs (table_name, operation_type, record_identifier, old_values, new_values, changed_by, "timestamp", additional_info)
+                VALUES (v_table_name, v_operation, v_record_id, v_old, v_new, v_changed_by, NOW() AT TIME ZONE 'utc', v_additional);
+                RETURN COALESCE(NEW, OLD);
+            END;
+            $$ LANGUAGE plpgsql;
+        """))
+        conn.commit()
+    with db.engine.connect() as conn:
+        conn.execute(text("""
+            DROP TRIGGER IF EXISTS tr_skillboost_profile_log ON skillboost_profile;
+            CREATE TRIGGER tr_skillboost_profile_log
+                AFTER INSERT OR UPDATE OR DELETE ON skillboost_profile
+                FOR EACH ROW EXECUTE PROCEDURE log_activity();
+        """))
+        conn.commit()
+
 
 if __name__ == '__main__':
     init_database()

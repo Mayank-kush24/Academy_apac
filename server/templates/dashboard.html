@@ -150,6 +150,16 @@
                     <div class="region-card-meta" id="eastAsiaTopCountry">Top: —</div>
                 </div>
             </div>
+            <div class="glass-card region-card">
+                <div class="region-card-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="region-card-content">
+                    <div class="region-card-label">India</div>
+                    <div class="region-card-value" id="indiaRegistrations">-</div>
+                    <div class="region-card-meta" id="indiaTopState">Top: —</div>
+                </div>
+            </div>
         </div>
 
         <!-- Row 1b: Small KPI cards (Book of Business, Workshops, Code labs, MCQ Test) -->
@@ -197,6 +207,36 @@
                 </div>
             </div>
         </div>
+
+        <!-- Skill Lab section: Profiles + Credits -->
+        <section class="skill-lab-section" aria-labelledby="skill-lab-section-title">
+            <h2 class="skill-lab-section-title" id="skill-lab-section-title">Skill Lab</h2>
+            <div class="skill-lab-cards">
+                <div class="glass-card skill-lab-card" title="Skillboost profiles">
+                    <div class="skill-lab-card-icon">
+                        <i class="fas fa-graduation-cap"></i>
+                    </div>
+                    <div class="skill-lab-card-content">
+                        <div class="skill-lab-card-label">Skillboost Profiles</div>
+                        <div class="skill-lab-card-value" id="totalSkillboostProfiles">-</div>
+                        <div class="skill-lab-card-meta" id="skillboostVerificationMeta">Verified: — / —%</div>
+                    </div>
+                </div>
+                <div class="glass-card skill-lab-card" title="Skill Lab credit allocation and Sendy dispatch">
+                    <div class="skill-lab-card-icon">
+                        <i class="fas fa-award"></i>
+                    </div>
+                    <div class="skill-lab-card-content">
+                        <div class="skill-lab-card-label">Skill Lab credits</div>
+                        <div class="skill-lab-credits-stats">
+                            <div class="skill-lab-credits-line"><span class="skill-lab-credits-label">Allocated</span><span class="skill-lab-credits-value" id="skillboostCreditsAllocated">-</span></div>
+                            <div class="skill-lab-credits-line"><span class="skill-lab-credits-label">Not sent</span><span class="skill-lab-credits-value" id="skillboostCreditsNotSent">-</span></div>
+                            <div class="skill-lab-credits-line"><span class="skill-lab-credits-label">Sent</span><span class="skill-lab-credits-value" id="skillboostCreditsSent">-</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <!-- Row 2: Primary Analytics Section (70/30 split) -->
         <div class="primary-analytics-row">
@@ -251,42 +291,64 @@
             </div>
         </div>
 
-        <!-- Track selection cards (placeholders) -->
-        <div class="tracks-row">
-            <div class="glass-card chart-secondary track-card">
-                <div class="chart-header">
-                    <div>
-                        <h3 class="chart-title">Track 1 selected</h3>
-                        <p class="chart-subtitle">Track 1 enrollment</p>
+        <!-- Tracks section: Community Goal + Track cards -->
+        <section class="tracks-section" aria-labelledby="tracks-section-title">
+            <div class="tracks-section-inner">
+                <!-- Global Target Header -->
+                <div class="tracks-global-header">
+                    <h2 class="tracks-section-title" id="tracks-section-title">Community Goal</h2>
+                    <div class="tracks-target-badge" title="Target completions">
+                        <i class="fas fa-trophy"></i>
+                        <span>Target: 15,000</span>
                     </div>
                 </div>
-                <div class="registration-source-placeholder">
-                    <span class="wip-badge">Work in Progress</span>
-                </div>
-            </div>
-            <div class="glass-card chart-secondary track-card">
-                <div class="chart-header">
-                    <div>
-                        <h3 class="chart-title">Track 2 selected</h3>
-                        <p class="chart-subtitle">Track 2 enrollment</p>
+                <div class="tracks-progress-block">
+                    <div class="tracks-progress-counter">
+                        Currently at <strong id="tracksCompletedCount">0</strong> / 15,000 Tracks Completed
+                    </div>
+                    <div class="tracks-progress-bar-wrap">
+                        <div class="tracks-progress-bar" id="tracksProgressBar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="15000" style="width: 0%;"></div>
                     </div>
                 </div>
-                <div class="registration-source-placeholder">
-                    <span class="wip-badge">Work in Progress</span>
-                </div>
-            </div>
-            <div class="glass-card chart-secondary track-card">
-                <div class="chart-header">
-                    <div>
-                        <h3 class="chart-title">Track 3 selected</h3>
-                        <p class="chart-subtitle">Track 3 enrollment</p>
+
+                <!-- Individual Track Cards -->
+                <div class="tracks-row">
+                    <div class="glass-card track-card">
+                        <h3 class="track-card-title">Track 1 selected</h3>
+                        <p class="track-card-subtitle">Track 1 enrollment</p>
+                        <span class="track-status-badge track-status-wip" title="Tracking for this path is being calibrated">Work in Progress</span>
+                        <div class="track-completion-placeholder" title="Coming Soon – tracking for this path is being calibrated">
+                            <div class="track-skeleton-bar">
+                                <div class="track-skeleton-fill"></div>
+                            </div>
+                            <span class="track-coming-soon"><i class="fas fa-lock"></i> Coming Soon</span>
+                        </div>
+                    </div>
+                    <div class="glass-card track-card">
+                        <h3 class="track-card-title">Track 2 selected</h3>
+                        <p class="track-card-subtitle">Track 2 enrollment</p>
+                        <span class="track-status-badge track-status-wip" title="Tracking for this path is being calibrated">Work in Progress</span>
+                        <div class="track-completion-placeholder" title="Coming Soon – tracking for this path is being calibrated">
+                            <div class="track-skeleton-bar">
+                                <div class="track-skeleton-fill"></div>
+                            </div>
+                            <span class="track-coming-soon"><i class="fas fa-lock"></i> Coming Soon</span>
+                        </div>
+                    </div>
+                    <div class="glass-card track-card">
+                        <h3 class="track-card-title">Track 3 selected</h3>
+                        <p class="track-card-subtitle">Track 3 enrollment</p>
+                        <span class="track-status-badge track-status-wip" title="Tracking for this path is being calibrated">Work in Progress</span>
+                        <div class="track-completion-placeholder" title="Coming Soon – tracking for this path is being calibrated">
+                            <div class="track-skeleton-bar">
+                                <div class="track-skeleton-fill"></div>
+                            </div>
+                            <span class="track-coming-soon"><i class="fas fa-lock"></i> Coming Soon</span>
+                        </div>
                     </div>
                 </div>
-                <div class="registration-source-placeholder">
-                    <span class="wip-badge">Work in Progress</span>
-                </div>
             </div>
-        </div>
+        </section>
 
         <!-- State-wise (India) + APAC Region Registrations – side by side -->
         <div class="maps-row">

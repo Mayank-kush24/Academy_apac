@@ -116,6 +116,8 @@ BEGIN
         RETURN COALESCE((p_row).id::TEXT, '');
     ELSIF p_table_name = 'hands_on_lab_completion' THEN
         RETURN COALESCE((p_row).id::TEXT, '');
+    ELSIF p_table_name = 'skillboost_profile' THEN
+        RETURN COALESCE((p_row).email, '') || '|' || COALESCE((p_row).google_cloud_skills_boost_profile_link, '');
     ELSE
         -- Default: try single column 'id'
         RETURN COALESCE((p_row).id::TEXT, '');
@@ -147,6 +149,17 @@ BEGIN
         DROP TRIGGER IF EXISTS tr_users_log ON users;
         CREATE TRIGGER tr_users_log
             AFTER INSERT OR UPDATE OR DELETE ON users
+            FOR EACH ROW EXECUTE PROCEDURE log_activity();
+    END IF;
+END $$;
+
+-- skillboost_profile
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'skillboost_profile') THEN
+        DROP TRIGGER IF EXISTS tr_skillboost_profile_log ON skillboost_profile;
+        CREATE TRIGGER tr_skillboost_profile_log
+            AFTER INSERT OR UPDATE OR DELETE ON skillboost_profile
             FOR EACH ROW EXECUTE PROCEDURE log_activity();
     END IF;
 END $$;

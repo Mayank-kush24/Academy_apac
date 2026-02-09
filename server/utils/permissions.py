@@ -10,6 +10,7 @@ PAGES = [
     {'id': 'home', 'path': '/', 'label': 'Home'},
     {'id': 'dashboard', 'path': '/dashboard', 'label': 'Dashboard'},
     {'id': 'profiles', 'path': '/profiles', 'label': 'Profiles'},
+    {'id': 'skill_lab_credits', 'path': '/skill-lab-credits', 'label': 'Skill Lab credits'},
     {'id': 'import', 'path': '/import', 'label': 'Import Data'},
     {'id': 'users', 'path': '/users', 'label': 'User Management'},
 ]
@@ -19,6 +20,7 @@ DEFAULT_PAGE_ROLES = {
     'home': ['viewer', 'editor', 'admin'],
     'dashboard': ['viewer', 'editor', 'admin'],
     'profiles': ['viewer', 'editor', 'admin'],
+    'skill_lab_credits': ['viewer', 'editor', 'admin'],
     'import': ['editor', 'admin'],
     'users': ['admin'],
 }
