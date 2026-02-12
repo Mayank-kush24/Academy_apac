@@ -152,6 +152,55 @@ class SkillboostProfile(db.Model):
         }
 
 
+class SkillLabSubmission(db.Model):
+    """
+    Skill Lab submission verification table.
+    Each row represents a team submission that an intern verifies manually.
+    leader_email is FK to user_pii.email.
+    """
+    __tablename__ = 'skilllab_submission'
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    team_name = db.Column(db.String(255), nullable=True)
+    leader_name = db.Column(db.String(255), nullable=True)
+    leader_email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)
+    leader_phone = db.Column(db.String(50), nullable=True)
+    team_size = db.Column(db.Integer, nullable=True)
+    problem_statement = db.Column(db.Text, nullable=True)
+    upload_screenshot = db.Column(db.String(1024), nullable=True)  # URL/path to screenshot
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_by_name = db.Column(db.String(255), nullable=True)
+    created_by_email = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by_name = db.Column(db.String(255), nullable=True)
+    updated_by_email = db.Column(db.String(255), nullable=True)
+    valid = db.Column(db.Boolean, default=False, nullable=False)
+    remark = db.Column(db.Text, nullable=True)
+
+    # Relationship to UserPII
+    leader = db.relationship('UserPII', foreign_keys=[leader_email], primaryjoin='SkillLabSubmission.leader_email == UserPII.email', lazy='joined')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'team_name': self.team_name,
+            'leader_name': self.leader_name,
+            'leader_email': self.leader_email,
+            'leader_phone': self.leader_phone,
+            'team_size': self.team_size,
+            'problem_statement': self.problem_statement,
+            'upload_screenshot': self.upload_screenshot,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by_name': self.created_by_name,
+            'created_by_email': self.created_by_email,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by_name': self.updated_by_name,
+            'updated_by_email': self.updated_by_email,
+            'valid': bool(self.valid),
+            'remark': self.remark,
+        }
+
+
 class ActivityLog(db.Model):
     """Table for storing activity logs (create/update/delete on any tracked table)"""
     __tablename__ = 'activity_logs'

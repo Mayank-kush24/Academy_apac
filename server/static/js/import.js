@@ -560,13 +560,19 @@ async function runSkillboostPreview(file) {
         const names = data.sheet_names || [];
         const detected = data.detected_sheet_name;
         const rows = data.detected_sheet_rows != null ? data.detected_sheet_rows : 0;
+        const subSheet = data.submission_sheet_name;
+        const subRows = data.submission_sheet_rows != null ? data.submission_sheet_rows : 0;
         if (data.error) {
             previewResultEl.innerHTML = '<strong><i class="fas fa-info-circle"></i> ' + count + ' subsheet(s) detected.</strong><br>' +
                 '<span class="text-warning">' + escapeHtml(data.error) + '</span>' +
                 (names.length ? '<br><span class="text-muted">Sheet names: ' + escapeHtml(names.join(', ')) + '</span>' : '');
         } else {
-            previewResultEl.innerHTML = '<strong><i class="fas fa-check-circle text-success"></i> ' + count + ' subsheet(s) detected.</strong><br>' +
+            var html = '<strong><i class="fas fa-check-circle text-success"></i> ' + count + ' subsheet(s) detected.</strong><br>' +
                 'Sheet <strong>&quot;' + escapeHtml(detected || '') + '&quot;</strong> (Share your Google Skills Pu) detected with <strong>' + (rows || 0).toLocaleString() + '</strong> row(s).';
+            if (subSheet) {
+                html += '<br><i class="fas fa-check-circle text-success"></i> Sheet <strong>&quot;' + escapeHtml(subSheet) + '&quot;</strong> (Skill Lab Submissions) detected with <strong>' + (subRows || 0).toLocaleString() + '</strong> row(s).';
+            }
+            previewResultEl.innerHTML = html;
         }
         previewResultEl.style.display = 'block';
     } catch (err) {
@@ -642,12 +648,27 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
             return;
         }
         if (successEl) {
-            successEl.innerHTML = (data.message || 'Imported ' + (data.created || 0) + ' created, ' + (data.updated || 0) + ' updated, ' + (data.skipped || 0) + ' skipped.');
+            var msgHtml = '<div><i class="fas fa-check-circle" style="color: #22c55e;"></i> ' +
+                escapeHtml(data.message || 'Imported ' + (data.created || 0) + ' created, ' + (data.updated || 0) + ' updated, ' + (data.skipped || 0) + ' skipped.') + '</div>';
+            if (data.submission) {
+                var sub = data.submission;
+                msgHtml += '<div style="margin-top: 8px;"><i class="fas fa-clipboard-check" style="color: #3b82f6;"></i> <strong>Skill Lab Submissions</strong> (sheet: ' + escapeHtml(sub.sheet_name || '') + '): ' +
+                    (sub.created || 0) + ' created, ' + (sub.updated || 0) + ' updated, ' + (sub.skipped || 0) + ' skipped.</div>';
+            }
+            if (data.submission_error) {
+                msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Submission import error: ' + escapeHtml(data.submission_error) + '</div>';
+            }
+            successEl.innerHTML = msgHtml;
             successEl.style.display = 'block';
         }
-        if (data.errors && data.errors.length > 0 && errorsListEl) {
-            errorsListEl.innerHTML = '<strong class="text-warning"><i class="fas fa-exclamation-triangle"></i> Import notes / errors (' + data.errors.length + '):</strong><ul class="import-errors-ul">' +
-                data.errors.map(function(err) { return '<li>' + escapeHtml(err) + '</li>'; }).join('') + '</ul>';
+        // Combine profile errors and submission errors
+        var allErrors = (data.errors || []).slice();
+        if (data.submission && data.submission.errors && data.submission.errors.length > 0) {
+            allErrors = allErrors.concat(data.submission.errors.map(function(e) { return '[Submission] ' + e; }));
+        }
+        if (allErrors.length > 0 && errorsListEl) {
+            errorsListEl.innerHTML = '<strong class="text-warning"><i class="fas fa-exclamation-triangle"></i> Import notes / errors (' + allErrors.length + '):</strong><ul class="import-errors-ul">' +
+                allErrors.map(function(err) { return '<li>' + escapeHtml(err) + '</li>'; }).join('') + '</ul>';
             errorsListEl.style.display = 'block';
         } else if (errorsListEl) {
             errorsListEl.innerHTML = '';

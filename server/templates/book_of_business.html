@@ -1,0 +1,514 @@
+{% extends "base.html" %}
+
+{% block title %}Book of Business Registrations - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<style>
+.searchable-select-wrap { position: relative; }
+.searchable-select { position: relative; width: 100%; }
+.searchable-select-trigger {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);
+    background: #fff; color: #374151; font-size: 0.9375rem; text-align: left; cursor: pointer;
+    min-height: 38px; box-sizing: border-box;
+}
+.searchable-select-trigger:hover { border-color: rgba(0,0,0,0.2); }
+.searchable-select-value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.searchable-select-arrow { margin-left: 8px; font-size: 0.75rem; color: #6b7280; transition: transform 0.2s; }
+.searchable-select.open .searchable-select-arrow { transform: rotate(180deg); }
+.searchable-select-dropdown {
+    position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px; z-index: 100;
+    background: #fff; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    max-height: 280px; flex-direction: column; overflow: hidden;
+    display: none;
+}
+.searchable-select.open .searchable-select-dropdown {
+    display: flex;
+}
+.searchable-select-search {
+    flex-shrink: 0; padding: 8px 12px; border: none; border-bottom: 1px solid rgba(0,0,0,0.08);
+    font-size: 0.875rem; outline: none;
+}
+.searchable-select-list {
+    list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; max-height: 220px;
+}
+.searchable-select-list li {
+    padding: 8px 12px; font-size: 0.9375rem; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.searchable-select-list li:hover { background: rgba(0,0,0,0.05); }
+.searchable-select-list li.selected { background: rgba(59, 130, 246, 0.1); color: #2563eb; }
+.searchable-select-list li.hidden { display: none; }
+.searchable-select-wrap-organization { min-width: 360px; }
+.searchable-select-wrap-organization .searchable-select-dropdown { min-width: 360px; }
+.searchable-select-wrap-organization .searchable-select-list li { white-space: normal; word-break: break-word; }
+@media (max-width: 900px) {
+    .bob-stats-section { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 480px) {
+    .bob-stats-section { grid-template-columns: 1fr; }
+}
+</style>
+<div class="dashboard-premium" id="bookOfBusinessPage">
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div>
+                    <h1 class="page-title">Book of Business Registrations</h1>
+                    <p class="page-subtitle">Users whose organization matches the Book of Business list (BOB match)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats: total BOB, top India state/city, top APAC country/city, top org -->
+        <div class="bob-stats-section" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 2rem;">
+            <div class="glass-card bob-stat-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, rgba(255, 122, 24, 0.2) 0%, rgba(255, 159, 67, 0.25) 100%); display: flex; align-items: center; justify-content: center; color: #e85d04;">
+                        <i class="fas fa-users" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Total BOB match</div>
+                        <div id="statTotalBob" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card bob-stat-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(34, 197, 94, 0.15); display: flex; align-items: center; justify-content: center; color: #16a34a;">
+                        <i class="fas fa-map-marker-alt" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Top state, city (India)</div>
+                        <div id="statTopIndia" style="font-size: 0.9375rem; font-weight: 600; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card bob-stat-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(59, 130, 246, 0.15); display: flex; align-items: center; justify-content: center; color: #2563eb;">
+                        <i class="fas fa-globe" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Top country, city (APAC)</div>
+                        <div id="statTopApac" style="font-size: 0.9375rem; font-weight: 600; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card bob-stat-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(168, 85, 247, 0.15); display: flex; align-items: center; justify-content: center; color: #7c3aed;">
+                        <i class="fas fa-building" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div style="min-width: 0;">
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Top organization (BOB)</div>
+                        <div id="statTopOrg" style="font-size: 0.9375rem; font-weight: 600; color: var(--text-primary, #111); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+            <div style="padding: 1rem 1.25rem;">
+                <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Name, email, or organization..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
+                    </div>
+                    <div style="min-width: 180px;" class="searchable-select-wrap">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Country</label>
+                        <div class="searchable-select" data-filter="country">
+                            <button type="button" class="searchable-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="searchable-select-value">All countries</span>
+                                <i class="fas fa-chevron-down searchable-select-arrow"></i>
+                            </button>
+                            <div class="searchable-select-dropdown" hidden>
+                                <input type="text" class="searchable-select-search" placeholder="Search country..." autocomplete="off">
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterCountry" name="filterCountry" value="">
+                        </div>
+                    </div>
+                    <div style="min-width: 180px;" class="searchable-select-wrap">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">State</label>
+                        <div class="searchable-select" data-filter="state">
+                            <button type="button" class="searchable-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="searchable-select-value">All states</span>
+                                <i class="fas fa-chevron-down searchable-select-arrow"></i>
+                            </button>
+                            <div class="searchable-select-dropdown" hidden>
+                                <input type="text" class="searchable-select-search" placeholder="Search state..." autocomplete="off">
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterState" name="filterState" value="">
+                        </div>
+                    </div>
+                    <div style="min-width: 180px;" class="searchable-select-wrap">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">City</label>
+                        <div class="searchable-select" data-filter="city">
+                            <button type="button" class="searchable-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="searchable-select-value">All cities</span>
+                                <i class="fas fa-chevron-down searchable-select-arrow"></i>
+                            </button>
+                            <div class="searchable-select-dropdown" hidden>
+                                <input type="text" class="searchable-select-search" placeholder="Search city..." autocomplete="off">
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterCity" name="filterCity" value="">
+                        </div>
+                    </div>
+                    <div style="min-width: 180px;" class="searchable-select-wrap searchable-select-wrap-organization">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Organization</label>
+                        <div class="searchable-select" data-filter="organization">
+                            <button type="button" class="searchable-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="searchable-select-value">All organizations</span>
+                                <i class="fas fa-chevron-down searchable-select-arrow"></i>
+                            </button>
+                            <div class="searchable-select-dropdown" hidden>
+                                <input type="text" class="searchable-select-search" placeholder="Search organization..." autocomplete="off">
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterOrganization" name="filterOrganization" value="">
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="applyFilters()">
+                        <i class="fas fa-search"></i> Apply
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="clearFilters()">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Country</th>
+                                <th>State</th>
+                                <th>City</th>
+                                <th>Organization</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tableBody">
+                            <tr><td colspan="5" class="text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="paginationBar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; flex-wrap: wrap; gap: 0.5rem;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    function escapeHtml(s) {
+        if (s == null || s === undefined) return '';
+        var div = document.createElement('div');
+        div.textContent = String(s);
+        return div.innerHTML;
+    }
+
+    function renderTable(rows) {
+        var tbody = document.getElementById('tableBody');
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No Book of Business registrations found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(function(r) {
+            var name = (r.name && r.name.trim()) ? escapeHtml(r.name) : '<span class="text-muted">—</span>';
+            var country = (r.country && r.country.trim()) ? escapeHtml(r.country) : '<span class="text-muted">—</span>';
+            var state = (r.state && r.state.trim()) ? escapeHtml(r.state) : '<span class="text-muted">—</span>';
+            var city = (r.city && r.city.trim()) ? escapeHtml(r.city) : '<span class="text-muted">—</span>';
+            var org = (r.organization && r.organization.trim()) ? escapeHtml(r.organization) : '<span class="text-muted">—</span>';
+            return '<tr><td>' + name + '</td><td>' + country + '</td><td>' + state + '</td><td>' + city + '</td><td>' + org + '</td></tr>';
+        }).join('');
+    }
+
+    function renderPagination(data) {
+        var bar = document.getElementById('paginationBar');
+        if (!data || data.pages <= 1) {
+            bar.innerHTML = '<span class="text-muted">Page ' + (data ? data.page : 1) + ' of ' + (data ? data.pages : 1) + ' · Total ' + (data ? data.total : 0) + ' rows</span>';
+            return;
+        }
+        var total = data.total, page = data.page, pages = data.pages, perPage = data.per_page;
+        var from = (page - 1) * perPage + 1, to = Math.min(page * perPage, total);
+        var html = '<span class="text-muted">Showing ' + from + '–' + to + ' of ' + total + '</span>';
+        html += '<div style="display: flex; gap: 0.5rem; align-items: center;">';
+        if (page > 1) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadPage(' + (page - 1) + ')">Previous</button>';
+        html += '<span class="text-muted">Page ' + page + ' of ' + pages + '</span>';
+        if (page < pages) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadPage(' + (page + 1) + ')">Next</button>';
+        html += '</div>';
+        bar.innerHTML = html;
+    }
+
+    window.loadPage = function(page) {
+        page = page || 1;
+        var search = document.getElementById('searchInput').value.trim();
+        var country = document.getElementById('filterCountry').value.trim();
+        var state = document.getElementById('filterState').value.trim();
+        var city = document.getElementById('filterCity').value.trim();
+        var organization = document.getElementById('filterOrganization').value.trim();
+        var params = new URLSearchParams();
+        params.set('page', page);
+        params.set('per_page', '20');
+        if (search) params.set('search', search);
+        if (country) params.set('country', country);
+        if (state) params.set('state', state);
+        if (city) params.set('city', city);
+        if (organization) params.set('organization', organization);
+        var url = '/api/book-of-business/list?' + params.toString();
+        var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+        if (!token) {
+            window.location.href = '/login';
+            return;
+        }
+        fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(function(res) {
+                if (res.status === 403) {
+                    alert('Access not allowed to this page.');
+                    return null;
+                }
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                renderTable(data.rows);
+                renderPagination({ total: data.total, page: data.page, per_page: data.per_page, pages: data.pages });
+            })
+            .catch(function(err) {
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="5" class="text-center text-danger">' + escapeHtml(err.message || 'Failed to load') + '</td></tr>';
+            });
+    };
+
+    window.applyFilters = function() {
+        loadStats();
+        loadPage(1);
+    };
+
+    window.clearFilters = function() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('filterCountry').value = '';
+        document.getElementById('filterState').value = '';
+        document.getElementById('filterCity').value = '';
+        document.getElementById('filterOrganization').value = '';
+        document.querySelectorAll('.searchable-select').forEach(function(wrap) {
+            var trigger = wrap.querySelector('.searchable-select-trigger');
+            var valueSpan = trigger && trigger.querySelector('.searchable-select-value');
+            var dropdown = wrap.querySelector('.searchable-select-dropdown');
+            var searchInp = dropdown && dropdown.querySelector('.searchable-select-search');
+            var list = dropdown && dropdown.querySelector('.searchable-select-list');
+            if (valueSpan) {
+                var allLabel = list && list.querySelector('li[data-value=""]');
+                valueSpan.textContent = allLabel ? allLabel.textContent : 'All';
+            }
+            if (searchInp) searchInp.value = '';
+            if (list) {
+                list.querySelectorAll('li').forEach(function(li) {
+                    li.classList.remove('hidden');
+                    li.classList.toggle('selected', (li.getAttribute('data-value') || '') === '');
+                });
+            }
+            wrap.classList.remove('open');
+            if (dropdown) dropdown.setAttribute('hidden', '');
+        });
+        loadStats();
+        loadPage(1);
+    };
+
+    document.getElementById('searchInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') applyFilters();
+    });
+
+    function initSearchableSelects() {
+        document.querySelectorAll('.searchable-select').forEach(function(wrap) {
+            var trigger = wrap.querySelector('.searchable-select-trigger');
+            var valueSpan = trigger && trigger.querySelector('.searchable-select-value');
+            var dropdown = wrap.querySelector('.searchable-select-dropdown');
+            var searchInp = dropdown && dropdown.querySelector('.searchable-select-search');
+            var list = dropdown && dropdown.querySelector('.searchable-select-list');
+            var hiddenInput = wrap.querySelector('input[type="hidden"]');
+            if (!trigger || !dropdown || !list || !hiddenInput) return;
+
+            function open() {
+                wrap.classList.add('open');
+                dropdown.removeAttribute('hidden');
+                if (searchInp) { searchInp.value = ''; list.querySelectorAll('li').forEach(function(li) { li.classList.remove('hidden'); }); searchInp.focus(); }
+            }
+            function close() {
+                wrap.classList.remove('open');
+                dropdown.setAttribute('hidden', '');
+            }
+            trigger.addEventListener('click', function(e) {
+                e.stopPropagation();
+                var isOpen = wrap.classList.contains('open');
+                document.querySelectorAll('.searchable-select.open').forEach(function(o) {
+                    if (o !== wrap) { o.classList.remove('open'); var d = o.querySelector('.searchable-select-dropdown'); if (d) d.setAttribute('hidden', ''); }
+                });
+                if (isOpen) close(); else open();
+            });
+            if (searchInp) {
+                searchInp.addEventListener('keyup', function() {
+                    var q = (searchInp.value || '').toLowerCase().trim();
+                    list.querySelectorAll('li').forEach(function(li) {
+                        var text = (li.textContent || '').toLowerCase();
+                        li.classList.toggle('hidden', q && text.indexOf(q) === -1);
+                    });
+                });
+                searchInp.addEventListener('click', function(e) { e.stopPropagation(); });
+            }
+            list.querySelectorAll('li').forEach(function(li) {
+                li.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var val = li.getAttribute('data-value') || '';
+                    var label = li.textContent || '';
+                    hiddenInput.value = val;
+                    if (valueSpan) valueSpan.textContent = label;
+                    list.querySelectorAll('li').forEach(function(l) { l.classList.remove('selected'); });
+                    li.classList.add('selected');
+                    close();
+                });
+            });
+            dropdown.addEventListener('click', function(e) { e.stopPropagation(); });
+        });
+        document.addEventListener('mousedown', function(e) {
+            if (e.target && !e.target.closest('.searchable-select')) {
+                document.querySelectorAll('.searchable-select.open').forEach(function(wrap) {
+                    wrap.classList.remove('open');
+                    var d = wrap.querySelector('.searchable-select-dropdown');
+                    if (d) d.setAttribute('hidden', '');
+                });
+            }
+        });
+        document.querySelectorAll('.searchable-select').forEach(function(wrap) {
+            wrap.classList.remove('open');
+            var d = wrap.querySelector('.searchable-select-dropdown');
+            if (d) d.setAttribute('hidden', '');
+        });
+    }
+
+    function loadFilterOptions() {
+        var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+        if (!token) return Promise.resolve();
+        return fetch('/api/book-of-business/filters', { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(function(res) {
+                if (!res.ok) return null;
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                var configs = [
+                    { filter: 'country', allLabel: 'All countries', items: data.countries || [] },
+                    { filter: 'state', allLabel: 'All states', items: data.states || [] },
+                    { filter: 'city', allLabel: 'All cities', items: data.cities || [] },
+                    { filter: 'organization', allLabel: 'All organizations', items: data.organizations || [] }
+                ];
+                configs.forEach(function(cfg) {
+                    var wrap = document.querySelector('.searchable-select[data-filter="' + cfg.filter + '"]');
+                    if (!wrap) return;
+                    var list = wrap.querySelector('.searchable-select-list');
+                    if (!list) return;
+                    list.innerHTML = '';
+                    var allLi = document.createElement('li');
+                    allLi.setAttribute('data-value', '');
+                    allLi.textContent = cfg.allLabel;
+                    allLi.classList.add('selected');
+                    list.appendChild(allLi);
+                    (cfg.items || []).forEach(function(item) {
+                        var li = document.createElement('li');
+                        li.setAttribute('data-value', item);
+                        li.textContent = item;
+                        list.appendChild(li);
+                    });
+                });
+                initSearchableSelects();
+            })
+            .catch(function() {});
+    }
+
+    function formatNum(n) {
+        if (n == null || n === undefined) return '—';
+        return Number(n).toLocaleString();
+    }
+
+    window.loadStats = function() {
+        var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+        if (!token) return;
+        var search = document.getElementById('searchInput').value.trim();
+        var country = document.getElementById('filterCountry').value.trim();
+        var state = document.getElementById('filterState').value.trim();
+        var city = document.getElementById('filterCity').value.trim();
+        var organization = document.getElementById('filterOrganization').value.trim();
+        var params = new URLSearchParams();
+        if (search) params.set('search', search);
+        if (country) params.set('country', country);
+        if (state) params.set('state', state);
+        if (city) params.set('city', city);
+        if (organization) params.set('organization', organization);
+        var url = '/api/book-of-business/stats' + (params.toString() ? '?' + params.toString() : '');
+        fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(function(res) {
+                if (!res.ok) return null;
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                var totalEl = document.getElementById('statTotalBob');
+                if (totalEl) totalEl.textContent = formatNum(data.total_bob_match);
+
+                var indiaEl = document.getElementById('statTopIndia');
+                if (indiaEl) {
+                    var state = data.top_india_state;
+                    var city = data.top_india_city;
+                    var sc = data.top_india_state_count;
+                    var cc = data.top_india_city_count;
+                    if (state || city) {
+                        var parts = [];
+                        if (state) parts.push(state + (sc != null ? ' (' + formatNum(sc) + ')' : ''));
+                        if (city) parts.push(city + (cc != null ? ' (' + formatNum(cc) + ')' : ''));
+                        indiaEl.textContent = parts.join(' · ');
+                    } else {
+                        indiaEl.textContent = '—';
+                    }
+                }
+
+                var apacEl = document.getElementById('statTopApac');
+                if (apacEl) {
+                    var country = data.top_apac_country;
+                    var city = data.top_apac_city;
+                    var cc = data.top_apac_country_count;
+                    var ccc = data.top_apac_city_count;
+                    if (country || city) {
+                        var parts = [];
+                        if (country) parts.push(country + (cc != null ? ' (' + formatNum(cc) + ')' : ''));
+                        if (city) parts.push(city + (ccc != null ? ' (' + formatNum(ccc) + ')' : ''));
+                        apacEl.textContent = parts.join(' · ');
+                    } else {
+                        apacEl.textContent = '—';
+                    }
+                }
+
+                var orgEl = document.getElementById('statTopOrg');
+                if (orgEl) {
+                    var org = data.top_organization;
+                    var count = data.top_organization_count;
+                    if (org) {
+                        orgEl.textContent = org + (count != null ? ' (' + formatNum(count) + ')' : '');
+                        orgEl.title = org;
+                    } else {
+                        orgEl.textContent = '—';
+                        orgEl.title = '';
+                    }
+                }
+            })
+            .catch(function() {});
+    };
+
+    loadStats();
+    loadFilterOptions().then(function() { loadPage(1); });
+})();
+</script>
+{% endblock %}

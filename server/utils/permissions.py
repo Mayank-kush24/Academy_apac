@@ -11,6 +11,8 @@ PAGES = [
     {'id': 'dashboard', 'path': '/dashboard', 'label': 'Dashboard'},
     {'id': 'profiles', 'path': '/profiles', 'label': 'Profiles'},
     {'id': 'skill_lab_credits', 'path': '/skill-lab-credits', 'label': 'Skill Lab credits'},
+    {'id': 'book_of_business', 'path': '/book-of-business', 'label': 'Book of Business Registrations'},
+    {'id': 'skilllab_submission', 'path': '/skilllab-submission', 'label': 'Skill Lab Submissions'},
     {'id': 'import', 'path': '/import', 'label': 'Import Data'},
     {'id': 'users', 'path': '/users', 'label': 'User Management'},
 ]
@@ -21,6 +23,8 @@ DEFAULT_PAGE_ROLES = {
     'dashboard': ['viewer', 'editor', 'admin'],
     'profiles': ['viewer', 'editor', 'admin'],
     'skill_lab_credits': ['viewer', 'editor', 'admin'],
+    'book_of_business': ['viewer', 'editor', 'admin'],
+    'skilllab_submission': ['viewer', 'editor', 'admin'],
     'import': ['editor', 'admin'],
     'users': ['admin'],
 }

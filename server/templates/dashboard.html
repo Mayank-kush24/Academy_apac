@@ -118,9 +118,9 @@
             </div>
         </div>
 
-        <!-- Region registrations: SEA, ANZ, East Asia (just below top cards) -->
+        <!-- Region registrations: SEA, ANZ, Greater China and Korea, India (click to see breakdown) -->
         <div class="region-registrations-row">
-            <div class="glass-card region-card">
+            <div class="glass-card region-card region-card-clickable" data-region="sea" role="button" tabindex="0" title="Click to see country-wise registrations">
                 <div class="region-card-icon">
                     <i class="fas fa-globe"></i>
                 </div>
@@ -130,7 +130,7 @@
                     <div class="region-card-meta" id="seaTopCountry">Top: —</div>
                 </div>
             </div>
-            <div class="glass-card region-card">
+            <div class="glass-card region-card region-card-clickable" data-region="anz" role="button" tabindex="0" title="Click to see country-wise registrations">
                 <div class="region-card-icon">
                     <i class="fas fa-globe"></i>
                 </div>
@@ -140,17 +140,17 @@
                     <div class="region-card-meta" id="anzTopCountry">Top: —</div>
                 </div>
             </div>
-            <div class="glass-card region-card">
+            <div class="glass-card region-card region-card-clickable" data-region="east_asia" role="button" tabindex="0" title="Click to see country-wise registrations">
                 <div class="region-card-icon">
                     <i class="fas fa-globe"></i>
                 </div>
                 <div class="region-card-content">
-                    <div class="region-card-label">East Asia</div>
+                    <div class="region-card-label">Greater China and Korea</div>
                     <div class="region-card-value" id="eastAsiaRegistrations">-</div>
                     <div class="region-card-meta" id="eastAsiaTopCountry">Top: —</div>
                 </div>
             </div>
-            <div class="glass-card region-card">
+            <div class="glass-card region-card region-card-clickable" data-region="india" role="button" tabindex="0" title="Click to see state-wise registrations">
                 <div class="region-card-icon">
                     <i class="fas fa-globe"></i>
                 </div>
@@ -162,9 +162,26 @@
             </div>
         </div>
 
+        <!-- Region breakdown modal (country/state-wise registrations) -->
+        <div id="regionBreakdownModal" class="region-breakdown-modal" role="dialog" aria-modal="true" aria-labelledby="regionBreakdownTitle" style="display: none;">
+            <div class="region-breakdown-overlay" id="regionBreakdownOverlay"></div>
+            <div class="region-breakdown-box">
+                <div class="region-breakdown-header">
+                    <h3 class="region-breakdown-title" id="regionBreakdownTitle">Registrations by country</h3>
+                    <button type="button" class="region-breakdown-close" id="regionBreakdownClose" aria-label="Close">&times;</button>
+                </div>
+                <div class="region-breakdown-body">
+                    <p class="region-breakdown-total" id="regionBreakdownTotal">Total: —</p>
+                    <div class="region-breakdown-list-wrap">
+                        <ul class="region-breakdown-list" id="regionBreakdownList"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Row 1b: Small KPI cards (Book of Business, Workshops, Code labs, MCQ Test) -->
         <div class="kpi-small-row">
-            <div class="glass-card kpi-small">
+            <a href="/book-of-business" class="glass-card kpi-small kpi-small-link" title="View Book of Business Registrations">
                 <div class="kpi-small-icon">
                     <i class="fas fa-book-open"></i>
                 </div>
@@ -172,7 +189,7 @@
                     <div class="kpi-small-label">Book of Business Registrations</div>
                     <div class="kpi-small-value" id="bookOfBusinessRegistrations">-</div>
                 </div>
-            </div>
+            </a>
             <div class="glass-card kpi-small">
                 <div class="kpi-small-icon">
                     <i class="fas fa-chalkboard-teacher"></i>
@@ -235,6 +252,16 @@
                         </div>
                     </div>
                 </div>
+                <a href="/skilllab-submission" class="glass-card skill-lab-card" title="Skill Lab submission verification" style="text-decoration: none; color: inherit;">
+                    <div class="skill-lab-card-icon">
+                        <i class="fas fa-clipboard-check"></i>
+                    </div>
+                    <div class="skill-lab-card-content">
+                        <div class="skill-lab-card-label">Skill Lab Submissions</div>
+                        <div class="skill-lab-card-value" id="skillLabSubmissionsTotal">-</div>
+                        <div class="skill-lab-card-meta" id="skillLabSubmissionsMeta">Verified: — / —%</div>
+                    </div>
+                </a>
             </div>
         </section>
 
@@ -291,12 +318,12 @@
             </div>
         </div>
 
-        <!-- Tracks section: Community Goal + Track cards -->
+        <!-- Tracks section: Track Matrix + Track cards -->
         <section class="tracks-section" aria-labelledby="tracks-section-title">
             <div class="tracks-section-inner">
                 <!-- Global Target Header -->
                 <div class="tracks-global-header">
-                    <h2 class="tracks-section-title" id="tracks-section-title">Community Goal</h2>
+                    <h2 class="tracks-section-title" id="tracks-section-title">Track Matrix</h2>
                     <div class="tracks-target-badge" title="Target completions">
                         <i class="fas fa-trophy"></i>
                         <span>Target: 15,000</span>

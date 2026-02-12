@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
 from server.config import Config
 from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
-from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab
+from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, skilllab_submission
 
 def create_app():
     """Create and configure Flask application"""
@@ -85,6 +85,8 @@ def create_app():
     app.register_blueprint(profiles.bp, url_prefix='/api/profiles')
     app.register_blueprint(audit.bp, url_prefix='/api/admin')
     app.register_blueprint(skilllab.bp, url_prefix='/api/skilllab')
+    app.register_blueprint(book_of_business.bp, url_prefix='/api/book-of-business')
+    app.register_blueprint(skilllab_submission.bp, url_prefix='/api/skilllab-submission')
     
     # Serve static files
     @app.route('/static/<path:filename>')
@@ -159,6 +161,18 @@ def create_app():
     def skill_lab_credits_page():
         """Skill Lab credits page (Skill Lab / Skillboost profiles)"""
         return render_template('skill_lab_credits.html')
+
+    # Book of Business Registrations page
+    @app.route('/book-of-business')
+    def book_of_business_page():
+        """Book of Business Registrations (users with BOB match)"""
+        return render_template('book_of_business.html')
+
+    # Skill Lab Submission Verification page
+    @app.route('/skilllab-submission')
+    def skilllab_submission_page():
+        """Skill Lab Submission Verification (manual intern verification)"""
+        return render_template('skilllab_submission.html')
     
     return app
 

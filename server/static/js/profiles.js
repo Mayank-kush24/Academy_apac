@@ -46,6 +46,33 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Generate HTML for a Skill Lab track cell in the Track Progress table.
+ * Searches skilllab_submissions for a submission whose problem_statement contains the trackLabel.
+ * Returns valid/not-valid markup with remark if applicable.
+ */
+function getSkillLabTrackCell(submissions, trackLabel) {
+    if (!submissions || submissions.length === 0) return '';
+    // Find a submission whose problem_statement contains the track label (case-insensitive)
+    var match = submissions.find(function(s) {
+        return s.problem_statement && s.problem_statement.toLowerCase().includes(trackLabel.toLowerCase());
+    });
+    if (!match) return '';
+    // Not yet reviewed (no valid flag set and no remark)
+    if (!match.valid && (!match.remark || !match.remark.trim())) {
+        return '<span style="color:#999;font-size:0.8rem;">Pending</span>';
+    }
+    if (match.valid) {
+        return '<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> Valid</span>';
+    }
+    // Not valid — show remark
+    var html = '<span style="color:#ef4444;font-weight:600;"><i class="fas fa-times-circle"></i> Not Valid</span>';
+    if (match.remark && match.remark.trim()) {
+        html += '<br><span style="color:#666;font-size:0.75rem;" title="' + escapeHtml(match.remark) + '">' + escapeHtml(match.remark) + '</span>';
+    }
+    return html;
+}
+
 function formatDate(dateString) {
     if (!dateString) return null;
     try {
@@ -194,6 +221,7 @@ window.viewProfileDetails = function(profileId) {
         
         console.log('Profile data:', profile);
         const skillboost_profiles = data.skillboost_profiles || [];
+        const skilllab_submissions = data.skilllab_submissions || [];
         
         // Populate modal
         const modalNameEl = document.getElementById('modalProfileName');
@@ -368,7 +396,7 @@ window.viewProfileDetails = function(profileId) {
                             <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -701,6 +729,7 @@ async function viewProfileDetails(profileId) {
         
         const profile = data.profile;
         const skillboost_profiles = data.skillboost_profiles || [];
+        const skilllab_submissions = data.skilllab_submissions || [];
         
         if (!profile) {
             throw new Error('Profile not found in response');
@@ -878,7 +907,7 @@ async function viewProfileDetails(profileId) {
                             <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
                         </tbody>
                     </table>
                 </div>

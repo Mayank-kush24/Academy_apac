@@ -67,6 +67,32 @@ function initializeDashboard() {
             openCommandPalette();
         }
     });
+
+    // Region cards: click to show country/state-wise breakdown
+    document.querySelectorAll('.region-card-clickable').forEach(function(card) {
+        card.addEventListener('click', function() {
+            const region = this.getAttribute('data-region');
+            if (region) openRegionBreakdown(region);
+        });
+        card.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const region = this.getAttribute('data-region');
+                if (region) openRegionBreakdown(region);
+            }
+        });
+    });
+    const regionModal = document.getElementById('regionBreakdownModal');
+    const regionOverlay = document.getElementById('regionBreakdownOverlay');
+    const regionCloseBtn = document.getElementById('regionBreakdownClose');
+    if (regionOverlay) regionOverlay.addEventListener('click', closeRegionBreakdown);
+    if (regionCloseBtn) regionCloseBtn.addEventListener('click', closeRegionBreakdown);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            const modal = document.getElementById('regionBreakdownModal');
+            if (modal && modal.style.display === 'flex') closeRegionBreakdown();
+        }
+    });
 }
 
 /**
@@ -101,6 +127,57 @@ function setPeriod(period) {
 }
 
 /**
+ * Open region breakdown modal: fetch country/state-wise registrations and show
+ */
+async function openRegionBreakdown(region) {
+    const modal = document.getElementById('regionBreakdownModal');
+    const titleEl = document.getElementById('regionBreakdownTitle');
+    const totalEl = document.getElementById('regionBreakdownTotal');
+    const listEl = document.getElementById('regionBreakdownList');
+    if (!modal || !titleEl || !totalEl || !listEl) return;
+    titleEl.textContent = 'Loading…';
+    totalEl.textContent = 'Total: —';
+    listEl.innerHTML = '';
+    modal.style.display = 'flex';
+    modal.setAttribute('aria-hidden', 'false');
+    try {
+        const url = '/api/dashboard/region-breakdown?region=' + encodeURIComponent(region) + '&period=' + encodeURIComponent(currentPeriod);
+        const response = await authenticatedFetch(url);
+        if (!response.ok) {
+            const err = await response.json().catch(function() { return {}; });
+            titleEl.textContent = err.error || 'Failed to load';
+            return;
+        }
+        const data = await response.json();
+        titleEl.textContent = data.label || region;
+        const total = (data.total !== undefined && data.total !== null) ? data.total : 0;
+        totalEl.textContent = 'Total: ' + (typeof total === 'number' ? total.toLocaleString() : total) + ' registrations';
+        const items = data.items || [];
+        function esc(s) {
+            if (s == null) return '';
+            const t = String(s);
+            return t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        listEl.innerHTML = items.map(function(item) {
+            const count = (item.count !== undefined && item.count !== null) ? item.count : 0;
+            const countStr = typeof count === 'number' ? count.toLocaleString() : String(count);
+            return '<li><span>' + esc(item.name || 'Unknown') + '</span><span class="region-breakdown-count">' + esc(countStr) + '</span></li>';
+        }).join('');
+    } catch (err) {
+        titleEl.textContent = 'Error';
+        totalEl.textContent = err.message || 'Failed to load breakdown';
+    }
+}
+
+function closeRegionBreakdown() {
+    const modal = document.getElementById('regionBreakdownModal');
+    if (modal) {
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+    }
+}
+
+/**
  * Load dashboard summary and charts (single combined request, cached on server)
  */
 async function loadDashboardData() {
@@ -130,6 +207,7 @@ async function loadDashboardData() {
                 east_asia_registrations: 0, east_asia_top_country: 'N/A', india_registrations: 0,
                 total_skillboost_profiles: 0, verified_skillboost_profiles: 0, skillboost_verification_rate: null,
                 skillboost_credits_allocated: 0, skillboost_credits_not_sent: 0, skillboost_credits_sent: 0,
+                total_skilllab_submissions: 0, verified_skilllab_submissions: 0, skilllab_submission_verification_rate: null,
                 previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
             };
         }
@@ -165,7 +243,10 @@ async function loadDashboardData() {
             skillboost_verification_rate: null,
             skillboost_credits_allocated: 0,
             skillboost_credits_not_sent: 0,
-            skillboost_credits_sent: 0
+            skillboost_credits_sent: 0,
+            total_skilllab_submissions: 0,
+            verified_skilllab_submissions: 0,
+            skilllab_submission_verification_rate: null
         });
         renderCharts({
             registration_trends: [],
@@ -293,6 +374,21 @@ function updateKPICards(summary, chartsData) {
     if (creditsNotSentEl) creditsNotSentEl.textContent = (summary.skillboost_credits_not_sent !== undefined && summary.skillboost_credits_not_sent !== null) ? formatNumber(summary.skillboost_credits_not_sent) : '-';
     const creditsSentEl = document.getElementById('skillboostCreditsSent');
     if (creditsSentEl) creditsSentEl.textContent = (summary.skillboost_credits_sent !== undefined && summary.skillboost_credits_sent !== null) ? formatNumber(summary.skillboost_credits_sent) : '-';
+
+    // Skill Lab Submission Verification stats
+    const slSubTotalEl = document.getElementById('skillLabSubmissionsTotal');
+    if (slSubTotalEl) slSubTotalEl.textContent = (summary.total_skilllab_submissions !== undefined && summary.total_skilllab_submissions !== null) ? formatNumber(summary.total_skilllab_submissions) : '-';
+    const slSubMetaEl = document.getElementById('skillLabSubmissionsMeta');
+    if (slSubMetaEl) {
+        const verified = summary.verified_skilllab_submissions;
+        const rate = summary.skilllab_submission_verification_rate;
+        const total = summary.total_skilllab_submissions;
+        if (total !== undefined && total !== null && verified !== undefined && verified !== null) {
+            slSubMetaEl.textContent = 'Verified: ' + formatNumber(verified) + (rate != null ? ' / ' + rate + '%' : '');
+        } else {
+            slSubMetaEl.textContent = 'Verified: — / —%';
+        }
+    }
 
     // Region cards: SEA, ANZ, East Asia
     const seaRegEl = document.getElementById('seaRegistrations');
@@ -1172,8 +1268,8 @@ window.exportData = async function exportData(event) {
             csvContent += `SEA Top Country,${summary.sea_top_country || 'N/A'}\n`;
             csvContent += `ANZ Registrations,${summary.anz_registrations ?? ''}\n`;
             csvContent += `ANZ Top Country,${summary.anz_top_country || 'N/A'}\n`;
-            csvContent += `East Asia Registrations,${summary.east_asia_registrations ?? ''}\n`;
-            csvContent += `East Asia Top Country,${summary.east_asia_top_country || 'N/A'}\n`;
+            csvContent += `Greater China and Korea Registrations,${summary.east_asia_registrations ?? ''}\n`;
+            csvContent += `Greater China and Korea Top Country,${summary.east_asia_top_country || 'N/A'}\n`;
             csvContent += `India Registrations,${summary.india_registrations ?? ''}\n`;
             csvContent += `India Top State,${summary.top_india_state || 'N/A'}\n`;
             csvContent += `Unique Organizations,${summary.unique_organizations}\n`;
@@ -1340,7 +1436,14 @@ function renderDonutChart(canvasId, title, data, opts) {
     const total = values.reduce((a, b) => a + b, 0);
     var colors;
     if (palette === 'registration') {
-        var registrationPalette = { 'Google': '#4285F4', 'Hack2skill': '#ff7a18' };
+        var registrationPalette = {
+            'Google': '#4285F4',
+            'Outreach': '#059669',
+            'Marketing': '#7c3aed',
+            'Ads': '#f59e0b',
+            'Hack2skill': '#ff7a18',
+            'Other': '#64748b'
+        };
         colors = labels.map(function (l) { return registrationPalette[l] || '#94a3b8'; });
     } else if (palette === 'occupation') {
         var occupationPalette = ['#059669', '#0ea5e9', '#e11d48', '#6366f1', '#d97706', '#14b8a6', '#8b5cf6', '#f43f5e'];

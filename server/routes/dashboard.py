@@ -4,10 +4,11 @@ Dashboard analytics routes
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
-from server.models import db, UserPII, SkillboostProfile
+from server.models import db, UserPII, SkillboostProfile, SkillLabSubmission
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
+from server.utils.state_normalize import normalize_state
 
 bp = Blueprint('dashboard', __name__)
 
@@ -41,7 +42,7 @@ def get_dashboard_data():
             },
             'charts': {
                 'registration_trends': [], 'gender_distribution': [],
-                'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
+                'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
                 'occupation_distribution': [], 'top_domains': [], 'top_cities': [], 'top_cities_outside_india': [], 'top_organizations': [],
                 'india_state_registrations': [], 'apac_country_registrations': []
             }
@@ -66,6 +67,82 @@ def get_summary():
             'east_asia_registrations': 0, 'east_asia_top_country': 'N/A',
             'india_registrations': 0
         }), 200
+
+
+@bp.route('/region-breakdown', methods=['GET'])
+@require_page_access('dashboard')
+def get_region_breakdown():
+    """Get per-country (or per-state for India) registration counts for a region. Query: region=sea|anz|east_asia|india, period=all|month|7d|30d|90d."""
+    region = (request.args.get('region') or '').strip().lower()
+    period = request.args.get('period', 'all')
+    if region not in ('sea', 'anz', 'east_asia', 'india'):
+        return jsonify({'error': 'Invalid region'}), 400
+    try:
+        cutoff_date = _get_period_dates(period)
+        date_cond = _date_filter_condition(cutoff_date)
+        SEA_COUNTRIES = [
+            'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
+            'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
+        ]
+        ANZ_COUNTRIES = ['Australia', 'New Zealand']
+        EAST_ASIA_COUNTRIES = [
+            'China', 'Hong Kong', 'Japan', 'South Korea', 'North Korea',
+            'Taiwan', 'Mongolia'
+        ]
+        if region == 'india':
+            label = 'India'
+            q = db.session.query(
+                UserPII.state,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.isnot(None),
+                UserPII.country != '',
+                UserPII.country.ilike('%India%'),
+                UserPII.state.isnot(None),
+                UserPII.state != ''
+            )
+            if date_cond is not None:
+                q = q.filter(date_cond)
+            rows = q.group_by(UserPII.state).order_by(desc('count')).all()
+            # Aggregate by canonical state (merge misspellings)
+            from collections import defaultdict
+            merged = defaultdict(int)
+            for r in rows:
+                canonical = normalize_state(r[0]) if r[0] else 'Unknown'
+                merged[canonical] += r[1]
+            items = [{'name': k, 'count': v} for k, v in sorted(merged.items(), key=lambda x: -x[1])]
+        else:
+            if region == 'sea':
+                label = 'SEA (Southeast Asia)'
+                countries = SEA_COUNTRIES
+            elif region == 'anz':
+                label = 'ANZ (Australia & New Zealand)'
+                countries = ANZ_COUNTRIES
+            else:
+                label = 'Greater China and Korea'
+                countries = EAST_ASIA_COUNTRIES
+            conds = [UserPII.country.ilike(f'%{c}%') for c in countries]
+            q = db.session.query(
+                UserPII.country,
+                func.count(UserPII.id).label('count')
+            ).filter(
+                UserPII.country.isnot(None),
+                UserPII.country != '',
+                or_(*conds)
+            )
+            if date_cond is not None:
+                q = q.filter(date_cond)
+            rows = q.group_by(UserPII.country).order_by(desc('count')).all()
+            items = [{'name': r[0] or 'Unknown', 'count': r[1]} for r in rows]
+        total = sum(i['count'] for i in items)
+        return jsonify({
+            'region': region,
+            'label': label,
+            'items': items,
+            'total': total
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 def _get_period_dates(period):
@@ -283,6 +360,18 @@ def _fetch_summary_data(period):
             ).count() or 0
         except Exception:
             pass
+
+        # Skill Lab Submission Verification stats
+        total_skilllab_submissions = 0
+        verified_skilllab_submissions = 0
+        skilllab_submission_verification_rate = None
+        try:
+            total_skilllab_submissions = SkillLabSubmission.query.count() or 0
+            verified_skilllab_submissions = SkillLabSubmission.query.filter(SkillLabSubmission.valid == True).count() or 0
+            if total_skilllab_submissions > 0:
+                skilllab_submission_verification_rate = round(100.0 * verified_skilllab_submissions / total_skilllab_submissions, 1)
+        except Exception:
+            pass
         
         # Top organization
         top_org = None
@@ -419,6 +508,7 @@ def _fetch_summary_data(period):
             ).order_by(desc('count')).first()
             if top_india_state_result:
                 top_india_state = top_india_state_result[0]
+                top_india_state = normalize_state(top_india_state) if top_india_state else None
                 top_india_state_count = top_india_state_result[1]
             
             india_city_query = db.session.query(
@@ -597,6 +687,9 @@ def _fetch_summary_data(period):
             'skillboost_credits_allocated': skillboost_credits_allocated,
             'skillboost_credits_not_sent': skillboost_credits_not_sent,
             'skillboost_credits_sent': skillboost_credits_sent,
+            'total_skilllab_submissions': total_skilllab_submissions,
+            'verified_skilllab_submissions': verified_skilllab_submissions,
+            'skilllab_submission_verification_rate': skilllab_submission_verification_rate,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
             'previous_period_average_age': prev_avg_age
@@ -631,6 +724,9 @@ def _fetch_summary_data(period):
             'skillboost_credits_allocated': 0,
             'skillboost_credits_not_sent': 0,
             'skillboost_credits_sent': 0,
+            'total_skilllab_submissions': 0,
+            'verified_skilllab_submissions': 0,
+            'skilllab_submission_verification_rate': None,
             'previous_period_total_users': None,
             'previous_period_apac_users': None,
             'previous_period_average_age': None
@@ -691,7 +787,7 @@ def get_charts():
         # Return empty data instead of error
         return jsonify({
             'gender_distribution': [],
-            'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
+            'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
             'top_domains': [],
             'top_cities': [],
             'top_cities_outside_india': [],
@@ -707,6 +803,27 @@ def get_charts():
             'india_state_registrations': [],
             'apac_country_registrations': []
         }), 200
+
+
+def _utm_to_registration_source(utm_medium):
+    """Map utm_medium (or combined UTM string) to registration source label for bifurcation chart.
+    Rules: google/email -> Google; outreach/community/college/partnership -> Outreach;
+    h2s/sendy/h2s social/webengage -> Marketing; ad -> Ads; homepage -> Hack2skill; else -> Other.
+    """
+    if not utm_medium or not str(utm_medium).strip():
+        return 'Other'
+    u = str(utm_medium).strip().lower()
+    if 'google' in u or 'email' in u:
+        return 'Google'
+    if any(x in u for x in ('outreach', 'community', 'college', 'partnership')):
+        return 'Outreach'
+    if 'h2s social' in u or 'h2s' in u or 'sendy' in u or 'webengage' in u:
+        return 'Marketing'
+    if 'ad' in u:
+        return 'Ads'
+    if 'homepage' in u:
+        return 'Hack2skill'
+    return 'Other'
 
 
 def _fetch_charts_data(period, summary=None):
@@ -738,20 +855,34 @@ def _fetch_charts_data(period, summary=None):
         except:
             gender_distribution = []
         
-        # Registration source bifurcation: utm_medium = 'google' -> Google, else -> Hack2skill
+        # Registration source bifurcation: map UTM (contains) -> Google, Outreach, Marketing, Ads, Hack2skill, Other
         registration_source_bifurcation = []
         try:
-            total_users_period = (summary.get('total_users', 0) or 0) if summary else (base_query.count() or 0)
-            google_count = base_query.filter(UserPII.utm_medium.isnot(None)).filter(
-                func.lower(func.trim(UserPII.utm_medium)) == 'google'
-            ).count() or 0
-            hack2skill_count = max(0, total_users_period - google_count)
+            utm_query = db.session.query(
+                UserPII.utm_medium,
+                func.count(UserPII.id).label('count')
+            )
+            if date_cond is not None:
+                utm_query = utm_query.filter(date_cond)
+            utm_query = utm_query.group_by(UserPII.utm_medium).all()
+            agg = {'Google': 0, 'Outreach': 0, 'Marketing': 0, 'Ads': 0, 'Hack2skill': 0, 'Other': 0}
+            for utm_val, cnt in utm_query:
+                label = _utm_to_registration_source(utm_val)
+                agg[label] = agg.get(label, 0) + (cnt or 0)
             registration_source_bifurcation = [
-                {'label': 'Google', 'value': google_count},
-                {'label': 'Hack2skill', 'value': hack2skill_count}
+                {'label': 'Google', 'value': agg['Google']},
+                {'label': 'Outreach', 'value': agg['Outreach']},
+                {'label': 'Marketing', 'value': agg['Marketing']},
+                {'label': 'Ads', 'value': agg['Ads']},
+                {'label': 'Hack2skill', 'value': agg['Hack2skill']},
+                {'label': 'Other', 'value': agg['Other']}
             ]
         except Exception:
-            registration_source_bifurcation = [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}]
+            registration_source_bifurcation = [
+                {'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0},
+                {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0},
+                {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}
+            ]
         
         # Top domains (top 10)
         top_domains_data = []
@@ -1181,7 +1312,7 @@ def _fetch_charts_data(period, summary=None):
         # Return empty data instead of error
         return {
             'gender_distribution': [],
-            'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Hack2skill', 'value': 0}],
+            'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
             'top_domains': [],
             'top_cities': [],
             'top_cities_outside_india': [],

@@ -58,6 +58,14 @@
                         <i class="nav-icon fas fa-award"></i>
                         <span>Skill Lab credits</span>
                     </a>
+                    <a href="/book-of-business" class="nav-item" id="navBookOfBusiness" data-page-id="book_of_business" style="display: none;">
+                        <i class="nav-icon fas fa-book-open"></i>
+                        <span>Book of Business Registrations</span>
+                    </a>
+                    <a href="/skilllab-submission" class="nav-item" id="navSkillLabSubmission" data-page-id="skilllab_submission" style="display: none;">
+                        <i class="nav-icon fas fa-clipboard-check"></i>
+                        <span>Skill Lab Submissions</span>
+                    </a>
                     <a href="/import" class="nav-item" id="navImport" data-page-id="import" style="display: none;">
                         <i class="nav-icon fas fa-file-upload"></i>
                         <span>Import Data</span>
@@ -214,7 +222,7 @@
                     if (allowed && Array.isArray(allowed) && allowed.length > 0) {
                         show = allowed.indexOf(pageId) !== -1;
                     } else {
-                        if (pageId === 'home' || pageId === 'dashboard' || pageId === 'profiles' || pageId === 'skill_lab_credits') show = true;
+                        if (pageId === 'home' || pageId === 'dashboard' || pageId === 'profiles' || pageId === 'skill_lab_credits' || pageId === 'book_of_business' || pageId === 'skilllab_submission') show = true;
                         if (pageId === 'import' && (role === 'admin' || role === 'editor')) show = true;
                         if (pageId === 'users' && role === 'admin') show = true;
                     }

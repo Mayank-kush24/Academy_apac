@@ -4,11 +4,14 @@ Excel parsing and field mapping utilities
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.exc import DataError, IntegrityError
-from server.models import UserPII, SkillboostProfile
+from server.models import UserPII, SkillboostProfile, SkillLabSubmission
 
 
 # Substring to auto-detect Skill Lab / Google Skills Boost sheet (case-insensitive)
 SKILLBOOST_SHEET_SUBSTRING = "Share your Google Skills Pu"
+
+# Substring to auto-detect Skill Lab Submission sheet (case-insensitive)
+SKILLLAB_SUBMISSION_SHEET_SUBSTRING = "Google Skills Lab Submissio"
 
 
 def get_sheet_names(file_path):
@@ -53,7 +56,9 @@ def find_sheet_by_substring(file_path, substring):
 def get_skillboost_preview(file_path):
     """
     Preview Skill Lab XLSX: sheet count, sheet names, detected sheet name and row count.
-    Returns dict: sheet_count, sheet_names, detected_sheet_name, detected_sheet_rows, columns, error.
+    Also detects the Skill Lab Submission sheet if present.
+    Returns dict: sheet_count, sheet_names, detected_sheet_name, detected_sheet_rows, columns, error,
+                  submission_sheet_name, submission_sheet_rows.
     """
     sheet_names = get_sheet_names(file_path)
     sheet_count = len(sheet_names)
@@ -64,6 +69,8 @@ def get_skillboost_preview(file_path):
         'detected_sheet_rows': None,
         'columns': None,
         'error': None,
+        'submission_sheet_name': None,
+        'submission_sheet_rows': None,
     }
     if not sheet_names:
         result['error'] = 'Could not read any worksheets from the file.'
@@ -79,6 +86,17 @@ def get_skillboost_preview(file_path):
         result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
     except Exception as e:
         result['error'] = f'Error reading sheet "{detected}": {str(e)}'
+
+    # Also detect Skill Lab Submission sheet
+    try:
+        sub_sheet = find_sheet_by_substring(file_path, SKILLLAB_SUBMISSION_SHEET_SUBSTRING)
+        if sub_sheet:
+            result['submission_sheet_name'] = sub_sheet
+            sub_df = parse_excel_sheet(file_path, sub_sheet)
+            result['submission_sheet_rows'] = len(sub_df) if sub_df is not None else 0
+    except Exception:
+        pass
+
     return result
 
 
@@ -700,6 +718,200 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                     progress_callback(created, updated, skipped)
                 except Exception:
                     pass
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Skill Lab Submission import (upsert by leader_email)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Column name mapping: normalised XLSX header -> model attribute
+_SUBMISSION_COL_MAP = {
+    'team name': 'team_name',
+    'team_name': 'team_name',
+    'leader name': 'leader_name',
+    'leader_name': 'leader_name',
+    'leader email': 'leader_email',
+    'leader_email': 'leader_email',
+    'leader phone': 'leader_phone',
+    'leader_phone': 'leader_phone',
+    'team size': 'team_size',
+    'team_size': 'team_size',
+    'problem statements': 'problem_statement',
+    'problem statement': 'problem_statement',
+    'problem_statement': 'problem_statement',
+    'problem_statements': 'problem_statement',
+    'upload supporting screenshot of your selected track': 'upload_screenshot',
+    'upload_screenshot': 'upload_screenshot',
+    'screenshot': 'upload_screenshot',
+    'created at': 'created_at',
+    'created_at': 'created_at',
+    'created by name': 'created_by_name',
+    'created_by_name': 'created_by_name',
+    'created by email': 'created_by_email',
+    'created_by_email': 'created_by_email',
+    'updated at': 'updated_at',
+    'updated_at': 'updated_at',
+    'updated by name': 'updated_by_name',
+    'updated_by_name': 'updated_by_name',
+    'updated by email': 'updated_by_email',
+    'updated_by_email': 'updated_by_email',
+}
+
+
+def _map_submission_columns(columns):
+    """
+    Map XLSX columns to SkillLabSubmission model fields.
+    Returns dict: { xlsx_column_name: model_field_name }.
+    """
+    mapping = {}
+    for col in columns:
+        if col is None:
+            continue
+        key = str(col).strip().lower()
+        if key in _SUBMISSION_COL_MAP:
+            mapping[col] = _SUBMISSION_COL_MAP[key]
+    return mapping
+
+
+def _find_leader_email_column(columns):
+    """Return the XLSX column name that maps to leader_email, or None."""
+    for col in columns:
+        if col is None:
+            continue
+        key = str(col).strip().lower()
+        if key in ('leader email', 'leader_email'):
+            return col
+    # Fallback: any column containing 'leader' and 'email'
+    for col in columns:
+        if col is None:
+            continue
+        low = str(col).strip().lower()
+        if 'leader' in low and 'email' in low:
+            return col
+    return None
+
+
+def import_skilllab_submission(df, progress_callback=None):
+    """
+    Import Skill Lab submissions from a DataFrame into skilllab_submission.
+    Upsert by leader_email: if a row with that leader_email exists, update it;
+    otherwise create a new row.
+
+    Returns dict with total_rows, created, updated, skipped, errors.
+    """
+    from server.models import db
+
+    columns = list(df.columns)
+    col_map = _map_submission_columns(columns)
+    leader_email_col = _find_leader_email_column(columns)
+
+    if not leader_email_col:
+        raise Exception(
+            "Could not find a 'Leader Email' column in the submission sheet. "
+            "Please ensure the sheet has a column named 'Leader Email'."
+        )
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    # Pre-load existing submissions keyed by leader_email for O(1) lookup
+    existing = {}
+    try:
+        for row in SkillLabSubmission.query.all():
+            existing[row.leader_email.lower()] = row
+    except Exception:
+        pass
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(leader_email_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing leader email")
+                continue
+            email = str(email_val).strip().lower()
+            if not email or '@' not in email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Invalid leader email")
+                continue
+
+            # Build data dict from column mapping
+            data = {}
+            for xlsx_col, model_field in col_map.items():
+                val = row.get(xlsx_col)
+                if pd.isna(val):
+                    val = None
+                elif model_field in ('team_size',):
+                    try:
+                        val = int(val)
+                    except (ValueError, TypeError):
+                        val = None
+                elif model_field in ('created_at', 'updated_at'):
+                    if val is not None:
+                        try:
+                            if isinstance(val, str):
+                                val = pd.to_datetime(val)
+                            elif not isinstance(val, datetime):
+                                val = pd.to_datetime(val)
+                        except Exception:
+                            val = None
+                else:
+                    val = str(val).strip() if val is not None else None
+                    # Truncate long strings
+                    if val and model_field in ('team_name', 'leader_name', 'leader_phone',
+                                                'created_by_name', 'created_by_email',
+                                                'updated_by_name', 'updated_by_email'):
+                        val = val[:255]
+                    elif val and model_field == 'upload_screenshot':
+                        val = val[:1024]
+                data[model_field] = val
+
+            # Ensure leader_email is always set from the dedicated column
+            data['leader_email'] = email
+
+            rec = existing.get(email)
+            if rec:
+                # Update existing record
+                for field, val in data.items():
+                    if field == 'leader_email':
+                        continue  # don't change the key
+                    if val is not None:
+                        setattr(rec, field, val)
+                rec.updated_at = datetime.utcnow()
+                db.session.commit()
+                updated += 1
+            else:
+                # Create new record
+                rec = SkillLabSubmission(**data)
+                db.session.add(rec)
+                db.session.commit()
+                existing[email] = rec
+                created += 1
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
         except Exception as e:
             db.session.rollback()
             skipped += 1

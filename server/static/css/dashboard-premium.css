@@ -340,6 +340,18 @@
     align-items: center;
 }
 
+.kpi-small-link {
+    text-decoration: none;
+    color: inherit;
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.kpi-small-link:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+
 .kpi-small-icon {
     width: 44px;
     height: 44px;
@@ -503,7 +515,7 @@
     color: #111827;
 }
 
-/* Region registrations row (SEA, ANZ, East Asia) */
+/* Region registrations row (SEA, ANZ, Greater China and Korea) */
 .region-registrations-row {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
@@ -554,7 +566,135 @@
     margin-top: 4px;
 }
 
-/* Tracks section: Community Goal + Track cards */
+.region-card-clickable {
+    cursor: pointer;
+    transition: box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+.region-card-clickable:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+}
+
+.region-card-clickable:focus {
+    outline: 2px solid rgba(255, 122, 24, 0.5);
+    outline-offset: 2px;
+}
+
+/* Region breakdown modal */
+.region-breakdown-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+.region-breakdown-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+}
+
+.region-breakdown-box {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    max-height: 85vh;
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.region-breakdown-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    flex-shrink: 0;
+}
+
+.region-breakdown-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin: 0;
+}
+
+.region-breakdown-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: transparent;
+    color: #6b7280;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, color 0.15s;
+}
+
+.region-breakdown-close:hover {
+    background: rgba(0, 0, 0, 0.06);
+    color: #1f2937;
+}
+
+.region-breakdown-body {
+    padding: 20px 24px 24px;
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
+}
+
+.region-breakdown-total {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 0 0 16px 0;
+}
+
+.region-breakdown-list-wrap {
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
+.region-breakdown-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.region-breakdown-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.9375rem;
+    color: #374151;
+}
+
+.region-breakdown-list li:nth-child(even) {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+.region-breakdown-list li .region-breakdown-count {
+    font-weight: 600;
+    color: #1f2937;
+}
+
+/* Tracks section: Track Matrix + Track cards */
 .tracks-section {
     margin-bottom: 32px;
     padding: 32px;

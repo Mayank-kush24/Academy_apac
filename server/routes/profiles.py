@@ -3,9 +3,14 @@ User profiles routes (for viewing user_pii data)
 """
 from flask import Blueprint, request, jsonify
 from sqlalchemy import or_, and_, func, text, case
-from server.models import db, UserPII, ActivityLog, SkillboostProfile, CreditLink
+from server.models import db, UserPII, ActivityLog, SkillboostProfile, CreditLink, SkillLabSubmission
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role, require_page_access
+from server.utils.state_normalize import (
+    normalize_state,
+    get_state_filter_values,
+    distinct_canonical_states,
+)
 
 bp = Blueprint('profiles', __name__)
 
@@ -61,9 +66,13 @@ def get_profiles():
         if country:
             query = query.filter(UserPII.country.ilike(f'%{country}%'))
         
-        # State filter
+        # State filter (match canonical + all mapped variants)
         if state:
-            query = query.filter(UserPII.state.ilike(f'%{state}%'))
+            state_values = get_state_filter_values(state)
+            if state_values:
+                query = query.filter(UserPII.state.in_(state_values))
+            else:
+                query = query.filter(UserPII.state.ilike(f'%{state}%'))
         
         # City filter
         if city:
@@ -127,6 +136,9 @@ def get_profiles():
         )
         
         profiles = [profile.to_dict() for profile in pagination.items]
+        for p in profiles:
+            if p.get('state'):
+                p['state'] = normalize_state(p['state'])
         emails = [p['email'] for p in profiles]
         # Skill Lab verification summary per email (total, verified, pending, failed)
         skillboost_summary = {}
@@ -199,10 +211,11 @@ def get_filter_options():
             UserPII.country != ''
         ).distinct().order_by(UserPII.country).limit(1000).all()
         
-        states = db.session.query(UserPII.state).filter(
+        raw_states = [s[0] for s in db.session.query(UserPII.state).filter(
             UserPII.state.isnot(None),
             UserPII.state != ''
-        ).distinct().order_by(UserPII.state).limit(1000).all()
+        ).distinct().order_by(UserPII.state).limit(1000).all() if s[0]]
+        states = distinct_canonical_states(raw_states)
         
         cities = db.session.query(UserPII.city).filter(
             UserPII.city.isnot(None),
@@ -233,7 +246,7 @@ def get_filter_options():
             'organizations': [o[0] for o in organizations],
             'domains': [d[0] for d in domains],
             'countries': [c[0] for c in countries],
-            'states': [s[0] for s in states],
+            'states': states,
             'cities': [c[0] for c in cities],
             'genders': [g[0] for g in genders],
             'class_streams': [cs[0] for cs in class_streams],
@@ -275,9 +288,21 @@ def get_profile_detail(profile_id):
         except Exception:
             pass
         
+        # Skill Lab submissions for this user (by email)
+        skilllab_submissions = []
+        try:
+            subs = SkillLabSubmission.query.filter_by(leader_email=profile.email).all()
+            skilllab_submissions = [s.to_dict() for s in subs]
+        except Exception:
+            pass
+
+        profile_dict = profile.to_dict()
+        if profile_dict.get('state'):
+            profile_dict['state'] = normalize_state(profile_dict['state'])
         return jsonify({
-            'profile': profile.to_dict(),
-            'skillboost_profiles': skillboost_profiles
+            'profile': profile_dict,
+            'skillboost_profiles': skillboost_profiles,
+            'skilllab_submissions': skilllab_submissions
         }), 200
         
     except Exception as e:

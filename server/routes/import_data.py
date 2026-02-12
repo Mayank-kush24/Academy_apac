@@ -21,7 +21,9 @@ from server.utils.excel_parser import (
     _find_email_column,
     _find_profile_link_column,
     import_skillboost_profile,
+    import_skilllab_submission,
     SKILLBOOST_SHEET_SUBSTRING,
+    SKILLLAB_SUBMISSION_SHEET_SUBSTRING,
 )
 from server.utils.bob_match import recalculate_bob_match, _normalize
 from server.utils.cache import clear_cache
@@ -382,6 +384,23 @@ def import_skillboost_profiles():
             pass
 
         result = import_skillboost_profile(df, email_col, profile_link_col)
+
+        # Also detect and import Skill Lab Submission sheet (if present in same XLSX)
+        submission_result = None
+        try:
+            submission_sheet = find_sheet_by_substring(file_path, SKILLLAB_SUBMISSION_SHEET_SUBSTRING)
+            if submission_sheet:
+                sub_df = parse_excel_sheet(file_path, submission_sheet)
+                if sub_df is not None and len(sub_df) > 0:
+                    try:
+                        from server.utils.audit import set_audit_extra
+                        set_audit_extra({"source": "skilllab_submission_import", "filename": file.filename, "sheet": submission_sheet})
+                    except Exception:
+                        pass
+                    submission_result = import_skilllab_submission(sub_df)
+        except Exception as sub_err:
+            submission_result = {'error': str(sub_err)}
+
         try:
             clear_cache('_get_dashboard_data_cached')
         except Exception:
@@ -391,14 +410,33 @@ def import_skillboost_profiles():
         except Exception:
             pass
 
-        return jsonify({
+        response = {
             'total_rows': result['total_rows'],
             'created': result['created'],
             'updated': result['updated'],
             'skipped': result['skipped'],
             'errors': result.get('errors', []),
             'message': f"Imported Skill Lab profiles: {result['created']} created, {result['updated']} updated, {result['skipped']} skipped."
-        }), 200
+        }
+
+        if submission_result:
+            if 'error' in submission_result:
+                response['submission_error'] = submission_result['error']
+            else:
+                response['submission'] = {
+                    'total_rows': submission_result['total_rows'],
+                    'created': submission_result['created'],
+                    'updated': submission_result['updated'],
+                    'skipped': submission_result['skipped'],
+                    'errors': submission_result.get('errors', []),
+                    'sheet_name': submission_sheet,
+                }
+                response['message'] += (
+                    f" | Skill Lab Submissions: {submission_result['created']} created, "
+                    f"{submission_result['updated']} updated, {submission_result['skipped']} skipped."
+                )
+
+        return jsonify(response), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

@@ -161,9 +161,9 @@ def _after_delete(mapper, connection, target):
 
 
 def register_activity_listeners():
-    """Register SQLAlchemy event listeners for UserPII and User (and ActivityLog is skipped)."""
-    from server.models import UserPII, User
-    for model in (UserPII, User):
+    """Register SQLAlchemy event listeners for UserPII, User, and SkillLabSubmission (ActivityLog is skipped)."""
+    from server.models import UserPII, User, SkillLabSubmission
+    for model in (UserPII, User, SkillLabSubmission):
         event.listen(model, 'after_insert', _after_insert)
         event.listen(model, 'after_update', _after_update)
         event.listen(model, 'after_delete', _after_delete)
