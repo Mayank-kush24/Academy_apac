@@ -12,7 +12,9 @@ PAGES = [
     {'id': 'profiles', 'path': '/profiles', 'label': 'Profiles'},
     {'id': 'skill_lab_credits', 'path': '/skill-lab-credits', 'label': 'Skill Lab credits'},
     {'id': 'book_of_business', 'path': '/book-of-business', 'label': 'Book of Business Registrations'},
+    {'id': 'users_registrations', 'path': '/users-registrations', 'label': 'Users'},
     {'id': 'skilllab_submission', 'path': '/skilllab-submission', 'label': 'Skill Lab Submissions'},
+    {'id': 'optional_mcq_verification', 'path': '/optional-mcq-verification', 'label': 'Optional MCQ Verification'},
     {'id': 'import', 'path': '/import', 'label': 'Import Data'},
     {'id': 'users', 'path': '/users', 'label': 'User Management'},
 ]
@@ -24,7 +26,9 @@ DEFAULT_PAGE_ROLES = {
     'profiles': ['viewer', 'editor', 'admin'],
     'skill_lab_credits': ['viewer', 'editor', 'admin'],
     'book_of_business': ['viewer', 'editor', 'admin'],
+    'users_registrations': ['viewer', 'editor', 'admin'],
     'skilllab_submission': ['viewer', 'editor', 'admin'],
+    'optional_mcq_verification': ['viewer', 'editor', 'admin'],
     'import': ['editor', 'admin'],
     'users': ['admin'],
 }

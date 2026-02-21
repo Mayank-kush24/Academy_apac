@@ -201,6 +201,106 @@ class SkillLabSubmission(db.Model):
         }
 
 
+class OptionalMcqVerification(db.Model):
+    """
+    Optional MCQ verification table.
+    One row per participant (email FK to user_pii). Interns verify manually: valid flag and remark.
+    """
+    __tablename__ = 'optional_mcq_verification'
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)
+    name = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_by_name = db.Column(db.String(255), nullable=True)
+    created_by_email = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by_name = db.Column(db.String(255), nullable=True)
+    updated_by_email = db.Column(db.String(255), nullable=True)
+    valid = db.Column(db.Boolean, default=False, nullable=False)
+    remark = db.Column(db.Text, nullable=True)
+
+    participant = db.relationship('UserPII', foreign_keys=[email], primaryjoin='OptionalMcqVerification.email == UserPII.email', lazy='joined')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'email': self.email,
+            'name': self.name,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by_name': self.created_by_name,
+            'created_by_email': self.created_by_email,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by_name': self.updated_by_name,
+            'updated_by_email': self.updated_by_email,
+            'valid': bool(self.valid),
+            'remark': self.remark,
+        }
+
+
+class OptionalMcqResponse(db.Model):
+    """
+    Optional MCQ response table. One row per (track_number, email).
+    Columns match XLSX: Leader Name, Leader Email (FK to user_pii), Leader Phone, Team size,
+    Problem Statements, Q1.–Q10., plus created/updated audit fields. Team Name is skipped.
+    """
+    __tablename__ = 'optional_mcq_response'
+    __table_args__ = (db.UniqueConstraint('track_number', 'email', name='uq_optional_mcq_response_track_email'),)
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    track_number = db.Column(db.Integer, nullable=False)  # 1, 2, or 3
+    leader_name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)  # Leader Email
+    leader_phone = db.Column(db.String(50), nullable=True)
+    team_size = db.Column(db.Integer, nullable=True)
+    problem_statement = db.Column(db.Text, nullable=True)
+    question_1 = db.Column(db.Text, nullable=True)
+    question_2 = db.Column(db.Text, nullable=True)
+    question_3 = db.Column(db.Text, nullable=True)
+    question_4 = db.Column(db.Text, nullable=True)
+    question_5 = db.Column(db.Text, nullable=True)
+    question_6 = db.Column(db.Text, nullable=True)
+    question_7 = db.Column(db.Text, nullable=True)
+    question_8 = db.Column(db.Text, nullable=True)
+    question_9 = db.Column(db.Text, nullable=True)
+    question_10 = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
+    created_by_name = db.Column(db.String(255), nullable=True)
+    created_by_email = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
+    updated_by_name = db.Column(db.String(255), nullable=True)
+    updated_by_email = db.Column(db.String(255), nullable=True)
+
+    participant = db.relationship('UserPII', foreign_keys=[email], primaryjoin='OptionalMcqResponse.email == UserPII.email', lazy='joined')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'track_number': self.track_number,
+            'leader_name': self.leader_name,
+            'email': self.email,
+            'leader_phone': self.leader_phone,
+            'team_size': self.team_size,
+            'problem_statement': self.problem_statement,
+            'question_1': self.question_1,
+            'question_2': self.question_2,
+            'question_3': self.question_3,
+            'question_4': self.question_4,
+            'question_5': self.question_5,
+            'question_6': self.question_6,
+            'question_7': self.question_7,
+            'question_8': self.question_8,
+            'question_9': self.question_9,
+            'question_10': self.question_10,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by_name': self.created_by_name,
+            'created_by_email': self.created_by_email,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by_name': self.updated_by_name,
+            'updated_by_email': self.updated_by_email,
+        }
+
+
 class ActivityLog(db.Model):
     """Table for storing activity logs (create/update/delete on any tracked table)"""
     __tablename__ = 'activity_logs'

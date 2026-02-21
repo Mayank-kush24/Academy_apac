@@ -3,7 +3,7 @@ User profiles routes (for viewing user_pii data)
 """
 from flask import Blueprint, request, jsonify
 from sqlalchemy import or_, and_, func, text, case
-from server.models import db, UserPII, ActivityLog, SkillboostProfile, CreditLink, SkillLabSubmission
+from server.models import db, UserPII, ActivityLog, SkillboostProfile, CreditLink, SkillLabSubmission, OptionalMcqResponse
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role, require_page_access
 from server.utils.state_normalize import (
@@ -296,13 +296,38 @@ def get_profile_detail(profile_id):
         except Exception:
             pass
 
+        # Optional MCQ scores per track (same marking as Optional MCQ Verification page: 6+ = pass)
+        optional_mcq_scores = []
+        try:
+            from server.utils.mcq_answer_key import score_submission
+            email_lower = (profile.email or '').strip().lower()
+            if email_lower:
+                rows = OptionalMcqResponse.query.filter_by(email=email_lower).all()
+                for r in rows:
+                    auto = score_submission(
+                        r.track_number,
+                        getattr(r, 'question_1', None), getattr(r, 'question_2', None),
+                        getattr(r, 'question_3', None), getattr(r, 'question_4', None),
+                        getattr(r, 'question_5', None), getattr(r, 'question_6', None),
+                        getattr(r, 'question_7', None), getattr(r, 'question_8', None),
+                        getattr(r, 'question_9', None), getattr(r, 'question_10', None),
+                    )
+                    optional_mcq_scores.append({
+                        'track_number': r.track_number,
+                        'score': auto['correct_count'],
+                        'score_display': auto['score_display'],
+                    })
+        except Exception:
+            pass
+
         profile_dict = profile.to_dict()
         if profile_dict.get('state'):
             profile_dict['state'] = normalize_state(profile_dict['state'])
         return jsonify({
             'profile': profile_dict,
             'skillboost_profiles': skillboost_profiles,
-            'skilllab_submissions': skilllab_submissions
+            'skilllab_submissions': skilllab_submissions,
+            'optional_mcq_scores': optional_mcq_scores,
         }), 200
         
     except Exception as e:
@@ -329,6 +354,20 @@ def _master_log_to_profile_log(row):
             summary = f"Skill Lab verification updated by {changed_by}"
         else:
             summary = f"Skill Lab profile removed by {changed_by}"
+    elif table_name == 'optional_mcq_response':
+        if op == 'INSERT':
+            summary = f"Optional MCQ response added by {changed_by}"
+        elif op == 'UPDATE':
+            summary = f"Optional MCQ response updated by {changed_by}"
+        else:
+            summary = f"Optional MCQ response removed by {changed_by}"
+    elif table_name == 'optional_mcq_verification':
+        if op == 'INSERT':
+            summary = f"Optional MCQ verification added by {changed_by}"
+        elif op == 'UPDATE':
+            summary = f"Optional MCQ verification updated by {changed_by}"
+        else:
+            summary = f"Optional MCQ verification removed by {changed_by}"
     else:
         if op == 'INSERT':
             summary = f"Created by {changed_by}"
@@ -377,7 +416,7 @@ def get_profile_logs(profile_id):
         profile_email = (profile.email or '').strip()
 
         try:
-            # master_logs: user_pii by id + skillboost_profile by email (verification shows on profile)
+            # master_logs: user_pii by id; skillboost_profile, optional_mcq_response, optional_mcq_verification by email
             total = db.session.execute(
                 text("""
                     SELECT (
@@ -387,6 +426,14 @@ def get_profile_logs(profile_id):
                         (SELECT COUNT(*) FROM master_logs
                          WHERE table_name = 'skillboost_profile'
                            AND (new_values->>'email' = :email OR old_values->>'email' = :email))
+                        +
+                        (SELECT COUNT(*) FROM master_logs
+                         WHERE table_name = 'optional_mcq_response'
+                           AND (LOWER(COALESCE(new_values->>'email', '')) = LOWER(:email) OR LOWER(COALESCE(old_values->>'email', '')) = LOWER(:email)))
+                        +
+                        (SELECT COUNT(*) FROM master_logs
+                         WHERE table_name = 'optional_mcq_verification'
+                           AND (LOWER(COALESCE(new_values->>'email', '')) = LOWER(:email) OR LOWER(COALESCE(old_values->>'email', '')) = LOWER(:email)))
                     ) AS cnt
                 """),
                 {"rid": record_id, "email": profile_email}
@@ -403,6 +450,18 @@ def get_profile_logs(profile_id):
                      FROM master_logs
                      WHERE table_name = 'skillboost_profile'
                        AND (new_values->>'email' = :email OR old_values->>'email' = :email))
+                    UNION ALL
+                    (SELECT log_id, table_name, operation_type, record_identifier,
+                            old_values, new_values, changed_by, timestamp, additional_info
+                     FROM master_logs
+                     WHERE table_name = 'optional_mcq_response'
+                       AND (LOWER(COALESCE(new_values->>'email', '')) = LOWER(:email) OR LOWER(COALESCE(old_values->>'email', '')) = LOWER(:email)))
+                    UNION ALL
+                    (SELECT log_id, table_name, operation_type, record_identifier,
+                            old_values, new_values, changed_by, timestamp, additional_info
+                     FROM master_logs
+                     WHERE table_name = 'optional_mcq_verification'
+                       AND (LOWER(COALESCE(new_values->>'email', '')) = LOWER(:email) OR LOWER(COALESCE(old_values->>'email', '')) = LOWER(:email)))
                     ORDER BY timestamp DESC
                     LIMIT :limit OFFSET :offset
                 """),

@@ -21,9 +21,25 @@ def init_database():
     with app.app_context():
         print("Creating database tables...")
         try:
+            # Drop optional_mcq_response so it can be recreated with current schema (fixes column mismatches)
+            try:
+                with db.engine.connect() as conn:
+                    conn.execute(text("DROP TRIGGER IF EXISTS tr_optional_mcq_response_log ON optional_mcq_response"))
+                    conn.commit()
+                print("OK: Dropped trigger on optional_mcq_response (if any)")
+            except Exception as ex:
+                print("WARN: Could not drop optional_mcq_response trigger (table may not exist):", str(ex))
+            try:
+                with db.engine.connect() as conn:
+                    conn.execute(text("DROP TABLE IF EXISTS optional_mcq_response CASCADE"))
+                    conn.commit()
+                print("OK: Dropped optional_mcq_response table (will recreate with current schema)")
+            except Exception as ex:
+                print("WARN: Could not drop optional_mcq_response:", str(ex))
+
             # Create all tables
             db.create_all()
-            print("✓ Database tables created successfully!")
+            print("OK: Database tables created successfully!")
             
             # Verify tables exist
             print("\nVerifying tables...")
@@ -31,35 +47,35 @@ def init_database():
             tables = inspector.get_table_names()
             
             if 'users' in tables:
-                print("✓ 'users' table exists")
+                print("OK: 'users' table exists")
             else:
-                print("✗ 'users' table NOT found")
+                print("FAIL: 'users' table NOT found")
             
             if 'user_pii' in tables:
-                print("✓ 'user_pii' table exists")
+                print("OK: 'user_pii' table exists")
             else:
-                print("✗ 'user_pii' table NOT found")
+                print("FAIL: 'user_pii' table NOT found")
             
             if 'activity_logs' in tables:
-                print("✓ 'activity_logs' table exists")
+                print("OK: 'activity_logs' table exists")
             else:
-                print("✗ 'activity_logs' table NOT found")
+                print("FAIL: 'activity_logs' table NOT found")
             
             if 'bob_companies' in tables:
-                print("✓ 'bob_companies' table exists")
+                print("OK: 'bob_companies' table exists")
             else:
-                print("✗ 'bob_companies' table NOT found")
+                print("FAIL: 'bob_companies' table NOT found")
             
             if 'skillboost_profile' in tables:
-                print("✓ 'skillboost_profile' table exists")
+                print("OK: 'skillboost_profile' table exists")
                 # Drop FK to user_pii so we can import all Skill Lab emails (not only those in user_pii)
                 try:
                     with db.engine.connect() as conn:
                         conn.execute(text("ALTER TABLE skillboost_profile DROP CONSTRAINT IF EXISTS fk_skillboost_profile_email"))
                         conn.commit()
-                    print("✓ skillboost_profile: FK to user_pii removed (import all emails)")
+                    print("OK: skillboost_profile: FK to user_pii removed (import all emails)")
                 except Exception as ex:
-                    print("⚠ Could not drop skillboost_profile FK (may already be dropped):", ex)
+                    print("WARN: Could not drop skillboost_profile FK (may already be dropped):", str(ex))
                 # Ensure master_logs and skillboost_profile trigger exist (profile verification logs)
                 try:
                     schema_path = os.path.join(project_root, 'schema.sql')
@@ -69,69 +85,101 @@ def init_database():
                         with db.engine.connect() as conn:
                             conn.execute(text(schema_sql))
                             conn.commit()
-                        print("✓ master_logs + skillboost_profile trigger applied (profile verification logs)")
+                        print("OK: master_logs + skillboost_profile trigger applied (profile verification logs)")
                     else:
                         _apply_skillboost_master_logs(db)
                 except Exception as ex:
                     try:
                         _apply_skillboost_master_logs(db)
                     except Exception as ex2:
-                        print("⚠ Could not apply master_logs for skillboost_profile (run schema.sql manually):", ex2)
+                        print("WARN: Could not apply master_logs for skillboost_profile (run schema.sql manually):", str(ex2))
                 # Add credit_link_id and email_sent_at to skillboost_profile (credit allocation + Sendy tracking)
                 try:
                     with db.engine.connect() as conn:
                         conn.execute(text("ALTER TABLE skillboost_profile ADD COLUMN IF NOT EXISTS credit_link_id INTEGER REFERENCES credit_links(id)"))
                         conn.commit()
-                    print("✓ skillboost_profile.credit_link_id column verified")
+                    print("OK: skillboost_profile.credit_link_id column verified")
                 except Exception as ex:
-                    print("⚠ Could not add skillboost_profile.credit_link_id (create credit_links first or already exists):", ex)
+                    print("WARN: Could not add skillboost_profile.credit_link_id (create credit_links first or already exists):", str(ex))
                 try:
                     with db.engine.connect() as conn:
                         conn.execute(text("ALTER TABLE skillboost_profile ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP"))
                         conn.commit()
-                    print("✓ skillboost_profile.email_sent_at column verified")
+                    print("OK: skillboost_profile.email_sent_at column verified")
                 except Exception as ex:
-                    print("⚠ Could not add skillboost_profile.email_sent_at (may already exist):", ex)
+                    print("WARN: Could not add skillboost_profile.email_sent_at (may already exist):", str(ex))
             else:
-                print("✗ 'skillboost_profile' table NOT found")
+                print("FAIL: 'skillboost_profile' table NOT found")
 
             if 'credit_links' in tables:
-                print("✓ 'credit_links' table exists")
+                print("OK: 'credit_links' table exists")
             else:
-                print("✗ 'credit_links' table NOT found")
+                print("FAIL: 'credit_links' table NOT found")
+
+            if 'optional_mcq_verification' in tables:
+                print("OK: 'optional_mcq_verification' table exists")
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("""
+                            DROP TRIGGER IF EXISTS tr_optional_mcq_verification_log ON optional_mcq_verification;
+                            CREATE TRIGGER tr_optional_mcq_verification_log
+                                AFTER INSERT OR UPDATE OR DELETE ON optional_mcq_verification
+                                FOR EACH ROW EXECUTE PROCEDURE log_activity()
+                        """))
+                        conn.commit()
+                    print("OK: optional_mcq_verification audit trigger created")
+                except Exception as ex:
+                    print("WARN: optional_mcq_verification trigger (run schema.sql for master_logs):", str(ex))
+            else:
+                print("FAIL: 'optional_mcq_verification' table NOT found")
+
+            if 'optional_mcq_response' in tables:
+                print("OK: 'optional_mcq_response' table exists")
+                # Create audit trigger (requires log_activity and get_record_identifier from schema.sql)
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("""
+                            DROP TRIGGER IF EXISTS tr_optional_mcq_response_log ON optional_mcq_response;
+                            CREATE TRIGGER tr_optional_mcq_response_log
+                                AFTER INSERT OR UPDATE OR DELETE ON optional_mcq_response
+                                FOR EACH ROW EXECUTE PROCEDURE log_activity()
+                        """))
+                        conn.commit()
+                    print("OK: optional_mcq_response audit trigger created")
+                except Exception as ex:
+                    print("WARN: optional_mcq_response trigger (run schema.sql for master_logs):", str(ex))
+            else:
+                print("FAIL: 'optional_mcq_response' table NOT found")
             
             # Add allowed_pages column to users if missing (dynamic page access)
             try:
                 with db.engine.connect() as conn:
                     conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_pages JSONB"))
                     conn.commit()
-                print("✓ users.allowed_pages column verified")
+                print("OK: users.allowed_pages column verified")
             except Exception as ex:
-                print("⚠ Could not add users.allowed_pages (may already exist):", ex)
+                print("WARN: Could not add users.allowed_pages (may already exist):", str(ex))
             
             # Add bob_match column to user_pii if missing (Book of Business match)
             try:
-                from sqlalchemy import text
                 with db.engine.connect() as conn:
                     conn.execute(text("ALTER TABLE user_pii ADD COLUMN IF NOT EXISTS bob_match BOOLEAN NOT NULL DEFAULT FALSE"))
                     conn.commit()
-                print("✓ user_pii.bob_match column verified")
+                print("OK: user_pii.bob_match column verified")
             except Exception as ex:
-                print("⚠ Could not add user_pii.bob_match (may already exist):", ex)
+                print("WARN: Could not add user_pii.bob_match (may already exist):", str(ex))
             
             # Add utm_medium column to user_pii if missing
             try:
-                from sqlalchemy import text
                 with db.engine.connect() as conn:
                     conn.execute(text("ALTER TABLE user_pii ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(255)"))
                     conn.commit()
-                print("✓ user_pii.utm_medium column verified")
+                print("OK: user_pii.utm_medium column verified")
             except Exception as ex:
-                print("⚠ Could not add user_pii.utm_medium (may already exist):", ex)
+                print("WARN: Could not add user_pii.utm_medium (may already exist):", str(ex))
 
             # Indexes for dashboard/analytics (faster filters and aggregations)
             try:
-                from sqlalchemy import text
                 with db.engine.connect() as conn:
                     for idx_name, idx_sql in [
                         ('idx_user_pii_registered_at', 'CREATE INDEX IF NOT EXISTS idx_user_pii_registered_at ON user_pii(registered_at)'),
@@ -141,21 +189,21 @@ def init_database():
                     ]:
                         conn.execute(text(idx_sql))
                         conn.commit()
-                print("✓ user_pii indexes verified")
+                print("OK: user_pii indexes verified")
             except Exception as ex:
-                print("⚠ Could not create user_pii indexes (may already exist):", ex)
+                print("WARN: Could not create user_pii indexes (may already exist):", str(ex))
             
             # Check if admin user exists
             admin_count = User.query.filter_by(role='admin').count()
             if admin_count == 0:
-                print("\n⚠ No admin users found. Run 'python setup_admin.py' to create one.")
+                print("\nWARN: No admin users found. Run 'python setup_admin.py' to create one.")
             else:
-                print(f"\n✓ Found {admin_count} admin user(s)")
+                print(f"\nOK: Found {admin_count} admin user(s)")
             
             print("\nDatabase initialization complete!")
             
         except Exception as e:
-            print(f"\n✗ Error creating tables: {str(e)}")
+            print(f"\nFAIL: Error creating tables: {str(e)}")
             print("\nPlease check:")
             print("1. PostgreSQL is running")
             print("2. DATABASE_URL in .env file is correct")
@@ -191,6 +239,8 @@ def _apply_skillboost_master_logs(db):
                 ELSIF p_table_name = 'users' THEN RETURN COALESCE((p_row).id::TEXT, '');
                 ELSIF p_table_name = 'skillboost_profile' THEN
                     RETURN COALESCE((p_row).email, '') || '|' || COALESCE((p_row).google_cloud_skills_boost_profile_link, '');
+                ELSIF p_table_name = 'optional_mcq_verification' THEN RETURN COALESCE((p_row).id::TEXT, '');
+                ELSIF p_table_name = 'optional_mcq_response' THEN RETURN COALESCE((p_row).id::TEXT, '');
                 ELSE RETURN COALESCE((p_row).id::TEXT, '');
                 END IF;
             EXCEPTION WHEN OTHERS THEN RETURN 'unknown';

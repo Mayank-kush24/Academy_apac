@@ -73,6 +73,19 @@ function getSkillLabTrackCell(submissions, trackLabel) {
     return html;
 }
 
+function getOptionalMcqTrackCell(scores, trackLabel) {
+    if (!scores || scores.length === 0) return '';
+    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    if (!trackNum) return '';
+    var item = scores.find(function(s) { return s.track_number === trackNum; });
+    if (!item || item.score_display == null) return '';
+    var scoreDisplay = String(item.score_display);
+    var score = typeof item.score === 'number' ? item.score : parseInt(scoreDisplay.split('/')[0], 10);
+    var isPass = !isNaN(score) && score >= 6;
+    var color = isPass ? '#16a34a' : '#dc2626';
+    return '<span style="color:' + color + ';font-weight:600;">' + escapeHtml(scoreDisplay) + '</span>';
+}
+
 function formatDate(dateString) {
     if (!dateString) return null;
     try {
@@ -222,6 +235,7 @@ window.viewProfileDetails = function(profileId) {
         console.log('Profile data:', profile);
         const skillboost_profiles = data.skillboost_profiles || [];
         const skilllab_submissions = data.skilllab_submissions || [];
+        const optional_mcq_scores = data.optional_mcq_scores || [];
         
         // Populate modal
         const modalNameEl = document.getElementById('modalProfileName');
@@ -394,6 +408,7 @@ window.viewProfileDetails = function(profileId) {
                         <tbody>
                             <tr><td class="grid-row-label">WEBINAR</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
@@ -730,6 +745,7 @@ async function viewProfileDetails(profileId) {
         const profile = data.profile;
         const skillboost_profiles = data.skillboost_profiles || [];
         const skilllab_submissions = data.skilllab_submissions || [];
+        const optional_mcq_scores = data.optional_mcq_scores || [];
         
         if (!profile) {
             throw new Error('Profile not found in response');
@@ -905,6 +921,7 @@ async function viewProfileDetails(profileId) {
                         <tbody>
                             <tr><td class="grid-row-label">WEBINAR</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>

@@ -379,16 +379,7 @@ function updateKPICards(summary, chartsData) {
     const slSubTotalEl = document.getElementById('skillLabSubmissionsTotal');
     if (slSubTotalEl) slSubTotalEl.textContent = (summary.total_skilllab_submissions !== undefined && summary.total_skilllab_submissions !== null) ? formatNumber(summary.total_skilllab_submissions) : '-';
     const slSubMetaEl = document.getElementById('skillLabSubmissionsMeta');
-    if (slSubMetaEl) {
-        const verified = summary.verified_skilllab_submissions;
-        const rate = summary.skilllab_submission_verification_rate;
-        const total = summary.total_skilllab_submissions;
-        if (total !== undefined && total !== null && verified !== undefined && verified !== null) {
-            slSubMetaEl.textContent = 'Verified: ' + formatNumber(verified) + (rate != null ? ' / ' + rate + '%' : '');
-        } else {
-            slSubMetaEl.textContent = 'Verified: — / —%';
-        }
-    }
+    if (slSubMetaEl) slSubMetaEl.textContent = 'Total Submissions';
 
     // Region cards: SEA, ANZ, East Asia
     const seaRegEl = document.getElementById('seaRegistrations');

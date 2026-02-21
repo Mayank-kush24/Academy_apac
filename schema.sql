@@ -120,6 +120,10 @@ BEGIN
         RETURN COALESCE((p_row).email, '') || '|' || COALESCE((p_row).google_cloud_skills_boost_profile_link, '');
     ELSIF p_table_name = 'skilllab_submission' THEN
         RETURN COALESCE((p_row).id::TEXT, '');
+    ELSIF p_table_name = 'optional_mcq_verification' THEN
+        RETURN COALESCE((p_row).id::TEXT, '');
+    ELSIF p_table_name = 'optional_mcq_response' THEN
+        RETURN COALESCE((p_row).id::TEXT, '');
     ELSE
         -- Default: try single column 'id'
         RETURN COALESCE((p_row).id::TEXT, '');
@@ -173,6 +177,28 @@ BEGIN
         DROP TRIGGER IF EXISTS tr_skilllab_submission_log ON skilllab_submission;
         CREATE TRIGGER tr_skilllab_submission_log
             AFTER INSERT OR UPDATE OR DELETE ON skilllab_submission
+            FOR EACH ROW EXECUTE PROCEDURE log_activity();
+    END IF;
+END $$;
+
+-- optional_mcq_verification
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'optional_mcq_verification') THEN
+        DROP TRIGGER IF EXISTS tr_optional_mcq_verification_log ON optional_mcq_verification;
+        CREATE TRIGGER tr_optional_mcq_verification_log
+            AFTER INSERT OR UPDATE OR DELETE ON optional_mcq_verification
+            FOR EACH ROW EXECUTE PROCEDURE log_activity();
+    END IF;
+END $$;
+
+-- optional_mcq_response
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'optional_mcq_response') THEN
+        DROP TRIGGER IF EXISTS tr_optional_mcq_response_log ON optional_mcq_response;
+        CREATE TRIGGER tr_optional_mcq_response_log
+            AFTER INSERT OR UPDATE OR DELETE ON optional_mcq_response
             FOR EACH ROW EXECUTE PROCEDURE log_activity();
     END IF;
 END $$;

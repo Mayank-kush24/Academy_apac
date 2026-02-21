@@ -22,8 +22,12 @@ from server.utils.excel_parser import (
     _find_profile_link_column,
     import_skillboost_profile,
     import_skilllab_submission,
+    import_optional_mcq_response,
     SKILLBOOST_SHEET_SUBSTRING,
     SKILLLAB_SUBMISSION_SHEET_SUBSTRING,
+    MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING,
+    MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING,
+    MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING,
 )
 from server.utils.bob_match import recalculate_bob_match, _normalize
 from server.utils.cache import clear_cache
@@ -401,6 +405,39 @@ def import_skillboost_profiles():
         except Exception as sub_err:
             submission_result = {'error': str(sub_err)}
 
+        # Optional MCQ sheets (Track 1, 2, 3)
+        mcq_results = []
+        mcq_errors = []
+        for track, substring in [
+            (1, MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING),
+            (2, MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING),
+            (3, MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING),
+        ]:
+            try:
+                mcq_sheet = find_sheet_by_substring(file_path, substring)
+                if mcq_sheet:
+                    mcq_df = parse_excel_sheet(file_path, mcq_sheet)
+                    if mcq_df is not None and len(mcq_df) > 0:
+                        try:
+                            from server.utils.audit import set_audit_extra
+                            set_audit_extra({"source": "optional_mcq_import", "filename": file.filename, "sheet": mcq_sheet, "track": track})
+                        except Exception:
+                            pass
+                        mcq_result = import_optional_mcq_response(mcq_df, track)
+                        mcq_results.append({
+                            'track': track,
+                            'sheet_name': mcq_sheet,
+                            'total_rows': mcq_result['total_rows'],
+                            'created': mcq_result['created'],
+                            'updated': mcq_result['updated'],
+                            'skipped': mcq_result['skipped'],
+                            'errors': mcq_result.get('errors', []),
+                        })
+                    else:
+                        mcq_results.append({'track': track, 'sheet_name': mcq_sheet, 'total_rows': 0, 'created': 0, 'updated': 0, 'skipped': 0, 'errors': []})
+            except Exception as mcq_err:
+                mcq_errors.append({'track': track, 'error': str(mcq_err)})
+
         try:
             clear_cache('_get_dashboard_data_cached')
         except Exception:
@@ -435,6 +472,17 @@ def import_skillboost_profiles():
                     f" | Skill Lab Submissions: {submission_result['created']} created, "
                     f"{submission_result['updated']} updated, {submission_result['skipped']} skipped."
                 )
+
+        if mcq_results:
+            response['mcq'] = mcq_results
+            for r in mcq_results:
+                response['message'] += (
+                    f" | Optional MCQ Track {r['track']}: {r['created']} created, {r['updated']} updated, {r['skipped']} skipped."
+                )
+        if mcq_errors:
+            response['mcq_errors'] = mcq_errors
+            for e in mcq_errors:
+                response['message'] += f" | MCQ Track {e['track']} error: {e['error']}"
 
         return jsonify(response), 200
     except Exception as e:

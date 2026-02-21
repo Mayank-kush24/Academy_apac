@@ -4,7 +4,7 @@ Excel parsing and field mapping utilities
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.exc import DataError, IntegrityError
-from server.models import UserPII, SkillboostProfile, SkillLabSubmission
+from server.models import UserPII, SkillboostProfile, SkillLabSubmission, OptionalMcqResponse
 
 
 # Substring to auto-detect Skill Lab / Google Skills Boost sheet (case-insensitive)
@@ -12,6 +12,11 @@ SKILLBOOST_SHEET_SUBSTRING = "Share your Google Skills Pu"
 
 # Substring to auto-detect Skill Lab Submission sheet (case-insensitive)
 SKILLLAB_SUBMISSION_SHEET_SUBSTRING = "Google Skills Lab Submissio"
+
+# Substrings to auto-detect Optional MCQ sheets (Track 1, 2, 3)
+MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING = "MCQ Optional Track 1  Agent"
+MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING = "MCQ Optional Track 2 Connec"
+MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING = "MCQ Optional Track 3 Poweri"
 
 
 def get_sheet_names(file_path):
@@ -94,6 +99,25 @@ def get_skillboost_preview(file_path):
             result['submission_sheet_name'] = sub_sheet
             sub_df = parse_excel_sheet(file_path, sub_sheet)
             result['submission_sheet_rows'] = len(sub_df) if sub_df is not None else 0
+    except Exception:
+        pass
+
+    # Detect Optional MCQ sheets (Track 1, 2, 3)
+    result['mcq_sheets'] = []
+    try:
+        for track, substring in [
+            (1, MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING),
+            (2, MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING),
+            (3, MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING),
+        ]:
+            mcq_sheet = find_sheet_by_substring(file_path, substring)
+            if mcq_sheet:
+                mcq_df = parse_excel_sheet(file_path, mcq_sheet)
+                result['mcq_sheets'].append({
+                    'track': track,
+                    'sheet_name': mcq_sheet,
+                    'rows': len(mcq_df) if mcq_df is not None else 0,
+                })
     except Exception:
         pass
 
@@ -901,6 +925,224 @@ def import_skilllab_submission(df, progress_callback=None):
             else:
                 # Create new record
                 rec = SkillLabSubmission(**data)
+                db.session.add(rec)
+                db.session.commit()
+                existing[email] = rec
+                created += 1
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+    }
+
+
+def _find_mcq_question_columns(columns, email_col):
+    """
+    Resolve 10 question columns from Excel headers.
+    Returns list of (xlsx_column_name, model_field) for question_1..question_10.
+    Matches headers that start with "Q1.", "Q2.", ... "Q10." (Excel often has "Q1. What", "Q2. Why...")
+    or exact "q1", "question 1", etc. Fallback: first 10 non-email columns.
+    """
+    col_list = [c for c in columns if c is not None and str(c).strip()]
+    email_col_str = email_col.strip().lower() if email_col else ''
+    model_fields = ['question_1', 'question_2', 'question_3', 'question_4', 'question_5',
+                    'question_6', 'question_7', 'question_8', 'question_9', 'question_10']
+
+    # Match by prefix: "Q1. What" -> question_1, "Q10. Why" -> question_10. Check Q10 before Q1.
+    result = [None] * 10
+    for col in col_list:
+        key = str(col).strip().lower()
+        if key == email_col_str:
+            continue
+        key_ns = key.replace(' ', '')
+        for i in range(10, 0, -1):  # 10 down to 1 so "q10." matches before "q1."
+            prefix = f'q{i}.'
+            if key.startswith(prefix) or key_ns.startswith(prefix):
+                if result[i - 1] is None:
+                    result[i - 1] = (col, model_fields[i - 1])
+                break
+
+    out = [x for x in result if x is not None]
+    if len(out) >= 10:
+        return out[:10]
+
+    # Exact matches for any remaining slots (e.g. "q1", "question 1")
+    norm_to_col = {str(c).strip().lower(): c for c in col_list if str(c).strip().lower() != email_col_str}
+    norm_to_col_no_space = {k.replace(' ', ''): v for k, v in norm_to_col.items()}
+    for i in range(1, 11):
+        if result[i - 1] is not None:
+            continue
+        mf = model_fields[i - 1]
+        for cand in [f'q{i}.', f'q{i}', f'question {i}', str(i), f'answer {i}', f'question{i}', f'q {i}', f'answer{i}']:
+            if cand in norm_to_col:
+                result[i - 1] = (norm_to_col[cand], mf)
+                break
+            if cand.replace(' ', '') in norm_to_col_no_space:
+                result[i - 1] = (norm_to_col_no_space[cand.replace(' ', '')], mf)
+                break
+
+    out = [x for x in result if x is not None]
+    if len(out) >= 10:
+        return out[:10]
+
+    # Fallback: positional (first 10 non-email columns)
+    result = []
+    for c in col_list:
+        if str(c).strip().lower() == email_col_str:
+            continue
+        if len(result) >= 10:
+            break
+        result.append((c, model_fields[len(result)]))
+    return result[:10]
+
+
+def _find_mcq_column(columns, *candidates):
+    """Return first column whose name (normalized, lower) matches one of the candidates."""
+    for col in columns:
+        if col is None:
+            continue
+        key = ' '.join(str(col).strip().lower().split())
+        for c in candidates:
+            cnorm = ' '.join(c.strip().lower().split())
+            if cnorm == key or key == cnorm or key.endswith(cnorm) or cnorm in key:
+                return col
+    return None
+
+
+def import_optional_mcq_response(df, track_number, progress_callback=None):
+    """
+    Import Optional MCQ responses from a DataFrame into optional_mcq_response.
+    Upsert by (track_number, email): update if exists, else insert.
+    Returns dict: total_rows, created, updated, skipped, errors.
+    """
+    from server.models import db
+
+    columns = list(df.columns)
+    email_col = _find_leader_email_column(columns)
+    if not email_col:
+        raise Exception(
+            "Could not find a 'Leader Email' column in the MCQ sheet. "
+            "Please ensure the sheet has a column named 'Leader Email'."
+        )
+    question_cols = _find_mcq_question_columns(columns, email_col)
+    if not question_cols:
+        raise Exception("Could not find 10 question columns in the MCQ sheet.")
+
+    leader_name_col = _find_mcq_column(columns, 'leader name', 'Leader Name')
+    leader_phone_col = _find_mcq_column(columns, 'leader phone', 'Leader Phone')
+    team_size_col = _find_mcq_column(columns, 'team size', 'Team size', 'team_size')
+    problem_col = _find_mcq_column(columns, 'problem statements', 'Problem Statements', 'problem statement')
+    created_at_col = _find_mcq_column(columns, 'created at', 'Created At')
+    created_by_name_col = _find_mcq_column(columns, 'created by name', 'Created By Name')
+    created_by_email_col = _find_mcq_column(columns, 'created by email', 'Created By Email')
+    updated_at_col = _find_mcq_column(columns, 'updated at', 'Updated At')
+    updated_by_name_col = _find_mcq_column(columns, 'updated by name', 'Updated By Name')
+    updated_by_email_col = _find_mcq_column(columns, 'updated by email', 'Updated By Email')
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    existing = {}
+    try:
+        for row in OptionalMcqResponse.query.filter_by(track_number=track_number).all():
+            existing[row.email.lower()] = row
+    except Exception:
+        pass
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(email_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing email")
+                continue
+            email = str(email_val).strip().lower()
+            if not email or '@' not in email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Invalid email")
+                continue
+
+            def _get(col, default=None):
+                if col is None:
+                    return default
+                v = row.get(col)
+                if pd.isna(v):
+                    return default
+                return str(v).strip() or default
+
+            data = {'track_number': track_number, 'email': email}
+            if leader_name_col:
+                data['leader_name'] = _get(leader_name_col)
+            if leader_phone_col:
+                data['leader_phone'] = _get(leader_phone_col)
+            if team_size_col:
+                try:
+                    v = row.get(team_size_col)
+                    data['team_size'] = int(v) if v is not None and not pd.isna(v) else None
+                except (ValueError, TypeError):
+                    data['team_size'] = None
+            if problem_col:
+                data['problem_statement'] = _get(problem_col)
+            if created_at_col:
+                try:
+                    v = row.get(created_at_col)
+                    if v is not None and not pd.isna(v):
+                        data['created_at'] = pd.to_datetime(v) if hasattr(pd, 'to_datetime') else v
+                except Exception:
+                    pass
+            if created_by_name_col:
+                data['created_by_name'] = _get(created_by_name_col)
+            if created_by_email_col:
+                data['created_by_email'] = _get(created_by_email_col)
+            if updated_at_col:
+                try:
+                    v = row.get(updated_at_col)
+                    if v is not None and not pd.isna(v):
+                        data['updated_at'] = pd.to_datetime(v) if hasattr(pd, 'to_datetime') else v
+                except Exception:
+                    pass
+            if updated_by_name_col:
+                data['updated_by_name'] = _get(updated_by_name_col)
+            if updated_by_email_col:
+                data['updated_by_email'] = _get(updated_by_email_col)
+
+            for xlsx_col, model_field in question_cols:
+                val = row.get(xlsx_col)
+                if pd.isna(val):
+                    data[model_field] = None
+                else:
+                    data[model_field] = str(val).strip() or None
+
+            rec = existing.get(email)
+            if rec:
+                for k, v in data.items():
+                    if k == 'email':
+                        continue
+                    setattr(rec, k, v)
+                db.session.commit()
+                updated += 1
+            else:
+                rec = OptionalMcqResponse(**data)
                 db.session.add(rec)
                 db.session.commit()
                 existing[email] = rec

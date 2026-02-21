@@ -572,6 +572,11 @@ async function runSkillboostPreview(file) {
             if (subSheet) {
                 html += '<br><i class="fas fa-check-circle text-success"></i> Sheet <strong>&quot;' + escapeHtml(subSheet) + '&quot;</strong> (Skill Lab Submissions) detected with <strong>' + (subRows || 0).toLocaleString() + '</strong> row(s).';
             }
+            if (data.mcq_sheets && data.mcq_sheets.length > 0) {
+                data.mcq_sheets.forEach(function(m) {
+                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Optional MCQ Track ' + m.track + '</strong>: Sheet &quot;' + escapeHtml(m.sheet_name || '') + '&quot; with <strong>' + (m.rows || 0).toLocaleString() + '</strong> row(s).';
+                });
+            }
             previewResultEl.innerHTML = html;
         }
         previewResultEl.style.display = 'block';
@@ -658,13 +663,31 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
             if (data.submission_error) {
                 msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Submission import error: ' + escapeHtml(data.submission_error) + '</div>';
             }
+            if (data.mcq && data.mcq.length > 0) {
+                data.mcq.forEach(function(m) {
+                    msgHtml += '<div style="margin-top: 8px;"><i class="fas fa-tasks" style="color: #7c3aed;"></i> <strong>Optional MCQ Track ' + m.track + '</strong> (sheet: ' + escapeHtml(m.sheet_name || '') + '): ' +
+                        (m.created || 0) + ' created, ' + (m.updated || 0) + ' updated, ' + (m.skipped || 0) + ' skipped.</div>';
+                });
+            }
+            if (data.mcq_errors && data.mcq_errors.length > 0) {
+                data.mcq_errors.forEach(function(e) {
+                    msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> MCQ Track ' + e.track + ' error: ' + escapeHtml(e.error) + '</div>';
+                });
+            }
             successEl.innerHTML = msgHtml;
             successEl.style.display = 'block';
         }
-        // Combine profile errors and submission errors
+        // Combine profile errors, submission errors, and MCQ errors
         var allErrors = (data.errors || []).slice();
         if (data.submission && data.submission.errors && data.submission.errors.length > 0) {
             allErrors = allErrors.concat(data.submission.errors.map(function(e) { return '[Submission] ' + e; }));
+        }
+        if (data.mcq && data.mcq.length > 0) {
+            data.mcq.forEach(function(m) {
+                if (m.errors && m.errors.length > 0) {
+                    allErrors = allErrors.concat(m.errors.map(function(e) { return '[MCQ Track ' + m.track + '] ' + e; }));
+                }
+            });
         }
         if (allErrors.length > 0 && errorsListEl) {
             errorsListEl.innerHTML = '<strong class="text-warning"><i class="fas fa-exclamation-triangle"></i> Import notes / errors (' + allErrors.length + '):</strong><ul class="import-errors-ul">' +

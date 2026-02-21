@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
 from server.config import Config
 from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
-from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, skilllab_submission
+from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, users_registrations, skilllab_submission, mcq_verification
 
 def create_app():
     """Create and configure Flask application"""
@@ -86,7 +86,9 @@ def create_app():
     app.register_blueprint(audit.bp, url_prefix='/api/admin')
     app.register_blueprint(skilllab.bp, url_prefix='/api/skilllab')
     app.register_blueprint(book_of_business.bp, url_prefix='/api/book-of-business')
+    app.register_blueprint(users_registrations.bp, url_prefix='/api/users-registrations')
     app.register_blueprint(skilllab_submission.bp, url_prefix='/api/skilllab-submission')
+    app.register_blueprint(mcq_verification.bp, url_prefix='/api/mcq-verification')
     
     # Serve static files
     @app.route('/static/<path:filename>')
@@ -168,11 +170,23 @@ def create_app():
         """Book of Business Registrations (users with BOB match)"""
         return render_template('book_of_business.html')
 
+    # Users (Registrations) page
+    @app.route('/users-registrations')
+    def users_registrations_page():
+        """Users - all registered users (same stats/filters/columns as BOB)"""
+        return render_template('users_registrations.html')
+
     # Skill Lab Submission Verification page
     @app.route('/skilllab-submission')
     def skilllab_submission_page():
         """Skill Lab Submission Verification (manual intern verification)"""
         return render_template('skilllab_submission.html')
+
+    # Optional MCQ Verification page
+    @app.route('/optional-mcq-verification')
+    def optional_mcq_verification_page():
+        """Optional MCQ Verification (manual verification of participant MCQ)"""
+        return render_template('optional_mcq_verification.html')
     
     return app
 
