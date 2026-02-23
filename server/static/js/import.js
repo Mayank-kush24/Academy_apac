@@ -731,7 +731,7 @@ document.getElementById('skillboostVerifyBtn').addEventListener('click', async f
     if (progressBar) progressBar.style.width = '0%';
     if (progressText) progressText.textContent = 'Verifying... 0 / 0';
     try {
-        const response = await fetch('/api/import/skillboost/verify', {
+        const response = await fetch('/api/import/skillboost/verify?pending_only=1', {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token }
         });

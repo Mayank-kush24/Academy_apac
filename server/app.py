@@ -90,11 +90,18 @@ def create_app():
     app.register_blueprint(skilllab_submission.bp, url_prefix='/api/skilllab-submission')
     app.register_blueprint(mcq_verification.bp, url_prefix='/api/mcq-verification')
     
-    # Serve static files
+    # Serve static files with cache headers for faster repeat loads
     @app.route('/static/<path:filename>')
     def static_files(filename):
-        """Serve static files"""
-        return send_from_directory(app.static_folder, filename)
+        """Serve static files with browser cache (1 hour for js/css, 24h for images/fonts)."""
+        resp = send_from_directory(app.static_folder, filename)
+        if resp.status_code == 200:
+            lower = filename.lower()
+            if lower.endswith(('.js', '.css', '.map')):
+                resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
+            elif lower.endswith(('.ico', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.woff', '.woff2', '.ttf', '.eot')):
+                resp.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
+        return resp
     
     # Home page
     @app.route('/')

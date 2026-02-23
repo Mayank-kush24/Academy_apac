@@ -100,14 +100,14 @@ class User(db.Model):
 
 class CreditLink(db.Model):
     """
-    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 2000) users.
+    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 2500) users.
     """
     __tablename__ = 'credit_links'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     link_url = db.Column(db.String(1024), nullable=True)  # URL or identifier sent via Sendy
     display_order = db.Column(db.Integer, default=0, nullable=False)  # 1-5, order when allocating
-    max_allocations = db.Column(db.Integer, default=2000, nullable=False)
+    max_allocations = db.Column(db.Integer, default=2500, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):

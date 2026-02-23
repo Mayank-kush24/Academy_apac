@@ -3,7 +3,26 @@
 {% block title %}Profiles - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
-<div class="profiles-page theme-page">
+<style>
+/* View-only mode for Support: no selection, no copy/paste */
+body.profiles-support-view-only .profiles-page,
+body.profiles-support-view-only #profileModal .modal-content {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+body.profiles-support-view-only .profiles-page *,
+body.profiles-support-view-only #profileModal .modal-content * {
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+</style>
+<div class="profiles-page theme-page" id="profilesPageContainer">
     <div class="dashboard-header">
         <div class="header-content">
             <div>
@@ -213,4 +232,41 @@
 </div>
 
 <script src="/static/js/profiles.js"></script>
+<script>
+(function() {
+    function applySupportViewOnly() {
+        var user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+        if (!user || user.role !== 'support') return;
+        document.body.classList.add('profiles-support-view-only');
+        var container = document.getElementById('profilesPageContainer');
+        var modal = document.getElementById('profileModal');
+        function block(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+        }
+        if (container) {
+            container.addEventListener('copy', block);
+            container.addEventListener('cut', block);
+            container.addEventListener('paste', block);
+            container.addEventListener('contextmenu', block);
+            container.addEventListener('selectstart', block);
+            container.addEventListener('dragstart', block);
+        }
+        if (modal) {
+            modal.addEventListener('copy', block);
+            modal.addEventListener('cut', block);
+            modal.addEventListener('paste', block);
+            modal.addEventListener('contextmenu', block);
+            modal.addEventListener('selectstart', block);
+            modal.addEventListener('dragstart', block);
+        }
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', applySupportViewOnly);
+    } else {
+        applySupportViewOnly();
+    }
+})();
+</script>
 {% endblock %}

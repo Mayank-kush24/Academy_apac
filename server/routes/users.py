@@ -47,7 +47,7 @@ def create_user():
         if not name or not email or not password:
             return jsonify({'error': 'Name, email, and password are required'}), 400
         
-        if role not in ['admin', 'editor', 'viewer']:
+        if role not in ['admin', 'editor', 'viewer', 'support']:
             return jsonify({'error': 'Invalid role'}), 400
         
         if status not in ['active', 'inactive']:
@@ -117,7 +117,7 @@ def update_user(user_id):
                 bcrypt.gensalt()
             ).decode('utf-8')
         if 'role' in data:
-            if data['role'] not in ['admin', 'editor', 'viewer']:
+            if data['role'] not in ['admin', 'editor', 'viewer', 'support']:
                 return jsonify({'error': 'Invalid role'}), 400
             user.role = data['role']
         if 'status' in data:

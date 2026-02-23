@@ -20,10 +20,11 @@ PAGES = [
 ]
 
 # Default roles that can access each page when allowed_pages is not set
+# support: view-only access to home + profiles (use allowed_pages to restrict to those only)
 DEFAULT_PAGE_ROLES = {
-    'home': ['viewer', 'editor', 'admin'],
+    'home': ['viewer', 'editor', 'admin', 'support'],
     'dashboard': ['viewer', 'editor', 'admin'],
-    'profiles': ['viewer', 'editor', 'admin'],
+    'profiles': ['viewer', 'editor', 'admin', 'support'],
     'skill_lab_credits': ['viewer', 'editor', 'admin'],
     'book_of_business': ['viewer', 'editor', 'admin'],
     'users_registrations': ['viewer', 'editor', 'admin'],

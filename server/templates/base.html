@@ -215,6 +215,10 @@
                 return response.json();
             })
             .then(data => {
+                // Keep localStorage in sync so getCurrentUser() is up to date (role, allowed_pages)
+                if (data.user) {
+                    try { localStorage.setItem('user', JSON.stringify(data.user)); } catch (e) {}
+                }
                 // Update user info
                 const userInfoEl = document.getElementById('userInfo');
                 if (userInfoEl) {

@@ -69,78 +69,79 @@ def get_summary():
         }), 200
 
 
+@cache_result(ttl=300)
+def _get_region_breakdown_cached(region, period):
+    """Cached region breakdown data (5 min)."""
+    cutoff_date = _get_period_dates(period)
+    date_cond = _date_filter_condition(cutoff_date)
+    SEA_COUNTRIES = [
+        'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
+        'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
+    ]
+    ANZ_COUNTRIES = ['Australia', 'New Zealand']
+    EAST_ASIA_COUNTRIES = [
+        'China', 'Hong Kong', 'Japan', 'South Korea', 'North Korea',
+        'Taiwan', 'Mongolia'
+    ]
+    if region == 'india':
+        label = 'India'
+        q = db.session.query(
+            UserPII.state,
+            func.count(UserPII.id).label('count')
+        ).filter(
+            UserPII.country.isnot(None),
+            UserPII.country != '',
+            UserPII.country.ilike('%India%'),
+            UserPII.state.isnot(None),
+            UserPII.state != ''
+        )
+        if date_cond is not None:
+            q = q.filter(date_cond)
+        rows = q.group_by(UserPII.state).order_by(desc('count')).all()
+        from collections import defaultdict
+        merged = defaultdict(int)
+        for r in rows:
+            canonical = normalize_state(r[0]) if r[0] else 'Unknown'
+            merged[canonical] += r[1]
+        items = [{'name': k, 'count': v} for k, v in sorted(merged.items(), key=lambda x: -x[1])]
+    else:
+        if region == 'sea':
+            label = 'SEA (Southeast Asia)'
+            countries = SEA_COUNTRIES
+        elif region == 'anz':
+            label = 'ANZ (Australia & New Zealand)'
+            countries = ANZ_COUNTRIES
+        else:
+            label = 'Greater China and Korea'
+            countries = EAST_ASIA_COUNTRIES
+        conds = [UserPII.country.ilike(f'%{c}%') for c in countries]
+        q = db.session.query(
+            UserPII.country,
+            func.count(UserPII.id).label('count')
+        ).filter(
+            UserPII.country.isnot(None),
+            UserPII.country != '',
+            or_(*conds)
+        )
+        if date_cond is not None:
+            q = q.filter(date_cond)
+        rows = q.group_by(UserPII.country).order_by(desc('count')).all()
+        items = [{'name': r[0] or 'Unknown', 'count': r[1]} for r in rows]
+    total = sum(i['count'] for i in items)
+    return {'region': region, 'label': label, 'items': items, 'total': total}
+
+
 @bp.route('/region-breakdown', methods=['GET'])
 @require_page_access('dashboard')
 def get_region_breakdown():
-    """Get per-country (or per-state for India) registration counts for a region. Query: region=sea|anz|east_asia|india, period=all|month|7d|30d|90d."""
+    """Get per-country (or per-state for India) registration counts for a region (cached 5 min)."""
     region = (request.args.get('region') or '').strip().lower()
     period = request.args.get('period', 'all')
     if region not in ('sea', 'anz', 'east_asia', 'india'):
         return jsonify({'error': 'Invalid region'}), 400
     try:
-        cutoff_date = _get_period_dates(period)
-        date_cond = _date_filter_condition(cutoff_date)
-        SEA_COUNTRIES = [
-            'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
-            'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
-        ]
-        ANZ_COUNTRIES = ['Australia', 'New Zealand']
-        EAST_ASIA_COUNTRIES = [
-            'China', 'Hong Kong', 'Japan', 'South Korea', 'North Korea',
-            'Taiwan', 'Mongolia'
-        ]
-        if region == 'india':
-            label = 'India'
-            q = db.session.query(
-                UserPII.state,
-                func.count(UserPII.id).label('count')
-            ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                UserPII.country.ilike('%India%'),
-                UserPII.state.isnot(None),
-                UserPII.state != ''
-            )
-            if date_cond is not None:
-                q = q.filter(date_cond)
-            rows = q.group_by(UserPII.state).order_by(desc('count')).all()
-            # Aggregate by canonical state (merge misspellings)
-            from collections import defaultdict
-            merged = defaultdict(int)
-            for r in rows:
-                canonical = normalize_state(r[0]) if r[0] else 'Unknown'
-                merged[canonical] += r[1]
-            items = [{'name': k, 'count': v} for k, v in sorted(merged.items(), key=lambda x: -x[1])]
-        else:
-            if region == 'sea':
-                label = 'SEA (Southeast Asia)'
-                countries = SEA_COUNTRIES
-            elif region == 'anz':
-                label = 'ANZ (Australia & New Zealand)'
-                countries = ANZ_COUNTRIES
-            else:
-                label = 'Greater China and Korea'
-                countries = EAST_ASIA_COUNTRIES
-            conds = [UserPII.country.ilike(f'%{c}%') for c in countries]
-            q = db.session.query(
-                UserPII.country,
-                func.count(UserPII.id).label('count')
-            ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                or_(*conds)
-            )
-            if date_cond is not None:
-                q = q.filter(date_cond)
-            rows = q.group_by(UserPII.country).order_by(desc('count')).all()
-            items = [{'name': r[0] or 'Unknown', 'count': r[1]} for r in rows]
-        total = sum(i['count'] for i in items)
-        return jsonify({
-            'region': region,
-            'label': label,
-            'items': items,
-            'total': total
-        }), 200
+        data = _get_region_breakdown_cached(region, period)
+        return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

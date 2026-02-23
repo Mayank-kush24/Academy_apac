@@ -3,48 +3,55 @@ Optional MCQ Verification page and API.
 Interns verify participant MCQ completion: valid checkbox and remark.
 Once reviewed, only admin can edit.
 """
+import csv
+import io
 from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response
 from sqlalchemy import or_
 from server.models import db, OptionalMcqVerification, OptionalMcqResponse, UserPII
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
 from server.utils.mcq_answer_key import score_submission, get_track_questions
+from server.utils.cache import cache_result
 
 bp = Blueprint('mcq_verification', __name__)
+
+
+@cache_result(ttl=300)
+def _get_mcq_stats_cached():
+    """Compute MCQ stats (expensive); cached 5 min. Clear on MCQ import."""
+    total = OptionalMcqResponse.query.count() or 0
+    auto_passed = 0
+    if total > 0:
+        for r in OptionalMcqResponse.query.all():
+            auto = score_submission(
+                r.track_number,
+                getattr(r, 'question_1', None), getattr(r, 'question_2', None),
+                getattr(r, 'question_3', None), getattr(r, 'question_4', None),
+                getattr(r, 'question_5', None), getattr(r, 'question_6', None),
+                getattr(r, 'question_7', None), getattr(r, 'question_8', None),
+                getattr(r, 'question_9', None), getattr(r, 'question_10', None),
+            )
+            if auto['correct_count'] >= 8:
+                auto_passed += 1
+    pending = max(0, total - auto_passed)
+    auto_pass_rate = round(100.0 * auto_passed / total, 1) if total > 0 else None
+    return {
+        'total_submissions': total,
+        'auto_passed': auto_passed,
+        'pending_submissions': pending,
+        'auto_pass_rate': auto_pass_rate,
+    }
 
 
 @bp.route('/stats', methods=['GET'])
 @require_page_access('optional_mcq_verification')
 def get_stats():
-    """Return aggregate stats: total, auto-passed (8+/10), manual verified, rates."""
+    """Return aggregate stats: total, auto-passed (8+/10), rates (cached 5 min)."""
     try:
-        total = OptionalMcqResponse.query.count() or 0
-
-        # Auto verification: count submissions that score 8+ correct
-        auto_passed = 0
-        if total > 0:
-            for r in OptionalMcqResponse.query.all():
-                auto = score_submission(
-                    r.track_number,
-                    getattr(r, 'question_1', None), getattr(r, 'question_2', None),
-                    getattr(r, 'question_3', None), getattr(r, 'question_4', None),
-                    getattr(r, 'question_5', None), getattr(r, 'question_6', None),
-                    getattr(r, 'question_7', None), getattr(r, 'question_8', None),
-                    getattr(r, 'question_9', None), getattr(r, 'question_10', None),
-                )
-                if auto['correct_count'] >= 8:
-                    auto_passed += 1
-        pending = max(0, total - auto_passed)
-        auto_pass_rate = round(100.0 * auto_passed / total, 1) if total > 0 else None
-
-        return jsonify({
-            'total_submissions': total,
-            'auto_passed': auto_passed,
-            'pending_submissions': pending,
-            'auto_pass_rate': auto_pass_rate,
-        }), 200
+        data = _get_mcq_stats_cached()
+        return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -110,6 +117,68 @@ def list_responses():
             'per_page': per_page,
             'pages': pagination.pages,
         }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def _build_export_rows(query, passed_only=False):
+    """Build list of dicts with name, email, track_number, score_display for CSV export."""
+    rows = []
+    for r in query.order_by(OptionalMcqResponse.track_number.asc(), OptionalMcqResponse.email.asc()).all():
+        auto = score_submission(
+            r.track_number,
+            getattr(r, 'question_1', None), getattr(r, 'question_2', None),
+            getattr(r, 'question_3', None), getattr(r, 'question_4', None),
+            getattr(r, 'question_5', None), getattr(r, 'question_6', None),
+            getattr(r, 'question_7', None), getattr(r, 'question_8', None),
+            getattr(r, 'question_9', None), getattr(r, 'question_10', None),
+        )
+        if passed_only and auto['correct_count'] < 6:
+            continue
+        name = (r.participant.name if r.participant else None) or r.leader_name or ''
+        rows.append({
+            'name': name or '',
+            'email': r.email or '',
+            'track': r.track_number,
+            'score': auto['score_display'],
+        })
+    return rows
+
+
+@bp.route('/responses/export', methods=['GET'])
+@require_page_access('optional_mcq_verification')
+def export_responses():
+    """
+    Export Optional MCQ responses as CSV: name, email, track, score.
+    Query param: passed_only=1 to export only 6/10 or above (60%+); otherwise all.
+    """
+    try:
+        passed_only = request.args.get('passed_only', '0').strip() == '1'
+        query = OptionalMcqResponse.query.outerjoin(
+            UserPII, OptionalMcqResponse.email == UserPII.email
+        )
+        rows = _build_export_rows(query, passed_only=passed_only)
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(['Name', 'Email', 'Track', 'Score'])
+        for r in rows:
+            # Force score as text so Excel does not interpret "8/10" as a date
+            score_val = r['score'] or ''
+            score_text = ('="' + str(score_val).replace('"', '""') + '"') if score_val else ''
+            writer.writerow([
+                r['name'],
+                r['email'],
+                r['track'],
+                score_text,
+            ])
+        buf.seek(0)
+        filename = 'optional-mcq-passed-6plus.csv' if passed_only else 'optional-mcq-all.csv'
+        return Response(
+            buf.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

@@ -442,6 +442,16 @@ def import_skillboost_profiles():
             clear_cache('_get_dashboard_data_cached')
         except Exception:
             pass
+        if submission_result and 'error' not in submission_result:
+            try:
+                clear_cache('_get_skilllab_submission_stats_cached')
+            except Exception:
+                pass
+        if mcq_results:
+            try:
+                clear_cache('_get_mcq_stats_cached')
+            except Exception:
+                pass
         try:
             os.remove(file_path)
         except Exception:

@@ -17,7 +17,7 @@ bp = Blueprint('skilllab', __name__)
 def run_credit_allocation():
     """
     Allocate credit links to verified skillboost_profiles that don't have one.
-    Uses links in display_order; each link gets up to max_allocations (e.g. 2000).
+    Uses links in display_order; each link gets up to max_allocations (e.g. 2500).
     Returns dict: allocated (int), skipped_no_capacity (int).
     """
     links = CreditLink.query.order_by(CreditLink.display_order).all()
@@ -209,6 +209,9 @@ def credit_links():
             for link in links:
                 d = link.to_dict()
                 d['current_allocations'] = count_by_id.get(link.id, 0)
+                # Show 2500 in UI when DB still has legacy 2000 (max was raised to 2500)
+                if d.get('max_allocations') == 2000:
+                    d['max_allocations'] = 2500
                 items.append(d)
             return jsonify({'credit_links': items}), 200
         # POST
@@ -225,7 +228,7 @@ def credit_links():
         for i, item in enumerate(links_data):
             link_url = (item.get('link_url') or '').strip() or None
             display_order = int(item.get('display_order', i + 1))
-            max_allocations = int(item.get('max_allocations', 2000))
+            max_allocations = int(item.get('max_allocations', 2500))
             link = CreditLink(
                 link_url=link_url,
                 display_order=display_order,

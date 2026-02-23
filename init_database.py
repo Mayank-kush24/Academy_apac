@@ -113,6 +113,14 @@ def init_database():
 
             if 'credit_links' in tables:
                 print("OK: 'credit_links' table exists")
+                # One-time: raise max_allocations from 2000 to 2500
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("UPDATE credit_links SET max_allocations = 2500 WHERE max_allocations = 2000"))
+                        conn.commit()
+                    print("OK: credit_links max_allocations 2000 -> 2500 (if any were 2000)")
+                except Exception as ex:
+                    print("WARN: credit_links max_allocations migration:", str(ex))
             else:
                 print("FAIL: 'credit_links' table NOT found")
 

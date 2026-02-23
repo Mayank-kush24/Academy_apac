@@ -4,14 +4,13 @@
  * extension (e.g. password manager), not this app — safe to ignore.
  */
 
-// Check if user is already logged in (only on login page)
+// Check if user is already logged in (only on login page — avoid duplicate auth/me on / which base.html already does)
 document.addEventListener('DOMContentLoaded', function() {
-    // Only run this check on the login page
-    if (window.location.pathname === '/login' || window.location.pathname === '/') {
-        const token = localStorage.getItem('token');
-        if (token) {
-            // Verify token is still valid
-            fetch('/api/auth/me', {
+    if (window.location.pathname !== '/login') return;
+    const token = localStorage.getItem('token');
+    if (token) {
+        // Verify token is still valid and redirect away from login
+        fetch('/api/auth/me', {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -31,7 +30,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 localStorage.removeItem('token');
                 localStorage.removeItem('user');
             });
-        }
     }
 });
 

@@ -10,26 +10,33 @@ from server.models import db, SkillLabSubmission
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
+from server.utils.cache import cache_result
 
 bp = Blueprint('skilllab_submission', __name__)
+
+
+@cache_result(ttl=120)
+def _get_skilllab_submission_stats_cached():
+    """Cached stats (2 min). Cleared on import."""
+    total = SkillLabSubmission.query.count() or 0
+    verified = SkillLabSubmission.query.filter(SkillLabSubmission.valid == True).count() or 0
+    pending = total - verified
+    verification_rate = round(100.0 * verified / total, 1) if total > 0 else None
+    return {
+        'total_submissions': total,
+        'verified_submissions': verified,
+        'pending_submissions': pending,
+        'verification_rate': verification_rate,
+    }
 
 
 @bp.route('/stats', methods=['GET'])
 @require_page_access('skilllab_submission')
 def get_stats():
-    """Return aggregate stats for Skill Lab submissions."""
+    """Return aggregate stats for Skill Lab submissions (cached 2 min)."""
     try:
-        total = SkillLabSubmission.query.count() or 0
-        verified = SkillLabSubmission.query.filter(SkillLabSubmission.valid == True).count() or 0
-        pending = total - verified
-        verification_rate = round(100.0 * verified / total, 1) if total > 0 else None
-
-        return jsonify({
-            'total_submissions': total,
-            'verified_submissions': verified,
-            'pending_submissions': pending,
-            'verification_rate': verification_rate,
-        }), 200
+        data = _get_skilllab_submission_stats_cached()
+        return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
