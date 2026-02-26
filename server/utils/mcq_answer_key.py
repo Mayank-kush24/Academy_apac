@@ -227,3 +227,31 @@ def score_submission(
         "score_display": f"{correct_count}/10",
         "results": results,
     }
+
+
+def get_response_score(response_obj) -> dict:
+    """
+    Return same dict as score_submission but use response_obj.score when stored in DB.
+    Use this when reading OptionalMcqResponse so stored score is used when present.
+    """
+    if getattr(response_obj, "score", None) is not None:
+        c = int(response_obj.score)
+        c = max(0, min(10, c))
+        return {
+            "correct_count": c,
+            "score_display": f"{c}/10",
+            "results": [],
+        }
+    return score_submission(
+        getattr(response_obj, "track_number", 1),
+        getattr(response_obj, "question_1", None),
+        getattr(response_obj, "question_2", None),
+        getattr(response_obj, "question_3", None),
+        getattr(response_obj, "question_4", None),
+        getattr(response_obj, "question_5", None),
+        getattr(response_obj, "question_6", None),
+        getattr(response_obj, "question_7", None),
+        getattr(response_obj, "question_8", None),
+        getattr(response_obj, "question_9", None),
+        getattr(response_obj, "question_10", None),
+    )

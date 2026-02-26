@@ -138,7 +138,7 @@ async function loadProfileLogs(profileId) {
             return;
         }
         container.innerHTML = logs.map(log => {
-            const time = formatDateTime(log.created_at) || log.created_at;
+            const time = log.created_at || '';
             const actionClass = log.action === 'create' ? 'log-create' : log.action === 'update' ? 'log-update' : 'log-delete';
             const actionLabel = log.action === 'create' ? 'Created' : log.action === 'update' ? 'Updated' : 'Deleted';
             let changesHtml = '';
@@ -535,32 +535,121 @@ async function loadFilterOptions() {
  * Populate filter dropdowns
  */
 function populateFilterDropdowns() {
-    const populateSelect = (id, options) => {
-        const select = document.getElementById(id);
-        if (!select) return;
-        
-        // Keep the first option (All/None)
-        const firstOption = select.options[0];
-        select.innerHTML = '';
-        select.appendChild(firstOption);
-        
-        options.forEach(option => {
-            const optionEl = document.createElement('option');
-            optionEl.value = option;
-            optionEl.textContent = option;
-            select.appendChild(optionEl);
+    var MULTI_SEP = '|';
+    var searchableConfigs = [
+        { filter: 'organization', items: filterOptions.organizations || [] },
+        { filter: 'domain', items: filterOptions.domains || [] },
+        { filter: 'country', items: filterOptions.countries || [] },
+        { filter: 'state', items: filterOptions.states || [] },
+        { filter: 'city', items: filterOptions.cities || [] },
+        { filter: 'gender', items: filterOptions.genders || [] },
+        { filter: 'class_stream', items: filterOptions.class_streams || [] },
+        { filter: 'designation', items: filterOptions.designations || [] },
+        { filter: 'occupation', items: filterOptions.occupations || [] }
+    ];
+    searchableConfigs.forEach(function (cfg) {
+        var wrap = document.querySelector('.searchable-select[data-filter="' + cfg.filter + '"]');
+        if (!wrap) return;
+        var allLabel = wrap.dataset.allLabel || 'All';
+        var list = wrap.querySelector('.searchable-select-list');
+        if (!list) return;
+        list.innerHTML = '';
+        (cfg.items || []).forEach(function (item) {
+            var li = document.createElement('li');
+            li.setAttribute('data-value', item);
+            li.textContent = item;
+            list.appendChild(li);
         });
-    };
-    
-    populateSelect('filterOrganization', filterOptions.organizations || []);
-    populateSelect('filterDomain', filterOptions.domains || []);
-    populateSelect('filterCountry', filterOptions.countries || []);
-    populateSelect('filterState', filterOptions.states || []);
-    populateSelect('filterCity', filterOptions.cities || []);
-    populateSelect('filterGender', filterOptions.genders || []);
-    populateSelect('filterClassStream', filterOptions.class_streams || []);
-    populateSelect('filterDesignation', filterOptions.designations || []);
-    populateSelect('filterOccupation', filterOptions.occupations || []);
+    });
+    initProfileSearchableSelects();
+}
+
+function initProfileSearchableSelects() {
+    var MULTI_SEP = '|';
+    var container = document.getElementById('profilesPageContainer');
+    if (!container) return;
+    container.querySelectorAll('.searchable-select').forEach(function (wrap) {
+        if (wrap._ssInit) return;
+        wrap._ssInit = true;
+        var trigger = wrap.querySelector('.searchable-select-trigger');
+        var valueSpan = trigger && trigger.querySelector('.searchable-select-value');
+        var dropdown = wrap.querySelector('.searchable-select-dropdown');
+        var searchInp = dropdown && dropdown.querySelector('.searchable-select-search');
+        var list = dropdown && dropdown.querySelector('.searchable-select-list');
+        var hiddenInput = wrap.querySelector('input[type="hidden"]');
+        var clearBtn = dropdown && dropdown.querySelector('.searchable-select-clear');
+        var allLabel = wrap.dataset.allLabel || 'All';
+        if (!trigger || !dropdown || !list || !hiddenInput) return;
+
+        function getSelectedValues() {
+            var out = [];
+            list.querySelectorAll('li.selected').forEach(function (l) {
+                var v = l.getAttribute('data-value') || '';
+                if (v) out.push(v);
+            });
+            return out;
+        }
+        function syncFromInput() {
+            var raw = (hiddenInput.value || '').trim();
+            var vals = raw ? raw.split(MULTI_SEP).map(function (s) { return s.trim(); }).filter(Boolean) : [];
+            list.querySelectorAll('li').forEach(function (l) {
+                var v = l.getAttribute('data-value') || '';
+                l.classList.toggle('selected', vals.indexOf(v) !== -1);
+            });
+            updateTriggerText();
+        }
+        function updateTriggerText() {
+            var vals = getSelectedValues();
+            if (vals.length === 0) { if (valueSpan) valueSpan.textContent = allLabel; return; }
+            if (valueSpan) valueSpan.textContent = vals.length === 1 ? vals[0] : (vals.length + ' selected');
+        }
+        function open() {
+            wrap.classList.add('open');
+            syncFromInput();
+            if (searchInp) { searchInp.value = ''; list.querySelectorAll('li').forEach(function (li) { li.classList.remove('hidden'); }); searchInp.focus(); }
+        }
+        function close() { wrap.classList.remove('open'); }
+        trigger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var isOpen = wrap.classList.contains('open');
+            container.querySelectorAll('.searchable-select.open').forEach(function (o) {
+                if (o !== wrap) o.classList.remove('open');
+            });
+            if (isOpen) close(); else open();
+        });
+        if (searchInp) {
+            searchInp.addEventListener('keyup', function () {
+                var q = (searchInp.value || '').toLowerCase().trim();
+                list.querySelectorAll('li').forEach(function (li) {
+                    li.classList.toggle('hidden', q && (li.textContent || '').toLowerCase().indexOf(q) === -1);
+                });
+            });
+            searchInp.addEventListener('click', function (e) { e.stopPropagation(); });
+        }
+        list.addEventListener('click', function (e) {
+            var li = e.target.closest('li');
+            if (!li) return;
+            e.stopPropagation();
+            li.classList.toggle('selected');
+            var selected = getSelectedValues();
+            hiddenInput.value = selected.join(MULTI_SEP);
+            updateTriggerText();
+        });
+        if (clearBtn) clearBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            hiddenInput.value = '';
+            list.querySelectorAll('li').forEach(function (l) { l.classList.remove('selected'); });
+            updateTriggerText();
+        });
+        dropdown.addEventListener('click', function (e) { e.stopPropagation(); });
+    });
+    document.addEventListener('mousedown', function (e) {
+        if (e.target && !e.target.closest('.searchable-select')) {
+            (container || document).querySelectorAll('.searchable-select.open').forEach(function (w) {
+                w.classList.remove('open');
+            });
+        }
+    });
 }
 
 /**
@@ -574,10 +663,17 @@ async function loadProfiles() {
             return;
         }
         
-        const params = new URLSearchParams({
-            page: currentPage,
-            per_page: perPage,
-            ...currentFilters
+        const params = new URLSearchParams();
+        params.set('page', currentPage);
+        params.set('per_page', perPage);
+        Object.keys(currentFilters).forEach(function (key) {
+            var val = currentFilters[key];
+            if (val == null || val === '') return;
+            if (Array.isArray(val)) {
+                val.forEach(function (v) { if (v) params.append(key, v); });
+            } else {
+                params.set(key, val);
+            }
         });
         
         const response = await fetch(`/api/profiles?${params.toString()}`, {
@@ -1033,9 +1129,9 @@ function updateAppliedFiltersDisplay() {
     var applied = [];
     Object.keys(currentFilters).forEach(function (key) {
         var val = currentFilters[key];
-        if (!val) return;
+        if (val == null || val === '' || (Array.isArray(val) && val.length === 0)) return;
         var label = FILTER_LABELS[key] || key;
-        var displayVal = getFilterDisplayValue(key, val);
+        var displayVal = Array.isArray(val) ? val.map(function (v) { return getFilterDisplayValue(key, v); }).join(', ') : getFilterDisplayValue(key, val);
         applied.push({ key: key, label: label, value: displayVal });
     });
     if (applied.length === 0) {
@@ -1050,20 +1146,29 @@ function updateAppliedFiltersDisplay() {
 }
 
 /**
+ * Get selected values from a searchable-select hidden input (pipe-separated) as array
+ */
+function getMultiFilterValues(id) {
+    var raw = (document.getElementById(id) && document.getElementById(id).value) || '';
+    if (!raw.trim()) return [];
+    return raw.split('|').map(function (s) { return s.trim(); }).filter(Boolean);
+}
+
+/**
  * Apply filters
  */
 function applyFilters() {
     currentFilters = {
         search: document.getElementById('searchInput').value.trim(),
-        organization: document.getElementById('filterOrganization').value,
-        domain: document.getElementById('filterDomain').value,
-        country: document.getElementById('filterCountry').value,
-        state: document.getElementById('filterState').value,
-        city: document.getElementById('filterCity').value,
-        gender: document.getElementById('filterGender').value,
-        class_stream: document.getElementById('filterClassStream').value,
-        designation: document.getElementById('filterDesignation').value,
-        occupation: document.getElementById('filterOccupation').value,
+        organization: getMultiFilterValues('filterOrganization'),
+        domain: getMultiFilterValues('filterDomain'),
+        country: getMultiFilterValues('filterCountry'),
+        state: getMultiFilterValues('filterState'),
+        city: getMultiFilterValues('filterCity'),
+        gender: getMultiFilterValues('filterGender'),
+        class_stream: getMultiFilterValues('filterClassStream'),
+        designation: getMultiFilterValues('filterDesignation'),
+        occupation: getMultiFilterValues('filterOccupation'),
         has_github: document.getElementById('filterGithub').value,
         has_linkedin: document.getElementById('filterLinkedin').value,
         bob_match: document.getElementById('filterBob').value
@@ -1071,7 +1176,8 @@ function applyFilters() {
     
     // Remove empty filters
     Object.keys(currentFilters).forEach(function (key) {
-        if (!currentFilters[key]) {
+        var v = currentFilters[key];
+        if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) {
             delete currentFilters[key];
         }
     });
@@ -1093,19 +1199,22 @@ function handleSearch() {
 }
 
 /**
- * Clear all filters
+ * Clear all filters (reset all searchable-selects and single selects)
  */
 function clearFilters() {
     document.getElementById('searchInput').value = '';
-    document.getElementById('filterOrganization').value = '';
-    document.getElementById('filterDomain').value = '';
-    document.getElementById('filterCountry').value = '';
-    document.getElementById('filterState').value = '';
-    document.getElementById('filterCity').value = '';
-    document.getElementById('filterGender').value = '';
-    document.getElementById('filterClassStream').value = '';
-    document.getElementById('filterDesignation').value = '';
-    document.getElementById('filterOccupation').value = '';
+    var container = document.getElementById('profilesPageContainer');
+    if (container) {
+        container.querySelectorAll('.searchable-select').forEach(function (wrap) {
+            var hiddenInput = wrap.querySelector('input[type="hidden"]');
+            if (hiddenInput) hiddenInput.value = '';
+            var valueSpan = wrap.querySelector('.searchable-select-value');
+            if (valueSpan) valueSpan.textContent = wrap.dataset.allLabel || 'All';
+            var list = wrap.querySelector('.searchable-select-list');
+            if (list) list.querySelectorAll('li').forEach(function (li) { li.classList.remove('selected', 'hidden'); });
+            wrap.classList.remove('open');
+        });
+    }
     document.getElementById('filterGithub').value = '';
     document.getElementById('filterLinkedin').value = '';
     document.getElementById('filterBob').value = '';

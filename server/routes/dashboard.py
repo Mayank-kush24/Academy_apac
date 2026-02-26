@@ -4,8 +4,9 @@ Dashboard analytics routes
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
-from server.models import db, UserPII, SkillboostProfile, SkillLabSubmission
+from server.models import db, UserPII, SkillboostProfile, SkillLabSubmission, OptionalMcqResponse
 from server.utils.auth import get_current_user
+from server.utils.mcq_answer_key import score_submission, get_response_score
 from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
 from server.utils.state_normalize import normalize_state
@@ -655,6 +656,60 @@ def _fetch_summary_data(period):
                 prev_avg_age = int(prev_avg_result) if prev_avg_result else None
             except Exception:
                 prev_avg_age = None
+
+        # Optional MCQ completion by track (total submissions, passed 6+ per track)
+        optional_mcq_by_track = []
+        try:
+            for track_num in (1, 2, 3):
+                rows = OptionalMcqResponse.query.filter(OptionalMcqResponse.track_number == track_num).all()
+                total = len(rows)
+                passed_6 = 0
+                for r in rows:
+                    auto = get_response_score(r)
+                    if auto.get('correct_count', 0) >= 6:
+                        passed_6 += 1
+                optional_mcq_by_track.append({'track': track_num, 'total': total, 'passed_6': passed_6})
+        except Exception:
+            optional_mcq_by_track = [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)]
+
+        # Top 5 winners: 10/10 on all 3 tracks, ordered by completion time (max created_at) ascending
+        optional_mcq_top5_winners = []
+        try:
+            from collections import defaultdict
+            by_email = defaultdict(list)
+            for r in OptionalMcqResponse.query.all():
+                by_email[r.email].append(r)
+            winners = []
+            for email, rows in by_email.items():
+                if len(rows) != 3:
+                    continue
+                by_track = {r.track_number: r for r in rows}
+                if set(by_track.keys()) != {1, 2, 3}:
+                    continue
+                all_10 = True
+                completion_at = None
+                for t in (1, 2, 3):
+                    r = by_track[t]
+                    auto = get_response_score(r)
+                    if auto.get('correct_count', 0) != 10:
+                        all_10 = False
+                        break
+                    if r.created_at:
+                        completion_at = r.created_at if completion_at is None else max(completion_at, r.created_at)
+                if all_10 and completion_at is not None:
+                    leader_name = getattr(by_track.get(1), 'leader_name', None) or getattr(rows[0], 'leader_name', None) if rows else None
+                    winners.append({'email': email, 'completed_at': completion_at, 'leader_name': leader_name})
+            winners.sort(key=lambda x: x['completed_at'])
+            for w in winners[:5]:
+                pii = UserPII.query.filter_by(email=w['email']).first()
+                name = (pii.name if pii and pii.name else w.get('leader_name')) or w['email']
+                optional_mcq_top5_winners.append({
+                    'name': name,
+                    'email': w['email'],
+                    'completed_at': w['completed_at'].isoformat() if hasattr(w['completed_at'], 'isoformat') else str(w['completed_at']),
+                })
+        except Exception:
+            optional_mcq_top5_winners = []
         
         return {
             'total_users': total_users,
@@ -691,6 +746,7 @@ def _fetch_summary_data(period):
             'total_skilllab_submissions': total_skilllab_submissions,
             'verified_skilllab_submissions': verified_skilllab_submissions,
             'skilllab_submission_verification_rate': skilllab_submission_verification_rate,
+            'optional_mcq_by_track': optional_mcq_by_track,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
             'previous_period_average_age': prev_avg_age
@@ -728,6 +784,8 @@ def _fetch_summary_data(period):
             'total_skilllab_submissions': 0,
             'verified_skilllab_submissions': 0,
             'skilllab_submission_verification_rate': None,
+            'optional_mcq_by_track': [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)],
+            'optional_mcq_top5_winners': [],
             'previous_period_total_users': None,
             'previous_period_apac_users': None,
             'previous_period_average_age': None

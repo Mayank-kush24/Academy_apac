@@ -100,14 +100,14 @@ class User(db.Model):
 
 class CreditLink(db.Model):
     """
-    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 2500) users.
+    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 3000) users.
     """
     __tablename__ = 'credit_links'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     link_url = db.Column(db.String(1024), nullable=True)  # URL or identifier sent via Sendy
     display_order = db.Column(db.Integer, default=0, nullable=False)  # 1-5, order when allocating
-    max_allocations = db.Column(db.Integer, default=2500, nullable=False)
+    max_allocations = db.Column(db.Integer, default=3000, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
@@ -264,6 +264,7 @@ class OptionalMcqResponse(db.Model):
     question_8 = db.Column(db.Text, nullable=True)
     question_9 = db.Column(db.Text, nullable=True)
     question_10 = db.Column(db.Text, nullable=True)
+    score = db.Column(db.Integer, nullable=True)  # 0-10, computed from answer key on import; used for stats/queries
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
     created_by_name = db.Column(db.String(255), nullable=True)
     created_by_email = db.Column(db.String(255), nullable=True)
@@ -292,6 +293,7 @@ class OptionalMcqResponse(db.Model):
             'question_8': self.question_8,
             'question_9': self.question_9,
             'question_10': self.question_10,
+            'score': self.score,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'created_by_name': self.created_by_name,
             'created_by_email': self.created_by_email,

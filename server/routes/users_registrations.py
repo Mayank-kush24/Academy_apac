@@ -2,7 +2,10 @@
 Users (Registrations) page and API.
 Lists all users from user_pii with same stats, filters and columns as Book of Business.
 """
-from flask import Blueprint, request, jsonify
+import csv
+import io
+from datetime import date
+from flask import Blueprint, request, jsonify, Response
 from sqlalchemy import or_, func, desc
 from server.models import db, UserPII
 from server.utils.permissions import require_page_access
@@ -20,8 +23,8 @@ def _users_base():
     return UserPII.query
 
 
-def _filter_conditions(search=None, country=None, state=None, city=None, organization=None):
-    """Return list of filter conditions (search, country, state, city, organization)."""
+def _filter_conditions(search=None, countries=None, states=None, cities=None, organizations=None):
+    """Return list of filter conditions. Accepts lists for multi-select filters."""
     conditions = []
     if search:
         conditions.append(
@@ -31,18 +34,22 @@ def _filter_conditions(search=None, country=None, state=None, city=None, organiz
                 UserPII.organization_name.ilike(f'%{search}%'),
             )
         )
-    if country:
-        conditions.append(UserPII.country.ilike(f'%{country}%'))
-    if state:
-        state_values = get_state_filter_values(state)
-        if state_values:
-            conditions.append(UserPII.state.in_(state_values))
-        else:
-            conditions.append(UserPII.state.ilike(f'%{state}%'))
-    if city:
-        conditions.append(UserPII.city.ilike(f'%{city}%'))
-    if organization:
-        conditions.append(UserPII.organization_name.ilike(f'%{organization}%'))
+    if countries:
+        conditions.append(or_(*[UserPII.country.ilike(f'%{c}%') for c in countries]))
+    if states:
+        all_state_values = []
+        for state in states:
+            state_values = get_state_filter_values(state)
+            if state_values:
+                all_state_values.extend(state_values)
+            else:
+                all_state_values.append(state)
+        if all_state_values:
+            conditions.append(UserPII.state.in_(all_state_values))
+    if cities:
+        conditions.append(or_(*[UserPII.city.ilike(f'%{c}%') for c in cities]))
+    if organizations:
+        conditions.append(or_(*[UserPII.organization_name.ilike(f'%{o}%') for o in organizations]))
     return conditions
 
 
@@ -55,13 +62,13 @@ def get_stats():
     """
     try:
         search = request.args.get('search', '').strip()
-        country = request.args.get('country', '').strip()
-        state = request.args.get('state', '').strip()
-        city = request.args.get('city', '').strip()
-        organization = request.args.get('organization', '').strip()
+        countries = [x.strip() for x in request.args.getlist('country') if x and x.strip()]
+        states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
+        cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
+        organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
         filter_conds = _filter_conditions(
-            search=search or None, country=country or None, state=state or None,
-            city=city or None, organization=organization or None
+            search=search or None, countries=countries or None, states=states or None,
+            cities=cities or None, organizations=organizations or None
         )
 
         base = _users_base()
@@ -193,36 +200,21 @@ def list_registrations():
     """
     try:
         search = request.args.get('search', '').strip()
-        country = request.args.get('country', '').strip()
-        state = request.args.get('state', '').strip()
-        city = request.args.get('city', '').strip()
-        organization = request.args.get('organization', '').strip()
+        countries = [x.strip() for x in request.args.getlist('country') if x and x.strip()]
+        states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
+        cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
+        organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
+        filter_conds = _filter_conditions(
+            search=search or None, countries=countries or None, states=states or None,
+            cities=cities or None, organizations=organizations or None
+        )
         query = _users_base()
-
-        if search:
-            query = query.filter(
-                or_(
-                    UserPII.name.ilike(f'%{search}%'),
-                    UserPII.email.ilike(f'%{search}%'),
-                    UserPII.organization_name.ilike(f'%{search}%'),
-                )
-            )
-        if country:
-            query = query.filter(UserPII.country.ilike(f'%{country}%'))
-        if state:
-            state_values = get_state_filter_values(state)
-            if state_values:
-                query = query.filter(UserPII.state.in_(state_values))
-            else:
-                query = query.filter(UserPII.state.ilike(f'%{state}%'))
-        if city:
-            query = query.filter(UserPII.city.ilike(f'%{city}%'))
-        if organization:
-            query = query.filter(UserPII.organization_name.ilike(f'%{organization}%'))
+        for c in filter_conds:
+            query = query.filter(c)
 
         query = query.order_by(UserPII.name.asc().nullslast(), UserPII.email.asc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
@@ -244,6 +236,46 @@ def list_registrations():
             'per_page': per_page,
             'pages': pagination.pages,
         }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/download', methods=['GET'])
+@require_page_access('users_registrations')
+def download_csv():
+    """Download user registrations as CSV. Accepts same filter params as /list."""
+    try:
+        search = request.args.get('search', '').strip()
+        countries = [x.strip() for x in request.args.getlist('country') if x and x.strip()]
+        states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
+        cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
+        organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
+
+        filter_conds = _filter_conditions(
+            search=search or None, countries=countries or None, states=states or None,
+            cities=cities or None, organizations=organizations or None
+        )
+        query = _users_base()
+        for c in filter_conds:
+            query = query.filter(c)
+        query = query.order_by(UserPII.name.asc().nullslast(), UserPII.email.asc())
+
+        si = io.StringIO()
+        writer = csv.writer(si)
+        writer.writerow(['Name', 'Country', 'State', 'City', 'Organization'])
+        for r in query.all():
+            writer.writerow([
+                r.name or '', r.country or '',
+                normalize_state(r.state) if r.state else '',
+                r.city or '', r.organization_name or '',
+            ])
+
+        output = si.getvalue()
+        filename = f'users_registrations_{date.today().isoformat()}.csv'
+        return Response(
+            output, mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

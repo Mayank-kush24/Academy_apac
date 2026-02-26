@@ -4,23 +4,47 @@
 
 {% block content %}
 <style>
-/* View-only mode for Support: no selection, no copy/paste */
-body.profiles-support-view-only .profiles-page,
-body.profiles-support-view-only #profileModal .modal-content {
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
+.profiles-page .searchable-select-wrap { position: relative; }
+.profiles-page .searchable-select { position: relative; width: 100%; }
+.profiles-page .searchable-select-trigger {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--glass-border, rgba(0,0,0,0.1));
+    background: var(--glass-bg, #fff); color: var(--text-primary, #374151); font-size: 13px; text-align: left; cursor: pointer;
+    min-height: 38px; box-sizing: border-box; font-family: 'Inter', 'Google Sans', sans-serif;
+    transition: all 0.3s ease;
 }
-body.profiles-support-view-only .profiles-page *,
-body.profiles-support-view-only #profileModal .modal-content * {
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-    user-select: none;
-    -webkit-touch-callout: none;
+.profiles-page .searchable-select-trigger:hover { border-color: rgba(0,0,0,0.2); }
+.profiles-page .searchable-select-value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profiles-page .searchable-select-arrow { margin-left: 8px; font-size: 0.7rem; color: #6b7280; transition: transform 0.2s; }
+.profiles-page .searchable-select.open .searchable-select-arrow { transform: rotate(180deg); }
+.profiles-page .searchable-select.open .searchable-select-trigger { border-color: var(--accent-blue, #4285f4); box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.1); }
+.profiles-page .searchable-select-dropdown {
+    position: absolute; left: 0; right: 0; top: 100%; margin-top: 4px; z-index: 100;
+    background: #fff; border: 1px solid rgba(0,0,0,0.1); border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    max-height: 280px; flex-direction: column; overflow: hidden;
+    display: none;
 }
+.profiles-page .searchable-select.open .searchable-select-dropdown { display: flex; }
+.profiles-page .searchable-select-search {
+    flex-shrink: 0; padding: 8px 12px; border: none; border-bottom: 1px solid rgba(0,0,0,0.08);
+    font-size: 0.85rem; outline: none; font-family: 'Inter', 'Google Sans', sans-serif;
+}
+.profiles-page .searchable-select-actions { display: flex; justify-content: flex-end; padding: 2px 8px; border-bottom: 1px solid rgba(0,0,0,0.05); }
+.profiles-page .searchable-select-clear {
+    font-size: 0.8rem; color: #6b7280; background: none; border: none; cursor: pointer; padding: 4px 6px;
+}
+.profiles-page .searchable-select-clear:hover { color: #ef4444; }
+.profiles-page .searchable-select-list {
+    list-style: none; margin: 0; padding: 4px 0; overflow-y: auto; max-height: 200px;
+}
+.profiles-page .searchable-select-list li {
+    padding: 7px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    display: flex; align-items: center; gap: 8px;
+}
+.profiles-page .searchable-select-list li:hover { background: rgba(0,0,0,0.04); }
+.profiles-page .searchable-select-list li.selected { background: rgba(59, 130, 246, 0.08); color: #2563eb; }
+.profiles-page .searchable-select-list li.selected::before { content: '\f00c'; font-family: 'Font Awesome 5 Free'; font-weight: 900; font-size: 0.7rem; color: #2563eb; }
+.profiles-page .searchable-select-list li.hidden { display: none; }
 </style>
 <div class="profiles-page theme-page" id="profilesPageContainer">
     <div class="dashboard-header">
@@ -55,67 +79,121 @@ body.profiles-support-view-only #profileModal .modal-content * {
                 
                 <!-- Filter Grid -->
                 <div class="filter-grid">
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Organization</label>
-                        <select id="filterOrganization" class="filter-select">
-                            <option value="">All Organizations</option>
-                        </select>
+                        <div class="searchable-select" data-filter="organization" data-all-label="All Organizations">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Organizations</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterOrganization" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Domain</label>
-                        <select id="filterDomain" class="filter-select">
-                            <option value="">All Domains</option>
-                        </select>
+                        <div class="searchable-select" data-filter="domain" data-all-label="All Domains">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Domains</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterDomain" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Country</label>
-                        <select id="filterCountry" class="filter-select">
-                            <option value="">All Countries</option>
-                        </select>
+                        <div class="searchable-select" data-filter="country" data-all-label="All Countries">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Countries</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterCountry" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>State</label>
-                        <select id="filterState" class="filter-select">
-                            <option value="">All States</option>
-                        </select>
+                        <div class="searchable-select" data-filter="state" data-all-label="All States">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All States</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterState" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>City</label>
-                        <select id="filterCity" class="filter-select">
-                            <option value="">All Cities</option>
-                        </select>
+                        <div class="searchable-select" data-filter="city" data-all-label="All Cities">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Cities</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterCity" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Gender</label>
-                        <select id="filterGender" class="filter-select">
-                            <option value="">All Genders</option>
-                        </select>
+                        <div class="searchable-select" data-filter="gender" data-all-label="All Genders">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Genders</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterGender" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Class Stream</label>
-                        <select id="filterClassStream" class="filter-select">
-                            <option value="">All Streams</option>
-                        </select>
+                        <div class="searchable-select" data-filter="class_stream" data-all-label="All Streams">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Streams</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterClassStream" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Designation</label>
-                        <select id="filterDesignation" class="filter-select">
-                            <option value="">All Designations</option>
-                        </select>
+                        <div class="searchable-select" data-filter="designation" data-all-label="All Designations">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Designations</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterDesignation" value="">
+                        </div>
                     </div>
                     
-                    <div class="filter-group">
+                    <div class="filter-group searchable-select-wrap">
                         <label>Occupation</label>
-                        <select id="filterOccupation" class="filter-select">
-                            <option value="">All Occupations</option>
-                        </select>
+                        <div class="searchable-select" data-filter="occupation" data-all-label="All Occupations">
+                            <button type="button" class="searchable-select-trigger"><span class="searchable-select-value">All Occupations</span><i class="fas fa-chevron-down searchable-select-arrow"></i></button>
+                            <div class="searchable-select-dropdown">
+                                <input type="text" class="searchable-select-search" placeholder="Search..." autocomplete="off">
+                                <div class="searchable-select-actions"><button type="button" class="searchable-select-clear">Clear</button></div>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterOccupation" value="">
+                        </div>
                     </div>
                     
                     <div class="filter-group">
@@ -232,41 +310,4 @@ body.profiles-support-view-only #profileModal .modal-content * {
 </div>
 
 <script src="/static/js/profiles.js"></script>
-<script>
-(function() {
-    function applySupportViewOnly() {
-        var user = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-        if (!user || user.role !== 'support') return;
-        document.body.classList.add('profiles-support-view-only');
-        var container = document.getElementById('profilesPageContainer');
-        var modal = document.getElementById('profileModal');
-        function block(e) {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-        }
-        if (container) {
-            container.addEventListener('copy', block);
-            container.addEventListener('cut', block);
-            container.addEventListener('paste', block);
-            container.addEventListener('contextmenu', block);
-            container.addEventListener('selectstart', block);
-            container.addEventListener('dragstart', block);
-        }
-        if (modal) {
-            modal.addEventListener('copy', block);
-            modal.addEventListener('cut', block);
-            modal.addEventListener('paste', block);
-            modal.addEventListener('contextmenu', block);
-            modal.addEventListener('selectstart', block);
-            modal.addEventListener('dragstart', block);
-        }
-    }
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', applySupportViewOnly);
-    } else {
-        applySupportViewOnly();
-    }
-})();
-</script>
 {% endblock %}

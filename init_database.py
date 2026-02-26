@@ -12,7 +12,7 @@ if project_root not in sys.path:
 
 from sqlalchemy import text
 from server.app import create_app
-from server.models import db, User, UserPII, ActivityLog, BobCompany, SkillboostProfile, CreditLink
+from server.models import db, User, UserPII, ActivityLog, BobCompany, SkillboostProfile, CreditLink, OptionalMcqResponse
 
 def init_database():
     """Initialize database and create all tables"""
@@ -21,21 +21,8 @@ def init_database():
     with app.app_context():
         print("Creating database tables...")
         try:
-            # Drop optional_mcq_response so it can be recreated with current schema (fixes column mismatches)
-            try:
-                with db.engine.connect() as conn:
-                    conn.execute(text("DROP TRIGGER IF EXISTS tr_optional_mcq_response_log ON optional_mcq_response"))
-                    conn.commit()
-                print("OK: Dropped trigger on optional_mcq_response (if any)")
-            except Exception as ex:
-                print("WARN: Could not drop optional_mcq_response trigger (table may not exist):", str(ex))
-            try:
-                with db.engine.connect() as conn:
-                    conn.execute(text("DROP TABLE IF EXISTS optional_mcq_response CASCADE"))
-                    conn.commit()
-                print("OK: Dropped optional_mcq_response table (will recreate with current schema)")
-            except Exception as ex:
-                print("WARN: Could not drop optional_mcq_response:", str(ex))
+            # Do NOT drop optional_mcq_response – that would delete all MCQ data.
+            # Use ADD COLUMN and backfill instead (see optional_mcq_response block below).
 
             # Create all tables
             db.create_all()
@@ -113,12 +100,12 @@ def init_database():
 
             if 'credit_links' in tables:
                 print("OK: 'credit_links' table exists")
-                # One-time: raise max_allocations from 2000 to 2500
+                # One-time: raise max_allocations from 2000/2500 to 3000
                 try:
                     with db.engine.connect() as conn:
-                        conn.execute(text("UPDATE credit_links SET max_allocations = 2500 WHERE max_allocations = 2000"))
+                        conn.execute(text("UPDATE credit_links SET max_allocations = 3000 WHERE max_allocations IN (2000, 2500)"))
                         conn.commit()
-                    print("OK: credit_links max_allocations 2000 -> 2500 (if any were 2000)")
+                    print("OK: credit_links max_allocations 2000/2500 -> 3000 (if any were 2000 or 2500)")
                 except Exception as ex:
                     print("WARN: credit_links max_allocations migration:", str(ex))
             else:
@@ -143,6 +130,34 @@ def init_database():
 
             if 'optional_mcq_response' in tables:
                 print("OK: 'optional_mcq_response' table exists")
+                # Add score column (0-10) if missing; backfill from answer key for existing rows
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("ALTER TABLE optional_mcq_response ADD COLUMN IF NOT EXISTS score INTEGER"))
+                        conn.commit()
+                    print("OK: optional_mcq_response.score column verified")
+                except Exception as ex:
+                    print("WARN: Could not add optional_mcq_response.score (may already exist):", str(ex))
+                try:
+                    from server.utils.mcq_answer_key import get_response_score
+                    backfill_batch_size = 200
+                    total_backfilled = 0
+                    while True:
+                        need_backfill = OptionalMcqResponse.query.filter(
+                            OptionalMcqResponse.score.is_(None)
+                        ).limit(backfill_batch_size).all()
+                        if not need_backfill:
+                            break
+                        for r in need_backfill:
+                            r.score = get_response_score(r)['correct_count']
+                        db.session.commit()
+                        total_backfilled += len(need_backfill)
+                        print("  Backfilled", total_backfilled, "optional_mcq_response row(s)...")
+                    if total_backfilled:
+                        print("OK: optional_mcq_response score backfilled for", total_backfilled, "row(s)")
+                except Exception as ex:
+                    db.session.rollback()
+                    print("WARN: optional_mcq_response score backfill:", str(ex))
                 # Create audit trigger (requires log_activity and get_record_identifier from schema.sql)
                 try:
                     with db.engine.connect() as conn:

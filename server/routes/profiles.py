@@ -11,6 +11,7 @@ from server.utils.state_normalize import (
     get_state_filter_values,
     distinct_canonical_states,
 )
+from server.utils.date_format import format_datetime_utc
 
 bp = Blueprint('profiles', __name__)
 
@@ -20,17 +21,17 @@ bp = Blueprint('profiles', __name__)
 def get_profiles():
     """Get user profiles with search and filters"""
     try:
-        # Get query parameters
+        # Get query parameters (support multiple values via getlist for filter dropdowns)
         search = request.args.get('search', '').strip()
-        organization = request.args.get('organization', '').strip()
-        domain = request.args.get('domain', '').strip()
-        country = request.args.get('country', '').strip()
-        state = request.args.get('state', '').strip()
-        city = request.args.get('city', '').strip()
-        gender = request.args.get('gender', '').strip()
-        class_stream = request.args.get('class_stream', '').strip()
-        designation = request.args.get('designation', '').strip()
-        occupation = request.args.get('occupation', '').strip()
+        organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
+        domains = [x.strip() for x in request.args.getlist('domain') if x and x.strip()]
+        countries = [x.strip() for x in request.args.getlist('country') if x and x.strip()]
+        states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
+        cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
+        genders = [x.strip() for x in request.args.getlist('gender') if x and x.strip()]
+        class_streams = [x.strip() for x in request.args.getlist('class_stream') if x and x.strip()]
+        designations = [x.strip() for x in request.args.getlist('designation') if x and x.strip()]
+        occupations = [x.strip() for x in request.args.getlist('occupation') if x and x.strip()]
         has_github = request.args.get('has_github', '').strip()
         has_linkedin = request.args.get('has_linkedin', '').strip()
         bob_match = request.args.get('bob_match', '').strip()
@@ -54,45 +55,49 @@ def get_profiles():
             )
             query = query.filter(search_filter)
         
-        # Organization filter
-        if organization:
-            query = query.filter(UserPII.organization_name.ilike(f'%{organization}%'))
+        # Organization filter (multiple allowed)
+        if organizations:
+            query = query.filter(or_(*[UserPII.organization_name.ilike(f'%{o}%') for o in organizations]))
         
-        # Domain filter
-        if domain:
-            query = query.filter(UserPII.domain.ilike(f'%{domain}%'))
+        # Domain filter (multiple allowed)
+        if domains:
+            query = query.filter(or_(*[UserPII.domain.ilike(f'%{d}%') for d in domains]))
         
-        # Country filter
-        if country:
-            query = query.filter(UserPII.country.ilike(f'%{country}%'))
+        # Country filter (multiple allowed)
+        if countries:
+            query = query.filter(or_(*[UserPII.country.ilike(f'%{c}%') for c in countries]))
         
-        # State filter (match canonical + all mapped variants)
-        if state:
-            state_values = get_state_filter_values(state)
-            if state_values:
-                query = query.filter(UserPII.state.in_(state_values))
-            else:
-                query = query.filter(UserPII.state.ilike(f'%{state}%'))
+        # State filter (multiple allowed; match canonical + all mapped variants per selection)
+        if states:
+            all_state_values = []
+            for state in states:
+                state_values = get_state_filter_values(state)
+                if state_values:
+                    all_state_values.extend(state_values)
+                else:
+                    all_state_values.append(state)
+            if all_state_values:
+                query = query.filter(UserPII.state.in_(all_state_values))
         
-        # City filter
-        if city:
-            query = query.filter(UserPII.city.ilike(f'%{city}%'))
+        # City filter (multiple allowed)
+        if cities:
+            query = query.filter(or_(*[UserPII.city.ilike(f'%{c}%') for c in cities]))
         
-        # Gender filter
-        if gender:
-            query = query.filter(UserPII.gender.ilike(f'%{gender}%'))
+        # Gender filter (multiple allowed)
+        if genders:
+            query = query.filter(or_(*[UserPII.gender.ilike(f'%{g}%') for g in genders]))
         
-        # Class stream filter
-        if class_stream:
-            query = query.filter(UserPII.class_stream.ilike(f'%{class_stream}%'))
+        # Class stream filter (multiple allowed)
+        if class_streams:
+            query = query.filter(or_(*[UserPII.class_stream.ilike(f'%{s}%') for s in class_streams]))
         
-        # Designation filter
-        if designation:
-            query = query.filter(UserPII.designation.ilike(f'%{designation}%'))
+        # Designation filter (multiple allowed)
+        if designations:
+            query = query.filter(or_(*[UserPII.designation.ilike(f'%{d}%') for d in designations]))
         
-        # Occupation filter
-        if occupation:
-            query = query.filter(UserPII.occupation.ilike(f'%{occupation}%'))
+        # Occupation filter (multiple allowed)
+        if occupations:
+            query = query.filter(or_(*[UserPII.occupation.ilike(f'%{o}%') for o in occupations]))
         
         # GitHub filter
         if has_github.lower() == 'true':
@@ -299,19 +304,12 @@ def get_profile_detail(profile_id):
         # Optional MCQ scores per track (same marking as Optional MCQ Verification page: 6+ = pass)
         optional_mcq_scores = []
         try:
-            from server.utils.mcq_answer_key import score_submission
+            from server.utils.mcq_answer_key import get_response_score
             email_lower = (profile.email or '').strip().lower()
             if email_lower:
                 rows = OptionalMcqResponse.query.filter_by(email=email_lower).all()
                 for r in rows:
-                    auto = score_submission(
-                        r.track_number,
-                        getattr(r, 'question_1', None), getattr(r, 'question_2', None),
-                        getattr(r, 'question_3', None), getattr(r, 'question_4', None),
-                        getattr(r, 'question_5', None), getattr(r, 'question_6', None),
-                        getattr(r, 'question_7', None), getattr(r, 'question_8', None),
-                        getattr(r, 'question_9', None), getattr(r, 'question_10', None),
-                    )
+                    auto = get_response_score(r)
                     optional_mcq_scores.append({
                         'track_number': r.track_number,
                         'score': auto['correct_count'],
@@ -376,7 +374,7 @@ def _master_log_to_profile_log(row):
         else:
             summary = f"Deleted by {changed_by}"
     ts = getattr(row, 'timestamp', None)
-    created_at = ts.isoformat() if ts else None
+    created_at = format_datetime_utc(ts)
     changes = []
     old_vals = getattr(row, 'old_values', None)
     new_vals = getattr(row, 'new_values', None)

@@ -6,6 +6,7 @@ from sqlalchemy import text
 from server.models import db
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role
+from server.utils.date_format import format_datetime_utc
 
 bp = Blueprint('audit', __name__)
 
@@ -45,7 +46,7 @@ def get_master_logs():
         logs = [dict(zip(keys, row)) for row in rows]
         for log in logs:
             if log.get("timestamp"):
-                log["timestamp"] = log["timestamp"].isoformat()
+                log["timestamp"] = format_datetime_utc(log["timestamp"])
         return jsonify({"logs": logs}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

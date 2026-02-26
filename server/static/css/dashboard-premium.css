@@ -387,6 +387,69 @@
     padding: 6px 12px;
 }
 
+/* Optional MCQ completion by track */
+.optional-mcq-tracks {
+    margin-top: 4px;
+}
+.optional-mcq-track-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    padding: 2px 0;
+}
+.optional-mcq-track-name {
+    color: #555;
+    font-weight: 500;
+}
+.optional-mcq-track-value {
+    font-weight: 600;
+    color: var(--text-primary, #1a1a1a);
+}
+
+.optional-mcq-winners-wrap {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(0,0,0,0.06);
+}
+.optional-mcq-winners-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 4px;
+}
+.optional-mcq-winners-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    font-size: 0.75rem;
+}
+.optional-mcq-winner-item {
+    padding: 2px 0;
+    color: #333;
+}
+.optional-mcq-winner-rank {
+    font-weight: 600;
+    margin-right: 4px;
+}
+.optional-mcq-winner-date {
+    color: #666;
+    font-size: 0.7rem;
+    margin-left: 4px;
+}
+.optional-mcq-card-link {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--primary, #2563eb);
+    text-decoration: none;
+}
+.optional-mcq-card-link:hover {
+    text-decoration: underline;
+}
+
 /* Skill Lab credits stats (Allocated / Not sent / Sent) */
 .kpi-credits-stats {
     margin-top: 6px;

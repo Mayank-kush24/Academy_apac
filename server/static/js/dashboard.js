@@ -208,6 +208,8 @@ async function loadDashboardData() {
                 total_skillboost_profiles: 0, verified_skillboost_profiles: 0, skillboost_verification_rate: null,
                 skillboost_credits_allocated: 0, skillboost_credits_not_sent: 0, skillboost_credits_sent: 0,
                 total_skilllab_submissions: 0, verified_skilllab_submissions: 0, skilllab_submission_verification_rate: null,
+                optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
+                optional_mcq_top5_winners: [],
                 previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
             };
         }
@@ -246,7 +248,9 @@ async function loadDashboardData() {
             skillboost_credits_sent: 0,
             total_skilllab_submissions: 0,
             verified_skilllab_submissions: 0,
-            skilllab_submission_verification_rate: null
+            skilllab_submission_verification_rate: null,
+            optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
+            optional_mcq_top5_winners: []
         });
         renderCharts({
             registration_trends: [],
@@ -380,6 +384,27 @@ function updateKPICards(summary, chartsData) {
     if (slSubTotalEl) slSubTotalEl.textContent = (summary.total_skilllab_submissions !== undefined && summary.total_skilllab_submissions !== null) ? formatNumber(summary.total_skilllab_submissions) : '-';
     const slSubMetaEl = document.getElementById('skillLabSubmissionsMeta');
     if (slSubMetaEl) slSubMetaEl.textContent = 'Total Submissions';
+
+    // Optional MCQ completion by track
+    const byTrack = summary.optional_mcq_by_track;
+    if (Array.isArray(byTrack)) {
+        [1, 2, 3].forEach(function (t) {
+            const row = byTrack.find(function (r) { return r.track === t; });
+            const el = document.getElementById('optionalMcqTrack' + t);
+            if (el) {
+                if (row && (row.total !== undefined || row.passed_6 !== undefined)) {
+                    el.textContent = formatNumber(row.total) + ' (' + formatNumber(row.passed_6 || 0) + ' passed 6+)';
+                } else {
+                    el.textContent = '—';
+                }
+            }
+        });
+    } else {
+        [1, 2, 3].forEach(function (t) {
+            const el = document.getElementById('optionalMcqTrack' + t);
+            if (el) el.textContent = '—';
+        });
+    }
 
     // Region cards: SEA, ANZ, East Asia
     const seaRegEl = document.getElementById('seaRegistrations');

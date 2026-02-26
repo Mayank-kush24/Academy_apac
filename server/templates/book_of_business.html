@@ -123,6 +123,7 @@
                             </button>
                             <div class="searchable-select-dropdown" hidden>
                                 <input type="text" class="searchable-select-search" placeholder="Search country..." autocomplete="off">
+                                <button type="button" class="searchable-select-clear" style="margin: 4px 8px; font-size: 0.8125rem; color: #6b7280; background: none; border: none; cursor: pointer;">Clear</button>
                                 <ul class="searchable-select-list" role="listbox"></ul>
                             </div>
                             <input type="hidden" id="filterCountry" name="filterCountry" value="">
@@ -137,6 +138,7 @@
                             </button>
                             <div class="searchable-select-dropdown" hidden>
                                 <input type="text" class="searchable-select-search" placeholder="Search state..." autocomplete="off">
+                                <button type="button" class="searchable-select-clear" style="margin: 4px 8px; font-size: 0.8125rem; color: #6b7280; background: none; border: none; cursor: pointer;">Clear</button>
                                 <ul class="searchable-select-list" role="listbox"></ul>
                             </div>
                             <input type="hidden" id="filterState" name="filterState" value="">
@@ -151,6 +153,7 @@
                             </button>
                             <div class="searchable-select-dropdown" hidden>
                                 <input type="text" class="searchable-select-search" placeholder="Search city..." autocomplete="off">
+                                <button type="button" class="searchable-select-clear" style="margin: 4px 8px; font-size: 0.8125rem; color: #6b7280; background: none; border: none; cursor: pointer;">Clear</button>
                                 <ul class="searchable-select-list" role="listbox"></ul>
                             </div>
                             <input type="hidden" id="filterCity" name="filterCity" value="">
@@ -165,6 +168,7 @@
                             </button>
                             <div class="searchable-select-dropdown" hidden>
                                 <input type="text" class="searchable-select-search" placeholder="Search organization..." autocomplete="off">
+                                <button type="button" class="searchable-select-clear" style="margin: 4px 8px; font-size: 0.8125rem; color: #6b7280; background: none; border: none; cursor: pointer;">Clear</button>
                                 <ul class="searchable-select-list" role="listbox"></ul>
                             </div>
                             <input type="hidden" id="filterOrganization" name="filterOrganization" value="">
@@ -174,7 +178,13 @@
                         <i class="fas fa-search"></i> Apply
                     </button>
                     <button type="button" class="btn btn-secondary" onclick="clearFilters()">
-                        <i class="fas fa-times"></i> Clear
+                        <i class="fas fa-times"></i> Clear all
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btnDownloadAll" onclick="downloadCSV('all')" title="Download all data as CSV">
+                        <i class="fas fa-download"></i> Download All
+                    </button>
+                    <button type="button" class="btn btn-secondary" id="btnDownloadFiltered" onclick="downloadCSV('filtered')" title="Download filtered data as CSV">
+                        <i class="fas fa-filter"></i> Download Filtered
                     </button>
                 </div>
 
@@ -244,21 +254,26 @@
         bar.innerHTML = html;
     }
 
+    function getMultiFilterValues(id) {
+        var raw = (document.getElementById(id) && document.getElementById(id).value) || '';
+        if (!raw.trim()) return [];
+        return raw.split('|').map(function(s) { return s.trim(); }).filter(Boolean);
+    }
     window.loadPage = function(page) {
         page = page || 1;
         var search = document.getElementById('searchInput').value.trim();
-        var country = document.getElementById('filterCountry').value.trim();
-        var state = document.getElementById('filterState').value.trim();
-        var city = document.getElementById('filterCity').value.trim();
-        var organization = document.getElementById('filterOrganization').value.trim();
+        var countries = getMultiFilterValues('filterCountry');
+        var states = getMultiFilterValues('filterState');
+        var cities = getMultiFilterValues('filterCity');
+        var organizations = getMultiFilterValues('filterOrganization');
         var params = new URLSearchParams();
         params.set('page', page);
         params.set('per_page', '20');
         if (search) params.set('search', search);
-        if (country) params.set('country', country);
-        if (state) params.set('state', state);
-        if (city) params.set('city', city);
-        if (organization) params.set('organization', organization);
+        countries.forEach(function(c) { params.append('country', c); });
+        states.forEach(function(s) { params.append('state', s); });
+        cities.forEach(function(c) { params.append('city', c); });
+        organizations.forEach(function(o) { params.append('organization', o); });
         var url = '/api/book-of-business/list?' + params.toString();
         var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
         if (!token) {
@@ -296,15 +311,11 @@
         document.getElementById('filterCity').value = '';
         document.getElementById('filterOrganization').value = '';
         document.querySelectorAll('.searchable-select').forEach(function(wrap) {
-            var trigger = wrap.querySelector('.searchable-select-trigger');
-            var valueSpan = trigger && trigger.querySelector('.searchable-select-value');
+            var valueSpan = wrap.querySelector('.searchable-select-trigger .searchable-select-value');
             var dropdown = wrap.querySelector('.searchable-select-dropdown');
             var searchInp = dropdown && dropdown.querySelector('.searchable-select-search');
             var list = dropdown && dropdown.querySelector('.searchable-select-list');
-            if (valueSpan) {
-                var allLabel = list && list.querySelector('li[data-value=""]');
-                valueSpan.textContent = allLabel ? allLabel.textContent : 'All';
-            }
+            if (valueSpan) valueSpan.textContent = wrap.dataset.allLabel || 'All';
             if (searchInp) searchInp.value = '';
             if (list) {
                 list.querySelectorAll('li').forEach(function(li) {
@@ -336,6 +347,7 @@
             function open() {
                 wrap.classList.add('open');
                 dropdown.removeAttribute('hidden');
+                syncFromInput();
                 if (searchInp) { searchInp.value = ''; list.querySelectorAll('li').forEach(function(li) { li.classList.remove('hidden'); }); searchInp.focus(); }
             }
             function close() {
@@ -360,17 +372,56 @@
                 });
                 searchInp.addEventListener('click', function(e) { e.stopPropagation(); });
             }
+            var MULTI_SEP = '|';
+            function getSelectedValues() {
+                var out = [];
+                list.querySelectorAll('li.selected').forEach(function(l) {
+                    var v = l.getAttribute('data-value') || '';
+                    if (v) out.push(v);
+                });
+                return out;
+            }
+            function syncFromInput() {
+                var raw = (hiddenInput.value || '').trim();
+                var vals = raw ? raw.split(MULTI_SEP).map(function(s) { return s.trim(); }).filter(Boolean) : [];
+                list.querySelectorAll('li').forEach(function(l) {
+                    var v = l.getAttribute('data-value') || '';
+                    l.classList.toggle('selected', v === '' ? vals.length === 0 : vals.indexOf(v) !== -1);
+                });
+                updateTriggerText();
+            }
+            function updateTriggerText() {
+                var allLabel = wrap.dataset.allLabel || 'All';
+                var vals = getSelectedValues();
+                if (vals.length === 0) {
+                    if (valueSpan) valueSpan.textContent = allLabel;
+                    return;
+                }
+                if (valueSpan) valueSpan.textContent = vals.length === 1 ? vals[0] : (vals.length + ' selected');
+            }
             list.querySelectorAll('li').forEach(function(li) {
                 li.addEventListener('click', function(e) {
                     e.stopPropagation();
                     var val = li.getAttribute('data-value') || '';
-                    var label = li.textContent || '';
-                    hiddenInput.value = val;
-                    if (valueSpan) valueSpan.textContent = label;
-                    list.querySelectorAll('li').forEach(function(l) { l.classList.remove('selected'); });
-                    li.classList.add('selected');
-                    close();
+                    if (val === '') {
+                        hiddenInput.value = '';
+                        list.querySelectorAll('li').forEach(function(l) { l.classList.remove('selected'); });
+                        li.classList.add('selected');
+                    } else {
+                        li.classList.toggle('selected');
+                        list.querySelector('li[data-value=""]').classList.remove('selected');
+                        var selected = getSelectedValues();
+                        hiddenInput.value = selected.join(MULTI_SEP);
+                    }
+                    updateTriggerText();
                 });
+            });
+            var clearBtn = dropdown.querySelector('.searchable-select-clear');
+            if (clearBtn) clearBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                hiddenInput.value = '';
+                list.querySelectorAll('li').forEach(function(l) { l.classList.toggle('selected', (l.getAttribute('data-value') || '') === ''); });
+                updateTriggerText();
             });
             dropdown.addEventListener('click', function(e) { e.stopPropagation(); });
         });
@@ -409,6 +460,7 @@
                 configs.forEach(function(cfg) {
                     var wrap = document.querySelector('.searchable-select[data-filter="' + cfg.filter + '"]');
                     if (!wrap) return;
+                    wrap.dataset.allLabel = cfg.allLabel;
                     var list = wrap.querySelector('.searchable-select-list');
                     if (!list) return;
                     list.innerHTML = '';
@@ -438,16 +490,16 @@
         var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
         if (!token) return;
         var search = document.getElementById('searchInput').value.trim();
-        var country = document.getElementById('filterCountry').value.trim();
-        var state = document.getElementById('filterState').value.trim();
-        var city = document.getElementById('filterCity').value.trim();
-        var organization = document.getElementById('filterOrganization').value.trim();
+        var countries = getMultiFilterValues('filterCountry');
+        var states = getMultiFilterValues('filterState');
+        var cities = getMultiFilterValues('filterCity');
+        var organizations = getMultiFilterValues('filterOrganization');
         var params = new URLSearchParams();
         if (search) params.set('search', search);
-        if (country) params.set('country', country);
-        if (state) params.set('state', state);
-        if (city) params.set('city', city);
-        if (organization) params.set('organization', organization);
+        countries.forEach(function(c) { params.append('country', c); });
+        states.forEach(function(s) { params.append('state', s); });
+        cities.forEach(function(c) { params.append('city', c); });
+        organizations.forEach(function(o) { params.append('organization', o); });
         var url = '/api/book-of-business/stats' + (params.toString() ? '?' + params.toString() : '');
         fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
             .then(function(res) {
@@ -505,6 +557,53 @@
                 }
             })
             .catch(function() {});
+    };
+
+    window.downloadCSV = function(mode) {
+        var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+        if (!token) { window.location.href = '/login'; return; }
+
+        var btnId = mode === 'all' ? 'btnDownloadAll' : 'btnDownloadFiltered';
+        var btn = document.getElementById(btnId);
+        var originalHTML = btn ? btn.innerHTML : '';
+        if (btn) { btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Downloading...'; btn.disabled = true; }
+
+        var params = new URLSearchParams();
+        if (mode === 'filtered') {
+            var search = document.getElementById('searchInput').value.trim();
+            var countries = getMultiFilterValues('filterCountry');
+            var states = getMultiFilterValues('filterState');
+            var cities = getMultiFilterValues('filterCity');
+            var organizations = getMultiFilterValues('filterOrganization');
+            if (search) params.set('search', search);
+            countries.forEach(function(c) { params.append('country', c); });
+            states.forEach(function(s) { params.append('state', s); });
+            cities.forEach(function(c) { params.append('city', c); });
+            organizations.forEach(function(o) { params.append('organization', o); });
+        }
+
+        var url = '/api/book-of-business/download' + (params.toString() ? '?' + params.toString() : '');
+        fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
+            .then(function(res) {
+                if (res.status === 403) { alert('Access not allowed.'); return null; }
+                if (!res.ok) throw new Error('Download failed');
+                return res.blob();
+            })
+            .then(function(blob) {
+                if (!blob) return;
+                var a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                var suffix = mode === 'filtered' ? '_filtered' : '_all';
+                a.download = 'book_of_business' + suffix + '_' + new Date().toISOString().slice(0, 10) + '.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(a.href);
+            })
+            .catch(function(err) { alert(err.message || 'Download failed'); })
+            .finally(function() {
+                if (btn) { btn.innerHTML = originalHTML; btn.disabled = false; }
+            });
     };
 
     loadStats();

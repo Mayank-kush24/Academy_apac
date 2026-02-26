@@ -12,7 +12,7 @@ from server.models import db, OptionalMcqVerification, OptionalMcqResponse, User
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
-from server.utils.mcq_answer_key import score_submission, get_track_questions
+from server.utils.mcq_answer_key import score_submission, get_track_questions, get_response_score
 from server.utils.cache import cache_result
 
 bp = Blueprint('mcq_verification', __name__)
@@ -25,14 +25,7 @@ def _get_mcq_stats_cached():
     auto_passed = 0
     if total > 0:
         for r in OptionalMcqResponse.query.all():
-            auto = score_submission(
-                r.track_number,
-                getattr(r, 'question_1', None), getattr(r, 'question_2', None),
-                getattr(r, 'question_3', None), getattr(r, 'question_4', None),
-                getattr(r, 'question_5', None), getattr(r, 'question_6', None),
-                getattr(r, 'question_7', None), getattr(r, 'question_8', None),
-                getattr(r, 'question_9', None), getattr(r, 'question_10', None),
-            )
+            auto = get_response_score(r)
             if auto['correct_count'] >= 8:
                 auto_passed += 1
     pending = max(0, total - auto_passed)
@@ -89,20 +82,7 @@ def list_responses():
         for r in pagination.items:
             d = r.to_dict()
             d['name'] = r.participant.name if r.participant else None
-            # Auto verification: score against answer key (correct / 10)
-            auto = score_submission(
-                r.track_number,
-                getattr(r, 'question_1', None),
-                getattr(r, 'question_2', None),
-                getattr(r, 'question_3', None),
-                getattr(r, 'question_4', None),
-                getattr(r, 'question_5', None),
-                getattr(r, 'question_6', None),
-                getattr(r, 'question_7', None),
-                getattr(r, 'question_8', None),
-                getattr(r, 'question_9', None),
-                getattr(r, 'question_10', None),
-            )
+            auto = get_response_score(r)
             d['score'] = auto['correct_count']
             d['score_display'] = auto['score_display']
             d['verification_results'] = auto['results']
@@ -125,14 +105,7 @@ def _build_export_rows(query, passed_only=False):
     """Build list of dicts with name, email, track_number, score_display for CSV export."""
     rows = []
     for r in query.order_by(OptionalMcqResponse.track_number.asc(), OptionalMcqResponse.email.asc()).all():
-        auto = score_submission(
-            r.track_number,
-            getattr(r, 'question_1', None), getattr(r, 'question_2', None),
-            getattr(r, 'question_3', None), getattr(r, 'question_4', None),
-            getattr(r, 'question_5', None), getattr(r, 'question_6', None),
-            getattr(r, 'question_7', None), getattr(r, 'question_8', None),
-            getattr(r, 'question_9', None), getattr(r, 'question_10', None),
-        )
+        auto = get_response_score(r)
         if passed_only and auto['correct_count'] < 6:
             continue
         name = (r.participant.name if r.participant else None) or r.leader_name or ''

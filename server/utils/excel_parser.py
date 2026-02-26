@@ -398,15 +398,21 @@ def import_data(df, mappings, mode='create', progress_callback=None):
     BATCH_SIZE = 1000
     PROGRESS_INTERVAL = 100  # Report progress every N rows
     
-    # For create_update mode, fetch existing emails in batches to reduce queries
+    # Fetch existing emails in chunks (all modes) to avoid slow single query and OOM on large DBs
     existing_emails_set = set()
-    if mode in ['create_update', 'update_only']:
-        # Fetch all existing emails in chunks to build a set for O(1) lookup
-        try:
-            existing_emails = db.session.query(UserPII.email).all()
-            existing_emails_set = {email[0] for email in existing_emails}
-        except:
-            existing_emails_set = set()
+    CHUNK_SIZE = 20000
+    try:
+        offset = 0
+        while True:
+            chunk = db.session.query(UserPII.email).limit(CHUNK_SIZE).offset(offset).all()
+            if not chunk:
+                break
+            existing_emails_set.update(e[0] for e in chunk if e[0])
+            if len(chunk) < CHUNK_SIZE:
+                break
+            offset += CHUNK_SIZE
+    except Exception:
+        existing_emails_set = set()
     
     # Prepare data for batch insert
     records_to_insert = []
@@ -624,20 +630,37 @@ def import_data(df, mappings, mode='create', progress_callback=None):
                             if len(errors) < 100:
                                 errors.append(f"Insert error {record.get('email')}: {str(insert_error)}")
             else:
-                for record in records_to_insert:
-                    user = UserPII(**record)
-                    db.session.add(user)
-                db.session.commit()
+                try:
+                    for record in records_to_insert:
+                        user = UserPII(**record)
+                        db.session.add(user)
+                    db.session.commit()
+                except (DataError, IntegrityError):
+                    db.session.rollback()
+                    for record in records_to_insert:
+                        try:
+                            user = UserPII(**record)
+                            db.session.add(user)
+                            db.session.commit()
+                        except Exception as insert_error:
+                            db.session.rollback()
+                            if len(errors) < 100:
+                                errors.append(f"Row: {record.get('email', '')} - {str(insert_error)[:150]}")
         
         if records_to_update:
             emails_batch = [e for e, _ in records_to_update]
-            users_map = {u.email: u for u in UserPII.query.filter(UserPII.email.in_(emails_batch)).all()}
-            for update_email, update_data in records_to_update:
-                existing_user = users_map.get(update_email)
-                if existing_user:
-                    for key, value in update_data.items():
-                        setattr(existing_user, key, value)
-            db.session.commit()
+            try:
+                users_map = {u.email: u for u in UserPII.query.filter(UserPII.email.in_(emails_batch)).all()}
+                for update_email, update_data in records_to_update:
+                    existing_user = users_map.get(update_email)
+                    if existing_user:
+                        for key, value in update_data.items():
+                            setattr(existing_user, key, value)
+                db.session.commit()
+            except (DataError, IntegrityError) as e:
+                db.session.rollback()
+                if len(errors) < 100:
+                    errors.append(f"Batch update failed: {str(e)[:150]}")
     except (DataError, IntegrityError) as e:
         db.session.rollback()
         err_msg = str(e).split('\n')[0][:200] if str(e) else 'Database constraint or data length error'
@@ -1132,6 +1155,15 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
                     data[model_field] = None
                 else:
                     data[model_field] = str(val).strip() or None
+
+            from server.utils.mcq_answer_key import score_submission
+            auto = score_submission(
+                track_number,
+                data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
+                data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
+                data.get('question_9'), data.get('question_10'),
+            )
+            data['score'] = auto['correct_count']
 
             rec = existing.get(email)
             if rec:

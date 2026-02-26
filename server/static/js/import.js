@@ -221,6 +221,24 @@ function goToStep(step) {
 }
 
 /**
+ * Set import overlay phase: 'parsing' | 'importing'
+ */
+function setImportPhase(phase) {
+    const titleText = document.getElementById('importProgressTitleText');
+    const subtitle = document.getElementById('importProgressSubtitle');
+    const titleIcon = document.querySelector('#importProgressTitle i');
+    if (phase === 'parsing') {
+        if (titleText) titleText.textContent = 'Parsing file...';
+        if (subtitle) subtitle.textContent = 'Reading Excel and preparing import. This may take a moment for large files.';
+        if (titleIcon) titleIcon.className = 'fas fa-file-excel fa-spin';
+    } else {
+        if (titleText) titleText.textContent = 'Importing...';
+        if (subtitle) subtitle.textContent = 'Processing rows. Created / Updated / Skipped are updated below.';
+        if (titleIcon) titleIcon.className = 'fas fa-sync-alt fa-spin';
+    }
+}
+
+/**
  * Show import progress overlay and update stats
  */
 function showImportProgressOverlay() {
@@ -231,6 +249,7 @@ function showImportProgressOverlay() {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...';
     }
+    setImportPhase('parsing');
     setImportProgressStats(0, 0, 0);
     const bar = document.getElementById('importProgressBar');
     if (bar) {
@@ -320,6 +339,7 @@ async function executeImport() {
         const decoder = new TextDecoder();
         let buffer = '';
         let result = null;
+        let phaseSet = false;
 
         while (true) {
             const { done, value } = await reader.read();
@@ -339,8 +359,16 @@ async function executeImport() {
                     if (data.total_rows !== undefined && data.created !== undefined && data.updated !== undefined && data.skipped !== undefined) {
                         result = data;
                     } else if (typeof data.created === 'number' || typeof data.updated === 'number' || typeof data.skipped === 'number') {
+                        if (!phaseSet) {
+                            setImportPhase('importing');
+                            phaseSet = true;
+                        }
                         setImportProgressStats(data.created || 0, data.updated || 0, data.skipped || 0);
                     } else if (data.created !== undefined || data.updated !== undefined || data.skipped !== undefined) {
+                        if (!phaseSet) {
+                            setImportPhase('importing');
+                            phaseSet = true;
+                        }
                         setImportProgressStats(data.created || 0, data.updated || 0, data.skipped || 0);
                     }
                 } catch (e) {
@@ -356,8 +384,14 @@ async function executeImport() {
                 try {
                     const data = JSON.parse(dataMatch[1].trim());
                     if (data.error) throw new Error(data.error);
-                    if (data.total_rows !== undefined && data.created !== undefined) result = data;
-                    else if (data.created !== undefined) setImportProgressStats(data.created || 0, data.updated || 0, data.skipped || 0);
+                    if (data.total_rows !== undefined && data.created !== undefined) {
+                        result = data;
+                        setImportPhase('importing');
+                        setImportProgressStats(data.created || 0, data.updated || 0, data.skipped || 0);
+                    } else if (data.created !== undefined) {
+                        if (!phaseSet) setImportPhase('importing');
+                        setImportProgressStats(data.created || 0, data.updated || 0, data.skipped || 0);
+                    }
                 } catch (e) {
                     if (!(e instanceof SyntaxError)) throw e;
                 }

@@ -17,7 +17,7 @@ bp = Blueprint('skilllab', __name__)
 def run_credit_allocation():
     """
     Allocate credit links to verified skillboost_profiles that don't have one.
-    Uses links in display_order; each link gets up to max_allocations (e.g. 2500).
+    Uses links in display_order; each link gets up to max_allocations (e.g. 3000).
     Returns dict: allocated (int), skipped_no_capacity (int).
     """
     links = CreditLink.query.order_by(CreditLink.display_order).all()
@@ -41,9 +41,16 @@ def run_credit_allocation():
     ).order_by(SkillboostProfile.created_at, SkillboostProfile.email).all()
     for profile in pending:
         chosen = None
-        for link in links:
+        for i, link in enumerate(links):
             n = link_counts.get(link.id, 0)
-            if n < link.max_allocations:
+            if n >= link.max_allocations:
+                continue
+            # Use this link only if every previous link (in display_order) is full
+            all_previous_full = all(
+                link_counts.get(links[j].id, 0) >= links[j].max_allocations
+                for j in range(i)
+            )
+            if all_previous_full:
                 chosen = link
                 break
         if chosen:
@@ -91,9 +98,15 @@ def run_credit_allocation_stream():
     current = 0
     for profile in pending:
         chosen = None
-        for link in links:
+        for i, link in enumerate(links):
             n = link_counts.get(link.id, 0)
-            if n < link.max_allocations:
+            if n >= link.max_allocations:
+                continue
+            all_previous_full = all(
+                link_counts.get(links[j].id, 0) >= links[j].max_allocations
+                for j in range(i)
+            )
+            if all_previous_full:
                 chosen = link
                 break
         if chosen:
@@ -209,9 +222,9 @@ def credit_links():
             for link in links:
                 d = link.to_dict()
                 d['current_allocations'] = count_by_id.get(link.id, 0)
-                # Show 2500 in UI when DB still has legacy 2000 (max was raised to 2500)
-                if d.get('max_allocations') == 2000:
-                    d['max_allocations'] = 2500
+                # Show 3000 in UI when DB has legacy 2000 or 2500 (max raised to 3000)
+                if d.get('max_allocations') in (2000, 2500):
+                    d['max_allocations'] = 3000
                 items.append(d)
             return jsonify({'credit_links': items}), 200
         # POST
@@ -228,7 +241,7 @@ def credit_links():
         for i, item in enumerate(links_data):
             link_url = (item.get('link_url') or '').strip() or None
             display_order = int(item.get('display_order', i + 1))
-            max_allocations = int(item.get('max_allocations', 2500))
+            max_allocations = int(item.get('max_allocations', 3000))
             link = CreditLink(
                 link_url=link_url,
                 display_order=display_order,
