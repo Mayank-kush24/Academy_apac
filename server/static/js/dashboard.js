@@ -208,6 +208,7 @@ async function loadDashboardData() {
                 total_skillboost_profiles: 0, verified_skillboost_profiles: 0, skillboost_verification_rate: null,
                 skillboost_credits_allocated: 0, skillboost_credits_not_sent: 0, skillboost_credits_sent: 0,
                 total_skilllab_submissions: 0, verified_skilllab_submissions: 0, skilllab_submission_verification_rate: null,
+                total_codelab_submissions: 0, verified_codelab_submissions: 0, codelab_submission_verification_rate: null,
                 optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
                 optional_mcq_top5_winners: [],
                 previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
@@ -249,6 +250,9 @@ async function loadDashboardData() {
             total_skilllab_submissions: 0,
             verified_skilllab_submissions: 0,
             skilllab_submission_verification_rate: null,
+            total_codelab_submissions: 0,
+            verified_codelab_submissions: 0,
+            codelab_submission_verification_rate: null,
             optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
             optional_mcq_top5_winners: []
         });
@@ -384,6 +388,12 @@ function updateKPICards(summary, chartsData) {
     if (slSubTotalEl) slSubTotalEl.textContent = (summary.total_skilllab_submissions !== undefined && summary.total_skilllab_submissions !== null) ? formatNumber(summary.total_skilllab_submissions) : '-';
     const slSubMetaEl = document.getElementById('skillLabSubmissionsMeta');
     if (slSubMetaEl) slSubMetaEl.textContent = 'Total Submissions';
+
+    // Code Lab Submission Verification stats
+    const clSubTotalEl = document.getElementById('codeLabSubmissionsTotal');
+    if (clSubTotalEl) clSubTotalEl.textContent = (summary.total_codelab_submissions !== undefined && summary.total_codelab_submissions !== null) ? formatNumber(summary.total_codelab_submissions) : '-';
+    const clSubMetaEl = document.getElementById('codeLabSubmissionsMeta');
+    if (clSubMetaEl) clSubMetaEl.textContent = 'Total Submissions';
 
     // Optional MCQ completion by track
     const byTrack = summary.optional_mcq_by_track;
@@ -1568,28 +1578,7 @@ function renderDonutChart(canvasId, title, data, opts) {
                 }
             }
         },
-        plugins: [{
-            id: 'centerText',
-            beforeDraw: function(chart) {
-                const ctx = chart.ctx;
-                const centerX = chart.chartArea.left + (chart.chartArea.right - chart.chartArea.left) / 2;
-                const centerY = chart.chartArea.top + (chart.chartArea.bottom - chart.chartArea.top) / 2;
-                
-                ctx.save();
-                ctx.font = '600 20px Inter';
-                ctx.fillStyle = '#1A1A1A';
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'middle';
-                ctx.fillText(total.toString(), centerX, centerY - 6);
-                
-                ctx.font = '500 10px Inter';
-                ctx.fillStyle = '#8A8A8A';
-                ctx.textTransform = 'uppercase';
-                ctx.letterSpacing = '0.05em';
-                ctx.fillText('Total', centerX, centerY + 10);
-                ctx.restore();
-            }
-        }]
+        plugins: []
     });
 }
 

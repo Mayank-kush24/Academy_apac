@@ -14,7 +14,9 @@ PAGES = [
     {'id': 'book_of_business', 'path': '/book-of-business', 'label': 'Book of Business Registrations'},
     {'id': 'users_registrations', 'path': '/users-registrations', 'label': 'Users'},
     {'id': 'skilllab_submission', 'path': '/skilllab-submission', 'label': 'Skill Lab Submissions'},
+    {'id': 'codelab_submission', 'path': '/codelab-submission', 'label': 'Code Lab Submissions'},
     {'id': 'optional_mcq_verification', 'path': '/optional-mcq-verification', 'label': 'Optional MCQ Verification'},
+    {'id': 'track_progress_query', 'path': '/track-progress-query', 'label': 'Track Progress Query'},
     {'id': 'import', 'path': '/import', 'label': 'Import Data'},
     {'id': 'users', 'path': '/users', 'label': 'User Management'},
 ]
@@ -29,7 +31,9 @@ DEFAULT_PAGE_ROLES = {
     'book_of_business': ['viewer', 'editor', 'admin'],
     'users_registrations': ['viewer', 'editor', 'admin'],
     'skilllab_submission': ['viewer', 'editor', 'admin'],
+    'codelab_submission': ['viewer', 'editor', 'admin'],
     'optional_mcq_verification': ['viewer', 'editor', 'admin'],
+    'track_progress_query': ['viewer', 'editor', 'admin'],
     'import': ['editor', 'admin'],
     'users': ['admin'],
 }

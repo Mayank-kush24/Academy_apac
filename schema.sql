@@ -120,6 +120,8 @@ BEGIN
         RETURN COALESCE((p_row).email, '') || '|' || COALESCE((p_row).google_cloud_skills_boost_profile_link, '');
     ELSIF p_table_name = 'skilllab_submission' THEN
         RETURN COALESCE((p_row).id::TEXT, '');
+    ELSIF p_table_name = 'codelab_submission' THEN
+        RETURN COALESCE((p_row).id::TEXT, '');
     ELSIF p_table_name = 'optional_mcq_verification' THEN
         RETURN COALESCE((p_row).id::TEXT, '');
     ELSIF p_table_name = 'optional_mcq_response' THEN
@@ -177,6 +179,17 @@ BEGIN
         DROP TRIGGER IF EXISTS tr_skilllab_submission_log ON skilllab_submission;
         CREATE TRIGGER tr_skilllab_submission_log
             AFTER INSERT OR UPDATE OR DELETE ON skilllab_submission
+            FOR EACH ROW EXECUTE PROCEDURE log_activity();
+    END IF;
+END $$;
+
+-- codelab_submission
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'codelab_submission') THEN
+        DROP TRIGGER IF EXISTS tr_codelab_submission_log ON codelab_submission;
+        CREATE TRIGGER tr_codelab_submission_log
+            AFTER INSERT OR UPDATE OR DELETE ON codelab_submission
             FOR EACH ROW EXECUTE PROCEDURE log_activity();
     END IF;
 END $$;

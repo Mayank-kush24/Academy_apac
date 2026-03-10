@@ -4,7 +4,7 @@ Dashboard analytics routes
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
-from server.models import db, UserPII, SkillboostProfile, SkillLabSubmission, OptionalMcqResponse
+from server.models import db, UserPIICombined, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, OptionalMcqResponse
 from server.utils.auth import get_current_user
 from server.utils.mcq_answer_key import score_submission, get_response_score
 from server.utils.permissions import require_page_access
@@ -87,18 +87,18 @@ def _get_region_breakdown_cached(region, period):
     if region == 'india':
         label = 'India'
         q = db.session.query(
-            UserPII.state,
-            func.count(UserPII.id).label('count')
+            UserPIICombined.state,
+            func.count(UserPIICombined.id).label('count')
         ).filter(
-            UserPII.country.isnot(None),
-            UserPII.country != '',
-            UserPII.country.ilike('%India%'),
-            UserPII.state.isnot(None),
-            UserPII.state != ''
+            UserPIICombined.country.isnot(None),
+            UserPIICombined.country != '',
+            UserPIICombined.country.ilike('%India%'),
+            UserPIICombined.state.isnot(None),
+            UserPIICombined.state != ''
         )
         if date_cond is not None:
             q = q.filter(date_cond)
-        rows = q.group_by(UserPII.state).order_by(desc('count')).all()
+        rows = q.group_by(UserPIICombined.state).order_by(desc('count')).all()
         from collections import defaultdict
         merged = defaultdict(int)
         for r in rows:
@@ -115,18 +115,18 @@ def _get_region_breakdown_cached(region, period):
         else:
             label = 'Greater China and Korea'
             countries = EAST_ASIA_COUNTRIES
-        conds = [UserPII.country.ilike(f'%{c}%') for c in countries]
+        conds = [UserPIICombined.country.ilike(f'%{c}%') for c in countries]
         q = db.session.query(
-            UserPII.country,
-            func.count(UserPII.id).label('count')
+            UserPIICombined.country,
+            func.count(UserPIICombined.id).label('count')
         ).filter(
-            UserPII.country.isnot(None),
-            UserPII.country != '',
+            UserPIICombined.country.isnot(None),
+            UserPIICombined.country != '',
             or_(*conds)
         )
         if date_cond is not None:
             q = q.filter(date_cond)
-        rows = q.group_by(UserPII.country).order_by(desc('count')).all()
+        rows = q.group_by(UserPIICombined.country).order_by(desc('count')).all()
         items = [{'name': r[0] or 'Unknown', 'count': r[1]} for r in rows]
     total = sum(i['count'] for i in items)
     return {'region': region, 'label': label, 'items': items, 'total': total}
@@ -174,8 +174,8 @@ def _date_filter_condition(cutoff_date):
     if not cutoff_date:
         return None
     return or_(
-        and_(UserPII.registered_at.isnot(None), UserPII.registered_at >= cutoff_date),
-        and_(UserPII.registered_at.is_(None), UserPII.created_at >= cutoff_date)
+        and_(UserPIICombined.registered_at.isnot(None), UserPIICombined.registered_at >= cutoff_date),
+        and_(UserPIICombined.registered_at.is_(None), UserPIICombined.created_at >= cutoff_date)
     )
 
 
@@ -216,14 +216,14 @@ def _previous_period_filter(prev_start, current_start):
         return None
     return or_(
         and_(
-            UserPII.registered_at.isnot(None),
-            UserPII.registered_at >= prev_start,
-            UserPII.registered_at < current_start
+            UserPIICombined.registered_at.isnot(None),
+            UserPIICombined.registered_at >= prev_start,
+            UserPIICombined.registered_at < current_start
         ),
         and_(
-            UserPII.registered_at.is_(None),
-            UserPII.created_at >= prev_start,
-            UserPII.created_at < current_start
+            UserPIICombined.registered_at.is_(None),
+            UserPIICombined.created_at >= prev_start,
+            UserPIICombined.created_at < current_start
         )
     )
 
@@ -234,7 +234,7 @@ def _fetch_summary_data(period):
         cutoff_date = _get_period_dates(period)
         date_cond = _date_filter_condition(cutoff_date)
         
-        base_query = UserPII.query
+        base_query = UserPIICombined.query
         if date_cond is not None:
             base_query = base_query.filter(date_cond)
         
@@ -243,7 +243,7 @@ def _fetch_summary_data(period):
         
         # Unique organizations
         try:
-            org_query = db.session.query(func.count(func.distinct(UserPII.organization_name)))
+            org_query = db.session.query(func.count(func.distinct(UserPIICombined.organization_name)))
             if date_cond is not None:
                 org_query = org_query.filter(date_cond)
             unique_orgs = org_query.scalar() or 0
@@ -254,16 +254,16 @@ def _fetch_summary_data(period):
         top_domain = None
         try:
             domain_query = db.session.query(
-                UserPII.domain,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.domain,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.domain.isnot(None),
-                UserPII.domain != ''
+                UserPIICombined.domain.isnot(None),
+                UserPIICombined.domain != ''
             )
             if date_cond is not None:
                 domain_query = domain_query.filter(date_cond)
             top_domain_result = domain_query.group_by(
-                UserPII.domain
+                UserPIICombined.domain
             ).order_by(desc('count')).first()
             
             top_domain = top_domain_result[0] if top_domain_result else None
@@ -274,16 +274,16 @@ def _fetch_summary_data(period):
         top_city = None
         try:
             city_query = db.session.query(
-                UserPII.city,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.city,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.city.isnot(None),
-                UserPII.city != ''
+                UserPIICombined.city.isnot(None),
+                UserPIICombined.city != ''
             )
             if date_cond is not None:
                 city_query = city_query.filter(date_cond)
             top_city_result = city_query.group_by(
-                UserPII.city
+                UserPIICombined.city
             ).order_by(desc('count')).first()
             
             top_city = top_city_result[0] if top_city_result else None
@@ -293,18 +293,18 @@ def _fetch_summary_data(period):
         # Additional stats
         # Total countries
         try:
-            unique_countries = db.session.query(func.count(func.distinct(UserPII.country))).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != ''
+            unique_countries = db.session.query(func.count(func.distinct(UserPIICombined.country))).filter(
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != ''
             ).scalar() or 0
         except:
             unique_countries = 0
         
         # Users with GitHub
         try:
-            github_query = UserPII.query.filter(
-                UserPII.github_url.isnot(None),
-                UserPII.github_url != ''
+            github_query = UserPIICombined.query.filter(
+                UserPIICombined.github_url.isnot(None),
+                UserPIICombined.github_url != ''
             )
             if date_cond is not None:
                 github_query = github_query.filter(date_cond)
@@ -314,9 +314,9 @@ def _fetch_summary_data(period):
         
         # Users with LinkedIn
         try:
-            linkedin_query = UserPII.query.filter(
-                UserPII.linkedin_url.isnot(None),
-                UserPII.linkedin_url != ''
+            linkedin_query = UserPIICombined.query.filter(
+                UserPIICombined.linkedin_url.isnot(None),
+                UserPIICombined.linkedin_url != ''
             )
             if date_cond is not None:
                 linkedin_query = linkedin_query.filter(date_cond)
@@ -326,7 +326,7 @@ def _fetch_summary_data(period):
         
         # Book of Business registrations (bob_match = True)
         try:
-            bob_query = UserPII.query.filter(UserPII.bob_match == True)
+            bob_query = UserPIICombined.query.filter(UserPIICombined.bob_match == True)
             if date_cond is not None:
                 bob_query = bob_query.filter(date_cond)
             book_of_business_registrations = bob_query.count() or 0
@@ -374,21 +374,33 @@ def _fetch_summary_data(period):
                 skilllab_submission_verification_rate = round(100.0 * verified_skilllab_submissions / total_skilllab_submissions, 1)
         except Exception:
             pass
+
+        # Code Lab Submission Verification stats
+        total_codelab_submissions = 0
+        verified_codelab_submissions = 0
+        codelab_submission_verification_rate = None
+        try:
+            total_codelab_submissions = CodeLabSubmission.query.count() or 0
+            verified_codelab_submissions = CodeLabSubmission.query.filter(CodeLabSubmission.valid == True).count() or 0
+            if total_codelab_submissions > 0:
+                codelab_submission_verification_rate = round(100.0 * verified_codelab_submissions / total_codelab_submissions, 1)
+        except Exception:
+            pass
         
         # Top organization
         top_org = None
         try:
             org_query = db.session.query(
-                UserPII.organization_name,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.organization_name,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.organization_name.isnot(None),
-                UserPII.organization_name != ''
+                UserPIICombined.organization_name.isnot(None),
+                UserPIICombined.organization_name != ''
             )
             if date_cond is not None:
                 org_query = org_query.filter(date_cond)
             top_org_result = org_query.group_by(
-                UserPII.organization_name
+                UserPIICombined.organization_name
             ).order_by(desc('count')).first()
             
             top_org = top_org_result[0] if top_org_result else None
@@ -404,10 +416,10 @@ def _fetch_summary_data(period):
             # PostgreSQL AGE function returns interval, extract year
             age_query = db.session.query(
                 func.avg(
-                    func.extract('year', func.age(today, UserPII.date_of_birth))
+                    func.extract('year', func.age(today, UserPIICombined.date_of_birth))
                 )
             ).filter(
-                UserPII.date_of_birth.isnot(None)
+                UserPIICombined.date_of_birth.isnot(None)
             )
             if date_cond is not None:
                 age_query = age_query.filter(date_cond)
@@ -419,8 +431,8 @@ def _fetch_summary_data(period):
             # Fallback to Python calculation if SQL fails
             try:
                 today = datetime.now().date()
-                dob_query = UserPII.query.filter(
-                    UserPII.date_of_birth.isnot(None)
+                dob_query = UserPIICombined.query.filter(
+                    UserPIICombined.date_of_birth.isnot(None)
                 )
                 if date_cond is not None:
                     dob_query = dob_query.filter(date_cond)
@@ -467,20 +479,20 @@ def _fetch_summary_data(period):
         apac_except_india_count = 0
         try:
             # Filter for APAC countries (case-insensitive), excluding India
-            apac_conditions = [UserPII.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
+            apac_conditions = [UserPIICombined.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
             if apac_conditions:
                 apac_query = base_query.filter(
-                    UserPII.country.isnot(None),
-                    UserPII.country != '',
-                    ~UserPII.country.ilike('%India%'),
+                    UserPIICombined.country.isnot(None),
+                    UserPIICombined.country != '',
+                    ~UserPIICombined.country.ilike('%India%'),
                     or_(*apac_conditions)
                 )
             else:
                 # If no APAC countries defined, just exclude India
                 apac_query = base_query.filter(
-                    UserPII.country.isnot(None),
-                    UserPII.country != '',
-                    ~UserPII.country.ilike('%India%')
+                    UserPIICombined.country.isnot(None),
+                    UserPIICombined.country != '',
+                    ~UserPIICombined.country.ilike('%India%')
                 )
             apac_except_india_count = apac_query.count() or 0
         except Exception as e:
@@ -496,17 +508,17 @@ def _fetch_summary_data(period):
         top_india_city_count = None
         try:
             india_state_query = db.session.query(
-                UserPII.state,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.state,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.ilike('%India%'),
-                UserPII.state.isnot(None),
-                UserPII.state != ''
+                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.state.isnot(None),
+                UserPIICombined.state != ''
             )
             if date_cond is not None:
                 india_state_query = india_state_query.filter(date_cond)
             top_india_state_result = india_state_query.group_by(
-                UserPII.state
+                UserPIICombined.state
             ).order_by(desc('count')).first()
             if top_india_state_result:
                 top_india_state = top_india_state_result[0]
@@ -514,17 +526,17 @@ def _fetch_summary_data(period):
                 top_india_state_count = top_india_state_result[1]
             
             india_city_query = db.session.query(
-                UserPII.city,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.city,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.ilike('%India%'),
-                UserPII.city.isnot(None),
-                UserPII.city != ''
+                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.city.isnot(None),
+                UserPIICombined.city != ''
             )
             if date_cond is not None:
                 india_city_query = india_city_query.filter(date_cond)
             top_india_city_result = india_city_query.group_by(
-                UserPII.city
+                UserPIICombined.city
             ).order_by(desc('count')).first()
             if top_india_city_result:
                 top_india_city = top_india_city_result[0]
@@ -541,21 +553,21 @@ def _fetch_summary_data(period):
         top_apac_country_count = None
         try:
             # Filter for APAC countries (case-insensitive), excluding India
-            apac_conditions = [UserPII.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
+            apac_conditions = [UserPIICombined.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
             apac_country_query = db.session.query(
-                UserPII.country,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.country,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                ~UserPII.country.ilike('%India%')
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~UserPIICombined.country.ilike('%India%')
             )
             if apac_conditions:
                 apac_country_query = apac_country_query.filter(or_(*apac_conditions))
             if date_cond is not None:
                 apac_country_query = apac_country_query.filter(date_cond)
             top_apac_country_result = apac_country_query.group_by(
-                UserPII.country
+                UserPIICombined.country
             ).order_by(desc('count')).first()
             if top_apac_country_result:
                 top_apac_country = top_apac_country_result[0]
@@ -580,24 +592,24 @@ def _fetch_summary_data(period):
                 ('anz', ANZ_COUNTRIES),
                 ('east_asia', EAST_ASIA_COUNTRIES)
             ]:
-                conds = [UserPII.country.ilike(f'%{c}%') for c in countries]
+                conds = [UserPIICombined.country.ilike(f'%{c}%') for c in countries]
                 region_query = base_query.filter(
-                    UserPII.country.isnot(None),
-                    UserPII.country != '',
+                    UserPIICombined.country.isnot(None),
+                    UserPIICombined.country != '',
                     or_(*conds)
                 )
                 count = region_query.count() or 0
                 top_q = db.session.query(
-                    UserPII.country,
-                    func.count(UserPII.id).label('count')
+                    UserPIICombined.country,
+                    func.count(UserPIICombined.id).label('count')
                 ).filter(
-                    UserPII.country.isnot(None),
-                    UserPII.country != '',
+                    UserPIICombined.country.isnot(None),
+                    UserPIICombined.country != '',
                     or_(*conds)
                 )
                 if date_cond is not None:
                     top_q = top_q.filter(date_cond)
-                top_result = top_q.group_by(UserPII.country).order_by(desc('count')).first()
+                top_result = top_q.group_by(UserPIICombined.country).order_by(desc('count')).first()
                 top_country = top_result[0] if top_result else None
                 if region_name == 'sea':
                     sea_registrations = count
@@ -615,9 +627,9 @@ def _fetch_summary_data(period):
         india_registrations = 0
         try:
             india_query = base_query.filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                UserPII.country.ilike('%India%')
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                UserPIICombined.country.ilike('%India%')
             )
             india_registrations = india_query.count() or 0
         except Exception as e:
@@ -631,16 +643,16 @@ def _fetch_summary_data(period):
         prev_cond = _previous_period_filter(prev_start, current_start) if prev_start and current_start else None
         if prev_cond is not None:
             try:
-                prev_total_users = UserPII.query.filter(prev_cond).count() or 0
+                prev_total_users = UserPIICombined.query.filter(prev_cond).count() or 0
             except Exception:
                 prev_total_users = 0
             try:
-                apac_conditions = [UserPII.country.ilike(f'%{c}%') for c in APAC_COUNTRIES]
-                prev_apac_q = UserPII.query.filter(
+                apac_conditions = [UserPIICombined.country.ilike(f'%{c}%') for c in APAC_COUNTRIES]
+                prev_apac_q = UserPIICombined.query.filter(
                     prev_cond,
-                    UserPII.country.isnot(None),
-                    UserPII.country != '',
-                    ~UserPII.country.ilike('%India%')
+                    UserPIICombined.country.isnot(None),
+                    UserPIICombined.country != '',
+                    ~UserPIICombined.country.ilike('%India%')
                 )
                 if apac_conditions:
                     prev_apac_q = prev_apac_q.filter(or_(*apac_conditions))
@@ -650,8 +662,8 @@ def _fetch_summary_data(period):
             try:
                 today = datetime.now().date()
                 prev_age_q = db.session.query(
-                    func.avg(func.extract('year', func.age(today, UserPII.date_of_birth)))
-                ).filter(UserPII.date_of_birth.isnot(None)).filter(prev_cond)
+                    func.avg(func.extract('year', func.age(today, UserPIICombined.date_of_birth)))
+                ).filter(UserPIICombined.date_of_birth.isnot(None)).filter(prev_cond)
                 prev_avg_result = prev_age_q.scalar()
                 prev_avg_age = int(prev_avg_result) if prev_avg_result else None
             except Exception:
@@ -701,7 +713,7 @@ def _fetch_summary_data(period):
                     winners.append({'email': email, 'completed_at': completion_at, 'leader_name': leader_name})
             winners.sort(key=lambda x: x['completed_at'])
             for w in winners[:5]:
-                pii = UserPII.query.filter_by(email=w['email']).first()
+                pii = UserPIICombined.query.filter_by(email=w['email']).first()
                 name = (pii.name if pii and pii.name else w.get('leader_name')) or w['email']
                 optional_mcq_top5_winners.append({
                     'name': name,
@@ -746,6 +758,9 @@ def _fetch_summary_data(period):
             'total_skilllab_submissions': total_skilllab_submissions,
             'verified_skilllab_submissions': verified_skilllab_submissions,
             'skilllab_submission_verification_rate': skilllab_submission_verification_rate,
+            'total_codelab_submissions': total_codelab_submissions,
+            'verified_codelab_submissions': verified_codelab_submissions,
+            'codelab_submission_verification_rate': codelab_submission_verification_rate,
             'optional_mcq_by_track': optional_mcq_by_track,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
@@ -784,6 +799,9 @@ def _fetch_summary_data(period):
             'total_skilllab_submissions': 0,
             'verified_skilllab_submissions': 0,
             'skilllab_submission_verification_rate': None,
+            'total_codelab_submissions': 0,
+            'verified_codelab_submissions': 0,
+            'codelab_submission_verification_rate': None,
             'optional_mcq_by_track': [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)],
             'optional_mcq_top5_winners': [],
             'previous_period_total_users': None,
@@ -799,17 +817,17 @@ def get_widget_stats():
     try:
         # Get today's signups
         today = datetime.now().date()
-        today_signups = UserPII.query.filter(
-            func.date(UserPII.registered_at) == today
+        today_signups = UserPIICombined.query.filter(
+            func.date(UserPIICombined.registered_at) == today
         ).count() or 0
         
         # Get total users
-        total_users = UserPII.query.count() or 0
+        total_users = UserPIICombined.query.count() or 0
         
         # Get active users (registered in last 30 days)
         active_cutoff = datetime.now() - timedelta(days=30)
-        active_users = UserPII.query.filter(
-            UserPII.registered_at >= active_cutoff
+        active_users = UserPIICombined.query.filter(
+            UserPIICombined.registered_at >= active_cutoff
         ).count() or 0
         
         return jsonify({
@@ -891,7 +909,7 @@ def _fetch_charts_data(period, summary=None):
         cutoff_date = _get_period_dates(period)
         date_cond = _date_filter_condition(cutoff_date)
         
-        base_query = UserPII.query
+        base_query = UserPIICombined.query
         if date_cond is not None:
             base_query = base_query.filter(date_cond)
         
@@ -899,16 +917,16 @@ def _fetch_charts_data(period, summary=None):
         gender_distribution = []
         try:
             gender_query = db.session.query(
-                UserPII.gender,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.gender,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.gender.isnot(None),
-                UserPII.gender != ''
+                UserPIICombined.gender.isnot(None),
+                UserPIICombined.gender != ''
             )
             if date_cond is not None:
                 gender_query = gender_query.filter(date_cond)
             gender_data = gender_query.group_by(
-                UserPII.gender
+                UserPIICombined.gender
             ).all()
             gender_distribution = [{'label': g[0], 'value': g[1]} for g in gender_data]
         except:
@@ -918,12 +936,12 @@ def _fetch_charts_data(period, summary=None):
         registration_source_bifurcation = []
         try:
             utm_query = db.session.query(
-                UserPII.utm_medium,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.utm_medium,
+                func.count(UserPIICombined.id).label('count')
             )
             if date_cond is not None:
                 utm_query = utm_query.filter(date_cond)
-            utm_query = utm_query.group_by(UserPII.utm_medium).all()
+            utm_query = utm_query.group_by(UserPIICombined.utm_medium).all()
             agg = {'Google': 0, 'Outreach': 0, 'Marketing': 0, 'Ads': 0, 'Hack2skill': 0, 'Other': 0}
             for utm_val, cnt in utm_query:
                 label = _utm_to_registration_source(utm_val)
@@ -947,16 +965,16 @@ def _fetch_charts_data(period, summary=None):
         top_domains_data = []
         try:
             domains_query = db.session.query(
-                UserPII.domain,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.domain,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.domain.isnot(None),
-                UserPII.domain != ''
+                UserPIICombined.domain.isnot(None),
+                UserPIICombined.domain != ''
             )
             if date_cond is not None:
                 domains_query = domains_query.filter(date_cond)
             top_domains = domains_query.group_by(
-                UserPII.domain
+                UserPIICombined.domain
             ).order_by(desc('count')).limit(10).all()
             top_domains_data = [{'label': d[0], 'value': d[1]} for d in top_domains]
         except:
@@ -966,16 +984,16 @@ def _fetch_charts_data(period, summary=None):
         top_cities_data = []
         try:
             cities_query = db.session.query(
-                UserPII.city,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.city,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.city.isnot(None),
-                UserPII.city != ''
+                UserPIICombined.city.isnot(None),
+                UserPIICombined.city != ''
             )
             if date_cond is not None:
                 cities_query = cities_query.filter(date_cond)
             top_cities = cities_query.group_by(
-                UserPII.city
+                UserPIICombined.city
             ).order_by(desc('count')).limit(10).all()
             top_cities_data = [{'label': c[0], 'value': c[1]} for c in top_cities]
         except:
@@ -985,21 +1003,21 @@ def _fetch_charts_data(period, summary=None):
         top_cities_outside_india_data = []
         try:
             cities_outside_query = db.session.query(
-                UserPII.city,
-                UserPII.country,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.city,
+                UserPIICombined.country,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.city.isnot(None),
-                UserPII.city != '',
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                ~UserPII.country.ilike('%India%')
+                UserPIICombined.city.isnot(None),
+                UserPIICombined.city != '',
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~UserPIICombined.country.ilike('%India%')
             )
             if date_cond is not None:
                 cities_outside_query = cities_outside_query.filter(date_cond)
             cities_outside = cities_outside_query.group_by(
-                UserPII.city,
-                UserPII.country
+                UserPIICombined.city,
+                UserPIICombined.country
             ).order_by(desc('count')).limit(10).all()
             top_cities_outside_india_data = [
                 {'label': f'{c[0]} ({c[1]})', 'value': c[2]}
@@ -1012,16 +1030,16 @@ def _fetch_charts_data(period, summary=None):
         top_states_data = []
         try:
             states_query = db.session.query(
-                UserPII.state,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.state,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.state.isnot(None),
-                UserPII.state != ''
+                UserPIICombined.state.isnot(None),
+                UserPIICombined.state != ''
             )
             if date_cond is not None:
                 states_query = states_query.filter(date_cond)
             top_states = states_query.group_by(
-                UserPII.state
+                UserPIICombined.state
             ).order_by(desc('count')).limit(10).all()
             top_states_data = [{'label': s[0], 'value': s[1]} for s in top_states]
         except:
@@ -1031,16 +1049,16 @@ def _fetch_charts_data(period, summary=None):
         country_distribution = []
         try:
             countries_query = db.session.query(
-                UserPII.country,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.country,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != ''
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != ''
             )
             if date_cond is not None:
                 countries_query = countries_query.filter(date_cond)
             countries = countries_query.group_by(
-                UserPII.country
+                UserPIICombined.country
             ).order_by(desc('count')).limit(10).all()
             country_distribution = [{'label': c[0], 'value': c[1]} for c in countries]
         except:
@@ -1050,27 +1068,27 @@ def _fetch_charts_data(period, summary=None):
         top_organizations_data = []
         try:
             occupation_filter = or_(
-                UserPII.occupation.ilike('%professional%'),
-                UserPII.occupation.ilike('%startup%'),
-                UserPII.occupation.ilike('%freelance%')
+                UserPIICombined.occupation.ilike('%professional%'),
+                UserPIICombined.occupation.ilike('%startup%'),
+                UserPIICombined.occupation.ilike('%freelance%')
             )
             exclude_na = ~or_(
-                func.lower(func.trim(UserPII.organization_name)) == 'na',
-                func.lower(func.trim(UserPII.organization_name)) == 'n/a'
+                func.lower(func.trim(UserPIICombined.organization_name)) == 'na',
+                func.lower(func.trim(UserPIICombined.organization_name)) == 'n/a'
             )
             orgs_query = db.session.query(
-                UserPII.organization_name,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.organization_name,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.organization_name.isnot(None),
-                UserPII.organization_name != '',
+                UserPIICombined.organization_name.isnot(None),
+                UserPIICombined.organization_name != '',
                 occupation_filter,
                 exclude_na
             )
             if date_cond is not None:
                 orgs_query = orgs_query.filter(date_cond)
             top_orgs = orgs_query.group_by(
-                UserPII.organization_name
+                UserPIICombined.organization_name
             ).order_by(desc('count')).limit(10).all()
             top_organizations_data = [{'label': o[0], 'value': o[1]} for o in top_orgs]
         except Exception:
@@ -1080,16 +1098,16 @@ def _fetch_charts_data(period, summary=None):
         class_stream_data = []
         try:
             streams_query = db.session.query(
-                UserPII.class_stream,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.class_stream,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.class_stream.isnot(None),
-                UserPII.class_stream != ''
+                UserPIICombined.class_stream.isnot(None),
+                UserPIICombined.class_stream != ''
             )
             if date_cond is not None:
                 streams_query = streams_query.filter(date_cond)
             streams = streams_query.group_by(
-                UserPII.class_stream
+                UserPIICombined.class_stream
             ).order_by(desc('count')).all()
             class_stream_data = [{'label': s[0], 'value': s[1]} for s in streams]
         except:
@@ -1099,16 +1117,16 @@ def _fetch_charts_data(period, summary=None):
         designation_data = []
         try:
             designation_query = db.session.query(
-                UserPII.designation,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.designation,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.designation.isnot(None),
-                UserPII.designation != ''
+                UserPIICombined.designation.isnot(None),
+                UserPIICombined.designation != ''
             )
             if date_cond is not None:
                 designation_query = designation_query.filter(date_cond)
             designations = designation_query.group_by(
-                UserPII.designation
+                UserPIICombined.designation
             ).order_by(desc('count')).limit(10).all()
             designation_data = [{'label': d[0], 'value': d[1]} for d in designations]
         except:
@@ -1118,16 +1136,16 @@ def _fetch_charts_data(period, summary=None):
         occupation_data = []
         try:
             occupation_query = db.session.query(
-                UserPII.occupation,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.occupation,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.occupation.isnot(None),
-                UserPII.occupation != ''
+                UserPIICombined.occupation.isnot(None),
+                UserPIICombined.occupation != ''
             )
             if date_cond is not None:
                 occupation_query = occupation_query.filter(date_cond)
             occupations = occupation_query.group_by(
-                UserPII.occupation
+                UserPIICombined.occupation
             ).order_by(desc('count')).limit(10).all()
             occupation_data = [{'label': o[0], 'value': o[1]} for o in occupations]
         except:
@@ -1139,7 +1157,7 @@ def _fetch_charts_data(period, summary=None):
             today = datetime.now().date()
             
             # Use SQL CASE to calculate age groups directly in database
-            age_expr = func.extract('year', func.age(today, UserPII.date_of_birth))
+            age_expr = func.extract('year', func.age(today, UserPIICombined.date_of_birth))
             age_group_expr = case(
                 (age_expr.between(18, 25), '18-25'),
                 (age_expr.between(26, 35), '26-35'),
@@ -1151,9 +1169,9 @@ def _fetch_charts_data(period, summary=None):
             
             age_query = db.session.query(
                 age_group_expr.label('age_group'),
-                func.count(UserPII.id).label('count')
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.date_of_birth.isnot(None),
+                UserPIICombined.date_of_birth.isnot(None),
                 age_expr >= 18  # Only count adults
             )
             if date_cond is not None:
@@ -1166,8 +1184,8 @@ def _fetch_charts_data(period, summary=None):
             try:
                 print(f"SQL age calculation failed, using fallback: {e}")
                 today = datetime.now().date()
-                dob_query = UserPII.query.filter(
-                    UserPII.date_of_birth.isnot(None)
+                dob_query = UserPIICombined.query.filter(
+                    UserPIICombined.date_of_birth.isnot(None)
                 )
                 if date_cond is not None:
                     dob_query = dob_query.filter(date_cond)
@@ -1218,13 +1236,13 @@ def _fetch_charts_data(period, summary=None):
                     start_date = datetime(now.year - 1, 1, 15)
             # Use date_trunc for PostgreSQL compatibility, filter out NULL registered_at
             trends = db.session.query(
-                func.date_trunc('day', UserPII.registered_at).label('date'),
-                func.count(UserPII.id).label('count')
+                func.date_trunc('day', UserPIICombined.registered_at).label('date'),
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.registered_at.isnot(None),
-                UserPII.registered_at >= start_date
+                UserPIICombined.registered_at.isnot(None),
+                UserPIICombined.registered_at >= start_date
             ).group_by(
-                func.date_trunc('day', UserPII.registered_at)
+                func.date_trunc('day', UserPIICombined.registered_at)
             ).order_by('date').all()
             
             # Create a complete date range to fill in missing days with 0
@@ -1258,27 +1276,27 @@ def _fetch_charts_data(period, summary=None):
         # Social media presence
         social_media_data = []
         try:
-            github_query = UserPII.query.filter(
-                UserPII.github_url.isnot(None),
-                UserPII.github_url != ''
+            github_query = UserPIICombined.query.filter(
+                UserPIICombined.github_url.isnot(None),
+                UserPIICombined.github_url != ''
             )
             if date_cond is not None:
                 github_query = github_query.filter(date_cond)
             github_count = github_query.count() or 0
             
-            linkedin_query = UserPII.query.filter(
-                UserPII.linkedin_url.isnot(None),
-                UserPII.linkedin_url != ''
+            linkedin_query = UserPIICombined.query.filter(
+                UserPIICombined.linkedin_url.isnot(None),
+                UserPIICombined.linkedin_url != ''
             )
             if date_cond is not None:
                 linkedin_query = linkedin_query.filter(date_cond)
             linkedin_count = linkedin_query.count() or 0
             
-            both_query = UserPII.query.filter(
-                UserPII.github_url.isnot(None),
-                UserPII.github_url != '',
-                UserPII.linkedin_url.isnot(None),
-                UserPII.linkedin_url != ''
+            both_query = UserPIICombined.query.filter(
+                UserPIICombined.github_url.isnot(None),
+                UserPIICombined.github_url != '',
+                UserPIICombined.linkedin_url.isnot(None),
+                UserPIICombined.linkedin_url != ''
             )
             if date_cond is not None:
                 both_query = both_query.filter(date_cond)
@@ -1307,16 +1325,16 @@ def _fetch_charts_data(period, summary=None):
         india_state_registrations = []
         try:
             india_state_query = db.session.query(
-                UserPII.state,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.state,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.ilike('%India%'),
-                UserPII.state.isnot(None),
-                UserPII.state != ''
+                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.state.isnot(None),
+                UserPIICombined.state != ''
             )
             if date_cond is not None:
                 india_state_query = india_state_query.filter(date_cond)
-            india_states = india_state_query.group_by(UserPII.state).order_by(desc('count')).all()
+            india_states = india_state_query.group_by(UserPIICombined.state).order_by(desc('count')).all()
             india_state_registrations = [{'state': s[0], 'value': s[1]} for s in india_states]
         except Exception:
             india_state_registrations = []
@@ -1331,20 +1349,20 @@ def _fetch_charts_data(period, summary=None):
                 'Papua New Guinea', 'Philippines', 'Singapore', 'South Korea', 'Sri Lanka',
                 'Taiwan', 'Thailand', 'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
             ]
-            apac_conditions = [UserPII.country.ilike(f'%{c}%') for c in APAC_FOR_MAP_EXCL_INDIA]
+            apac_conditions = [UserPIICombined.country.ilike(f'%{c}%') for c in APAC_FOR_MAP_EXCL_INDIA]
             apac_country_query = db.session.query(
-                UserPII.country,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.country,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                ~UserPII.country.ilike('%India%')
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~UserPIICombined.country.ilike('%India%')
             )
             if apac_conditions:
                 apac_country_query = apac_country_query.filter(or_(*apac_conditions))
             if date_cond is not None:
                 apac_country_query = apac_country_query.filter(date_cond)
-            apac_countries = apac_country_query.group_by(UserPII.country).order_by(desc('count')).all()
+            apac_countries = apac_country_query.group_by(UserPIICombined.country).order_by(desc('count')).all()
             apac_country_registrations = [{'country': c[0], 'value': c[1]} for c in apac_countries]
         except Exception:
             apac_country_registrations = []

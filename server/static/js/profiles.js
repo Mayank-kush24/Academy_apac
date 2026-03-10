@@ -73,6 +73,39 @@ function getSkillLabTrackCell(submissions, trackLabel) {
     return html;
 }
 
+/**
+ * Generate HTML for a Code Lab track cell in the Track Progress table.
+ * Uses track_number (int) to group submissions per track.
+ * Shows aggregated status across labs within that track.
+ */
+function getCodeLabTrackCell(submissions, trackLabel) {
+    if (!submissions || submissions.length === 0) return '';
+    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    if (!trackNum) return '';
+    var matches = submissions.filter(function(s) { return s.track_number === trackNum; });
+    if (matches.length === 0) return '';
+    var validCount = matches.filter(function(s) { return s.valid; }).length;
+    var invalidCount = matches.filter(function(s) { return !s.valid && s.remark && s.remark.trim(); }).length;
+    var pendingCount = matches.length - validCount - invalidCount;
+    var parts = [];
+    if (validCount > 0) parts.push('<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> ' + validCount + ' Valid</span>');
+    if (invalidCount > 0) parts.push('<span style="color:#ef4444;font-weight:600;"><i class="fas fa-times-circle"></i> ' + invalidCount + ' Not Valid</span>');
+    if (pendingCount > 0) parts.push('<span style="color:#999;font-size:0.8rem;">' + pendingCount + ' Pending</span>');
+    return parts.join('<br>');
+}
+
+/**
+ * Webinar is auto-valid for a track if any Code Lab submission exists for that track.
+ */
+function getWebinarTrackCell(codelabSubmissions, trackLabel) {
+    if (!codelabSubmissions || codelabSubmissions.length === 0) return '';
+    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    if (!trackNum) return '';
+    var hasSubmission = codelabSubmissions.some(function(s) { return s.track_number === trackNum; });
+    if (!hasSubmission) return '';
+    return '<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> Valid</span>';
+}
+
 function getOptionalMcqTrackCell(scores, trackLabel) {
     if (!scores || scores.length === 0) return '';
     var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
@@ -235,6 +268,7 @@ window.viewProfileDetails = function(profileId) {
         console.log('Profile data:', profile);
         const skillboost_profiles = data.skillboost_profiles || [];
         const skilllab_submissions = data.skilllab_submissions || [];
+        const codelab_submissions = data.codelab_submissions || [];
         const optional_mcq_scores = data.optional_mcq_scores || [];
         
         // Populate modal
@@ -406,10 +440,10 @@ window.viewProfileDetails = function(profileId) {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
                         </tbody>
@@ -841,6 +875,7 @@ async function viewProfileDetails(profileId) {
         const profile = data.profile;
         const skillboost_profiles = data.skillboost_profiles || [];
         const skilllab_submissions = data.skilllab_submissions || [];
+        const codelab_submissions = data.codelab_submissions || [];
         const optional_mcq_scores = data.optional_mcq_scores || [];
         
         if (!profile) {
@@ -1015,10 +1050,10 @@ async function viewProfileDetails(profileId) {
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
                             <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
                         </tbody>

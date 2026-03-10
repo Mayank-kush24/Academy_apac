@@ -611,6 +611,11 @@ async function runSkillboostPreview(file) {
                     html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Optional MCQ Track ' + m.track + '</strong>: Sheet &quot;' + escapeHtml(m.sheet_name || '') + '&quot; with <strong>' + (m.rows || 0).toLocaleString() + '</strong> row(s).';
                 });
             }
+            if (data.lab_completion_sheets && data.lab_completion_sheets.length > 0) {
+                data.lab_completion_sheets.forEach(function(lc) {
+                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Lab Completion ' + lc.lab + ' Track ' + lc.track + '</strong>: Sheet &quot;' + escapeHtml(lc.sheet_name || '') + '&quot; with <strong>' + (lc.rows || 0).toLocaleString() + '</strong> row(s).';
+                });
+            }
             previewResultEl.innerHTML = html;
         }
         previewResultEl.style.display = 'block';
@@ -708,6 +713,24 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
                     msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> MCQ Track ' + e.track + ' error: ' + escapeHtml(e.error) + '</div>';
                 });
             }
+            if (data.lab_completions && data.lab_completions.length > 0) {
+                data.lab_completions.forEach(function(lc) {
+                    if (lc.error) {
+                        msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Lab ' + lc.lab + ' Track ' + lc.track + ' error: ' + escapeHtml(lc.error) + '</div>';
+                    } else {
+                        msgHtml += '<div style="margin-top: 8px;"><i class="fas fa-code" style="color: #0ea5e9;"></i> <strong>Lab Completion ' + lc.lab + ' Track ' + lc.track + '</strong> (sheet: ' + escapeHtml(lc.sheet_name || '') + '): ' +
+                            (lc.created || 0) + ' created, ' + (lc.updated || 0) + ' updated, ' + (lc.skipped || 0) + ' skipped.</div>';
+                    }
+                });
+            }
+            if (data.codelab_submission) {
+                var cls = data.codelab_submission;
+                msgHtml += '<div style="margin-top: 8px;"><i class="fas fa-code" style="color: #0ea5e9;"></i> <strong>Code Lab Submissions</strong> (sheet: ' + escapeHtml(cls.sheet_name || '') + '): ' +
+                    (cls.created || 0) + ' created, ' + (cls.updated || 0) + ' updated, ' + (cls.skipped || 0) + ' skipped.</div>';
+            }
+            if (data.codelab_submission_error) {
+                msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Code Lab Submission error: ' + escapeHtml(data.codelab_submission_error) + '</div>';
+            }
             successEl.innerHTML = msgHtml;
             successEl.style.display = 'block';
         }
@@ -722,6 +745,16 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
                     allErrors = allErrors.concat(m.errors.map(function(e) { return '[MCQ Track ' + m.track + '] ' + e; }));
                 }
             });
+        }
+        if (data.lab_completions && data.lab_completions.length > 0) {
+            data.lab_completions.forEach(function(lc) {
+                if (lc.errors && lc.errors.length > 0) {
+                    allErrors = allErrors.concat(lc.errors.map(function(e) { return '[Lab ' + lc.lab + ' Track ' + lc.track + '] ' + e; }));
+                }
+            });
+        }
+        if (data.codelab_submission && data.codelab_submission.errors && data.codelab_submission.errors.length > 0) {
+            allErrors = allErrors.concat(data.codelab_submission.errors.map(function(e) { return '[Code Lab Submission] ' + e; }));
         }
         if (allErrors.length > 0 && errorsListEl) {
             errorsListEl.innerHTML = '<strong class="text-warning"><i class="fas fa-exclamation-triangle"></i> Import notes / errors (' + allErrors.length + '):</strong><ul class="import-errors-ul">' +

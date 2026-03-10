@@ -4,7 +4,7 @@ Excel parsing and field mapping utilities
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.exc import DataError, IntegrityError
-from server.models import UserPII, SkillboostProfile, SkillLabSubmission, OptionalMcqResponse
+from server.models import UserPII, UserPIIInjected, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, OptionalMcqResponse
 
 
 # Substring to auto-detect Skill Lab / Google Skills Boost sheet (case-insensitive)
@@ -12,6 +12,19 @@ SKILLBOOST_SHEET_SUBSTRING = "Share your Google Skills Pu"
 
 # Substring to auto-detect Skill Lab Submission sheet (case-insensitive)
 SKILLLAB_SUBMISSION_SHEET_SUBSTRING = "Google Skills Lab Submissio"
+
+# Substring to auto-detect Code Lab Submission sheet (case-insensitive)
+CODELAB_SUBMISSION_SHEET_SUBSTRING = "Code Lab Submissio"
+
+# Substrings to auto-detect Lab Completion sheets (Lab 1 & Lab 2, Track 1-3)
+LAB_COMPLETION_SHEET_SUBSTRINGS = [
+    {'substring': 'Lab Completion 1 Track 1', 'lab': 1, 'track': 1},
+    {'substring': 'Lab Completion 1 Track 2', 'lab': 1, 'track': 2},
+    {'substring': 'Lab Completion 1 Track 3', 'lab': 1, 'track': 3},
+    {'substring': 'Lab Completion 2 Track 1', 'lab': 2, 'track': 1},
+    {'substring': 'Lab Completion 2 Track 2', 'lab': 2, 'track': 2},
+    {'substring': 'Lab Completion 2 Track 3', 'lab': 2, 'track': 3},
+]
 
 # Substrings to auto-detect Optional MCQ sheets (Track 1, 2, 3)
 MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING = "MCQ Optional Track 1  Agent"
@@ -117,6 +130,22 @@ def get_skillboost_preview(file_path):
                     'track': track,
                     'sheet_name': mcq_sheet,
                     'rows': len(mcq_df) if mcq_df is not None else 0,
+                })
+    except Exception:
+        pass
+
+    # Detect Lab Completion sheets (Lab 1/2 x Track 1/2/3)
+    result['lab_completion_sheets'] = []
+    try:
+        for lc_info in LAB_COMPLETION_SHEET_SUBSTRINGS:
+            lc_sheet = find_sheet_by_substring(file_path, lc_info['substring'])
+            if lc_sheet:
+                lc_df = parse_excel_sheet(file_path, lc_sheet)
+                result['lab_completion_sheets'].append({
+                    'lab': lc_info['lab'],
+                    'track': lc_info['track'],
+                    'sheet_name': lc_sheet,
+                    'rows': len(lc_df) if lc_df is not None else 0,
                 })
     except Exception:
         pass
@@ -681,6 +710,294 @@ def import_data(df, mappings, mode='create', progress_callback=None):
     }
 
 
+def import_data_injected(df, mappings, mode='create', progress_callback=None):
+    """
+    Import data into user_pii_injected table. Same logic as import_data but targets UserPIIInjected.
+    Does not run recalculate_bob_match.
+    """
+    from server.models import db
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    def report_progress():
+        if progress_callback:
+            try:
+                progress_callback(created, updated, skipped)
+            except Exception:
+                pass
+
+    active_mappings = {k: v for k, v in mappings.items() if v is not None}
+    BATCH_SIZE = 1000
+    PROGRESS_INTERVAL = 100
+
+    # Only default registered_at to now() when no column is mapped to it
+    has_registered_at_mapping = 'registered_at' in active_mappings.values()
+
+    existing_emails_set = set()
+    CHUNK_SIZE = 20000
+    try:
+        offset = 0
+        while True:
+            chunk = db.session.query(UserPIIInjected.email).limit(CHUNK_SIZE).offset(offset).all()
+            if not chunk:
+                break
+            existing_emails_set.update(e[0] for e in chunk if e[0])
+            if len(chunk) < CHUNK_SIZE:
+                break
+            offset += CHUNK_SIZE
+    except Exception:
+        existing_emails_set = set()
+
+    records_to_insert = []
+    records_to_update = []
+    processed_emails_in_batch = set()
+    last_reported = 0
+
+    for index, row in df.iterrows():
+        try:
+            data = {}
+            for excel_col, db_field in active_mappings.items():
+                if excel_col in row:
+                    value = row[excel_col]
+                    if pd.isna(value):
+                        value = None
+                    elif db_field == 'date_of_birth':
+                        value = parse_date(value)
+                    elif db_field == 'registered_at':
+                        value = parse_date(value)
+                        if value:
+                            from datetime import datetime
+                            value = datetime.combine(value, datetime.min.time())
+                    else:
+                        value = str(value).strip() if value else None
+                    data[db_field] = value
+
+            truncate_record_strings(data)
+            if not data.get('email'):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing email")
+                continue
+            if not (data.get('name') and str(data.get('name')).strip()):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing name")
+                continue
+            # Only default to today when no column was mapped to registered_at
+            if not data.get('registered_at') and not has_registered_at_mapping:
+                from datetime import datetime as _dt
+                data['registered_at'] = _dt.now()
+
+            email = data['email']
+            if email in processed_emails_in_batch:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Duplicate email in file")
+                continue
+            processed_emails_in_batch.add(email)
+
+            if mode == 'create':
+                if email in existing_emails_set:
+                    skipped += 1
+                    if len(errors) < 100:
+                        errors.append(f"Row {index + 2}: Email already exists")
+                    continue
+                records_to_insert.append(data)
+                created += 1
+            elif mode == 'create_update':
+                if email in existing_emails_set:
+                    records_to_update.append((email, data))
+                    updated += 1
+                else:
+                    records_to_insert.append(data)
+                    created += 1
+                    existing_emails_set.add(email)
+            elif mode == 'update_only':
+                if email in existing_emails_set:
+                    records_to_update.append((email, data))
+                    updated += 1
+                else:
+                    skipped += 1
+                    if len(errors) < 100:
+                        errors.append(f"Row {index + 2}: Email not found")
+                    continue
+
+            if len(records_to_insert) >= BATCH_SIZE:
+                try:
+                    if mode == 'create_update':
+                        batch_ok = True
+                        first_conflict_email = None
+                        for record in records_to_insert:
+                            try:
+                                user = UserPIIInjected(**record)
+                                db.session.add(user)
+                                db.session.flush()
+                            except Exception as insert_error:
+                                db.session.rollback()
+                                batch_ok = False
+                                first_conflict_email = record.get('email')
+                                if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
+                                    existing_user = UserPIIInjected.query.filter_by(email=first_conflict_email).first()
+                                    if existing_user:
+                                        for key, value in record.items():
+                                            setattr(existing_user, key, value)
+                                        db.session.commit()
+                                        updated += 1
+                                        created -= 1
+                                    else:
+                                        if len(errors) < 100:
+                                            errors.append(f"Row: {first_conflict_email} - {str(insert_error)}")
+                                else:
+                                    if len(errors) < 100:
+                                        errors.append(f"Insert error {first_conflict_email}: {str(insert_error)}")
+                                break
+                        if batch_ok:
+                            db.session.commit()
+                            records_to_insert = []
+                        else:
+                            for record in records_to_insert:
+                                if record.get('email') == first_conflict_email:
+                                    continue
+                                try:
+                                    user = UserPIIInjected(**record)
+                                    db.session.add(user)
+                                    db.session.flush()
+                                    db.session.commit()
+                                    created += 1
+                                except Exception as insert_error:
+                                    db.session.rollback()
+                                    if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
+                                        existing_user = UserPIIInjected.query.filter_by(email=record.get('email')).first()
+                                        if existing_user:
+                                            for key, value in record.items():
+                                                setattr(existing_user, key, value)
+                                            db.session.commit()
+                                            updated += 1
+                                            created -= 1
+                                        else:
+                                            if len(errors) < 100:
+                                                errors.append(f"Row: {record.get('email')} - {str(insert_error)}")
+                                    else:
+                                        if len(errors) < 100:
+                                            errors.append(f"Insert error {record.get('email')}: {str(insert_error)}")
+                            records_to_insert = []
+                    else:
+                        for record in records_to_insert:
+                            user = UserPIIInjected(**record)
+                            db.session.add(user)
+                        db.session.commit()
+                        records_to_insert = []
+                except Exception as e:
+                    db.session.rollback()
+                    if len(errors) < 100:
+                        errors.append(f"Batch insert error: {str(e)}")
+
+            if len(records_to_update) >= BATCH_SIZE:
+                try:
+                    emails_batch = [e for e, _ in records_to_update]
+                    users_map = {u.email: u for u in UserPIIInjected.query.filter(UserPIIInjected.email.in_(emails_batch)).all()}
+                    for update_email, update_data in records_to_update:
+                        existing_user = users_map.get(update_email)
+                        if existing_user:
+                            for key, value in update_data.items():
+                                setattr(existing_user, key, value)
+                    db.session.commit()
+                    records_to_update = []
+                except Exception as e:
+                    db.session.rollback()
+                    if len(errors) < 100:
+                        errors.append(f"Batch update error: {str(e)}")
+
+            processed = created + updated + skipped
+            if processed - last_reported >= PROGRESS_INTERVAL:
+                last_reported = processed
+                report_progress()
+        except Exception as e:
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        if records_to_insert:
+            if mode == 'create_update':
+                for record in records_to_insert:
+                    try:
+                        user = UserPIIInjected(**record)
+                        db.session.add(user)
+                        db.session.flush()
+                        db.session.commit()
+                    except Exception as insert_error:
+                        db.session.rollback()
+                        if 'unique' in str(insert_error).lower() or 'duplicate' in str(insert_error).lower():
+                            existing_user = UserPIIInjected.query.filter_by(email=record.get('email')).first()
+                            if existing_user:
+                                for key, value in record.items():
+                                    setattr(existing_user, key, value)
+                                db.session.commit()
+                                updated += 1
+                                created -= 1
+                            else:
+                                if len(errors) < 100:
+                                    errors.append(f"Row: {record.get('email')} - {str(insert_error)}")
+                        else:
+                            if len(errors) < 100:
+                                errors.append(f"Insert error {record.get('email')}: {str(insert_error)}")
+            else:
+                try:
+                    for record in records_to_insert:
+                        user = UserPIIInjected(**record)
+                        db.session.add(user)
+                    db.session.commit()
+                except (DataError, IntegrityError):
+                    db.session.rollback()
+                    for record in records_to_insert:
+                        try:
+                            user = UserPIIInjected(**record)
+                            db.session.add(user)
+                            db.session.commit()
+                        except Exception as insert_error:
+                            db.session.rollback()
+                            if len(errors) < 100:
+                                errors.append(f"Row: {record.get('email', '')} - {str(insert_error)[:150]}")
+
+        if records_to_update:
+            emails_batch = [e for e, _ in records_to_update]
+            try:
+                users_map = {u.email: u for u in UserPIIInjected.query.filter(UserPIIInjected.email.in_(emails_batch)).all()}
+                for update_email, update_data in records_to_update:
+                    existing_user = users_map.get(update_email)
+                    if existing_user:
+                        for key, value in update_data.items():
+                            setattr(existing_user, key, value)
+                db.session.commit()
+            except (DataError, IntegrityError) as e:
+                db.session.rollback()
+                if len(errors) < 100:
+                    errors.append(f"Batch update failed: {str(e)[:150]}")
+    except (DataError, IntegrityError) as e:
+        db.session.rollback()
+        err_msg = str(e).split('\n')[0][:200] if str(e) else 'Database constraint or data length error'
+        if 'truncat' in str(e).lower() or 'too long' in str(e).lower() or 'overflow' in str(e).lower():
+            err_msg = 'One or more values exceed column max length.'
+        raise Exception(err_msg)
+    except Exception as e:
+        db.session.rollback()
+        raise Exception(f"Database error: {str(e)}")
+
+    report_progress()
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100]
+    }
+
+
 def import_skillboost_profile(df, email_col, profile_link_col, progress_callback=None):
     """
     Import Skill Lab / Google Skills Boost profiles from a DataFrame into skillboost_profile.
@@ -948,6 +1265,255 @@ def import_skilllab_submission(df, progress_callback=None):
             else:
                 # Create new record
                 rec = SkillLabSubmission(**data)
+                db.session.add(rec)
+                db.session.commit()
+                existing[email] = rec
+                created += 1
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+    }
+
+
+def import_codelab_submission(df, progress_callback=None):
+    """
+    Import Code Lab submissions from a DataFrame into codelab_submission.
+    Upsert by leader_email: if a row with that leader_email exists, update it;
+    otherwise create a new row. Uses same column mapping as Skill Lab (_map_submission_columns).
+
+    Returns dict with total_rows, created, updated, skipped, errors.
+    """
+    from server.models import db
+
+    columns = list(df.columns)
+    col_map = _map_submission_columns(columns)
+    leader_email_col = _find_leader_email_column(columns)
+
+    if not leader_email_col:
+        raise Exception(
+            "Could not find a 'Leader Email' column in the Code Lab submission sheet. "
+            "Please ensure the sheet has a column named 'Leader Email'."
+        )
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    existing = {}
+    try:
+        for row in CodeLabSubmission.query.all():
+            existing[row.leader_email.lower()] = row
+    except Exception:
+        pass
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(leader_email_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing leader email")
+                continue
+            email = str(email_val).strip().lower()
+            if not email or '@' not in email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Invalid leader email")
+                continue
+
+            data = {}
+            for xlsx_col, model_field in col_map.items():
+                val = row.get(xlsx_col)
+                if pd.isna(val):
+                    val = None
+                elif model_field in ('team_size',):
+                    try:
+                        val = int(val)
+                    except (ValueError, TypeError):
+                        val = None
+                elif model_field in ('created_at', 'updated_at'):
+                    if val is not None:
+                        try:
+                            if isinstance(val, str):
+                                val = pd.to_datetime(val)
+                            elif not isinstance(val, datetime):
+                                val = pd.to_datetime(val)
+                        except Exception:
+                            val = None
+                else:
+                    val = str(val).strip() if val is not None else None
+                    if val and model_field in ('team_name', 'leader_name', 'leader_phone',
+                                                'created_by_name', 'created_by_email',
+                                                'updated_by_name', 'updated_by_email'):
+                        val = val[:255]
+                    elif val and model_field == 'upload_screenshot':
+                        val = val[:1024]
+                data[model_field] = val
+
+            data['leader_email'] = email
+
+            rec = existing.get(email)
+            if rec:
+                for field, val in data.items():
+                    if field == 'leader_email':
+                        continue
+                    if val is not None:
+                        setattr(rec, field, val)
+                rec.updated_at = datetime.utcnow()
+                db.session.commit()
+                updated += 1
+            else:
+                rec = CodeLabSubmission(**data)
+                db.session.add(rec)
+                db.session.commit()
+                existing[email] = rec
+                created += 1
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+    }
+
+
+def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=None):
+    """
+    Import a Lab Completion sheet into codelab_submission.
+    Each row needs an email column. Upsert by (leader_email, track_number, problem_statement).
+    problem_statement is set to "Lab 1" or "Lab 2" based on lab_number.
+    """
+    from server.models import db
+
+    columns = list(df.columns)
+    email_col = _find_email_column(columns)
+    if not email_col:
+        raise Exception(
+            "Could not find an Email column in the Lab Completion sheet. "
+            "Please ensure the sheet has a column named 'Email'."
+        )
+
+    # Try to find a name column
+    name_col = None
+    for col in columns:
+        if col is None:
+            continue
+        low = str(col).strip().lower()
+        if low in ('name', 'full name', 'fullname', 'leader name', 'leader_name'):
+            name_col = col
+            break
+    if not name_col:
+        for col in columns:
+            if col and 'name' in str(col).lower() and 'email' not in str(col).lower():
+                name_col = col
+                break
+
+    # Try to find an upload/file/screenshot column
+    upload_col = None
+    for col in columns:
+        if col is None:
+            continue
+        low = str(col).strip().lower()
+        if low in ('upload file', 'upload_file', 'upload', 'file', 'screenshot',
+                    'upload_screenshot', 'upload screenshot', 'file link', 'file url'):
+            upload_col = col
+            break
+    if not upload_col:
+        for col in columns:
+            if col and ('upload' in str(col).lower() or 'screenshot' in str(col).lower()):
+                upload_col = col
+                break
+
+    problem_stmt = f"Lab {lab_number}"
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    existing = {}
+    try:
+        for row in CodeLabSubmission.query.filter_by(track_number=track_number, problem_statement=problem_stmt).all():
+            existing[row.leader_email.lower()] = row
+    except Exception:
+        pass
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(email_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing email")
+                continue
+            email = str(email_val).strip().lower()
+            if not email or '@' not in email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Invalid email")
+                continue
+
+            name_val = None
+            if name_col:
+                nv = row.get(name_col)
+                if not pd.isna(nv):
+                    name_val = str(nv).strip()[:255] or None
+
+            upload_val = None
+            if upload_col:
+                uv = row.get(upload_col)
+                if not pd.isna(uv):
+                    upload_val = str(uv).strip()[:1024] or None
+
+            rec = existing.get(email)
+            if rec:
+                if name_val and not rec.leader_name:
+                    rec.leader_name = name_val
+                if upload_val:
+                    rec.upload_screenshot = upload_val
+                rec.updated_at = datetime.utcnow()
+                db.session.commit()
+                updated += 1
+            else:
+                rec = CodeLabSubmission(
+                    leader_email=email,
+                    leader_name=name_val,
+                    track_number=track_number,
+                    problem_statement=problem_stmt,
+                    upload_screenshot=upload_val,
+                )
                 db.session.add(rec)
                 db.session.commit()
                 existing[email] = rec

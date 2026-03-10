@@ -22,8 +22,12 @@ from server.utils.excel_parser import (
     _find_profile_link_column,
     import_skillboost_profile,
     import_skilllab_submission,
+    import_codelab_submission,
+    import_lab_completion_sheet,
     SKILLBOOST_SHEET_SUBSTRING,
     SKILLLAB_SUBMISSION_SHEET_SUBSTRING,
+    CODELAB_SUBMISSION_SHEET_SUBSTRING,
+    LAB_COMPLETION_SHEET_SUBSTRINGS,
 )
 from server.utils.bob_match import recalculate_bob_match, _normalize
 from server.utils.cache import clear_cache
@@ -401,6 +405,48 @@ def import_skillboost_profiles():
         except Exception as sub_err:
             submission_result = {'error': str(sub_err)}
 
+        # Also detect and import Code Lab Submission sheet (if present in same XLSX)
+        codelab_result = None
+        try:
+            codelab_sheet = find_sheet_by_substring(file_path, CODELAB_SUBMISSION_SHEET_SUBSTRING)
+            if codelab_sheet:
+                codelab_df = parse_excel_sheet(file_path, codelab_sheet)
+                if codelab_df is not None and len(codelab_df) > 0:
+                    try:
+                        from server.utils.audit import set_audit_extra
+                        set_audit_extra({"source": "codelab_submission_import", "filename": file.filename, "sheet": codelab_sheet})
+                    except Exception:
+                        pass
+                    codelab_result = import_codelab_submission(codelab_df)
+        except Exception as codelab_err:
+            codelab_result = {'error': str(codelab_err)}
+
+        # Detect and import Lab Completion sheets (Lab 1/2 x Track 1/2/3) into codelab_submission
+        lab_completion_results = []
+        for lc_info in LAB_COMPLETION_SHEET_SUBSTRINGS:
+            try:
+                lc_sheet = find_sheet_by_substring(file_path, lc_info['substring'])
+                if lc_sheet:
+                    lc_df = parse_excel_sheet(file_path, lc_sheet)
+                    if lc_df is not None and len(lc_df) > 0:
+                        try:
+                            from server.utils.audit import set_audit_extra
+                            set_audit_extra({"source": "lab_completion_import", "filename": file.filename, "sheet": lc_sheet})
+                        except Exception:
+                            pass
+                        lc_result = import_lab_completion_sheet(lc_df, track_number=lc_info['track'], lab_number=lc_info['lab'])
+                        lc_result['sheet_name'] = lc_sheet
+                        lc_result['lab'] = lc_info['lab']
+                        lc_result['track'] = lc_info['track']
+                        lab_completion_results.append(lc_result)
+            except Exception as lc_err:
+                lab_completion_results.append({
+                    'error': str(lc_err),
+                    'sheet_name': lc_info['substring'],
+                    'lab': lc_info['lab'],
+                    'track': lc_info['track'],
+                })
+
         try:
             clear_cache('_get_dashboard_data_cached')
         except Exception:
@@ -408,6 +454,16 @@ def import_skillboost_profiles():
         if submission_result and 'error' not in submission_result:
             try:
                 clear_cache('_get_skilllab_submission_stats_cached')
+            except Exception:
+                pass
+        if codelab_result and 'error' not in codelab_result:
+            try:
+                clear_cache('_get_codelab_submission_stats_cached')
+            except Exception:
+                pass
+        if lab_completion_results:
+            try:
+                clear_cache('_get_codelab_submission_stats_cached')
             except Exception:
                 pass
         try:
@@ -440,6 +496,49 @@ def import_skillboost_profiles():
                     f" | Skill Lab Submissions: {submission_result['created']} created, "
                     f"{submission_result['updated']} updated, {submission_result['skipped']} skipped."
                 )
+
+        if codelab_result:
+            if 'error' in codelab_result:
+                response['codelab_submission_error'] = codelab_result['error']
+            else:
+                response['codelab_submission'] = {
+                    'total_rows': codelab_result['total_rows'],
+                    'created': codelab_result['created'],
+                    'updated': codelab_result['updated'],
+                    'skipped': codelab_result['skipped'],
+                    'errors': codelab_result.get('errors', []),
+                    'sheet_name': codelab_sheet,
+                }
+                response['message'] += (
+                    f" | Code Lab Submissions: {codelab_result['created']} created, "
+                    f"{codelab_result['updated']} updated, {codelab_result['skipped']} skipped."
+                )
+
+        if lab_completion_results:
+            response['lab_completions'] = []
+            for lcr in lab_completion_results:
+                if 'error' in lcr:
+                    response['lab_completions'].append({
+                        'sheet_name': lcr.get('sheet_name', ''),
+                        'lab': lcr.get('lab'),
+                        'track': lcr.get('track'),
+                        'error': lcr['error'],
+                    })
+                else:
+                    response['lab_completions'].append({
+                        'sheet_name': lcr.get('sheet_name', ''),
+                        'lab': lcr.get('lab'),
+                        'track': lcr.get('track'),
+                        'total_rows': lcr['total_rows'],
+                        'created': lcr['created'],
+                        'updated': lcr['updated'],
+                        'skipped': lcr['skipped'],
+                        'errors': lcr.get('errors', []),
+                    })
+                    response['message'] += (
+                        f" | Lab {lcr['lab']} Track {lcr['track']}: {lcr['created']} created, "
+                        f"{lcr['updated']} updated, {lcr['skipped']} skipped."
+                    )
 
         return jsonify(response), 200
     except Exception as e:

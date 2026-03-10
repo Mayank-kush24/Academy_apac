@@ -4,10 +4,14 @@ Database models for Gen AI Academy APAC Edition
 from datetime import datetime
 from uuid import uuid4
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import MetaData, Table, Column
 from sqlalchemy.dialects.postgresql import UUID
 
 # SQLAlchemy instance - engine options will be applied via app config
 db = SQLAlchemy()
+
+# Separate metadata for read-only view (so db.create_all() does not create a table)
+_view_metadata = MetaData()
 
 
 class UserPII(db.Model):
@@ -60,6 +64,122 @@ class UserPII(db.Model):
             'bob_match': bool(self.bob_match),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+class UserPIIInjected(db.Model):
+    """Table for storing injected user PII (same structure as user_pii)."""
+    __tablename__ = 'user_pii_injected'
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    registered_at = db.Column(db.DateTime, nullable=True)
+    organization_name = db.Column(db.String(255), nullable=True)
+    class_stream = db.Column(db.String(255), nullable=True)
+    domain = db.Column(db.String(255), nullable=True)
+    designation = db.Column(db.String(255), nullable=True)
+    name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(255), unique=True, nullable=False, primary_key=False)
+    mobile_number = db.Column(db.String(50), nullable=True)
+    country = db.Column(db.String(100), nullable=True)
+    state = db.Column(db.String(100), nullable=True)
+    city = db.Column(db.String(100), nullable=True)
+    date_of_birth = db.Column(db.Date, nullable=True)
+    gender = db.Column(db.String(50), nullable=True)
+    occupation = db.Column(db.String(255), nullable=True)
+    github_url = db.Column(db.String(500), nullable=True)
+    linkedin_url = db.Column(db.String(500), nullable=True)
+    utm_medium = db.Column(db.String(255), nullable=True)
+    bob_match = db.Column(db.Boolean, default=False, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    def to_dict(self):
+        """Convert model to dictionary"""
+        return {
+            'id': str(self.id),
+            'registered_at': self.registered_at.isoformat() if self.registered_at else None,
+            'organization_name': self.organization_name,
+            'class_stream': self.class_stream,
+            'domain': self.domain,
+            'designation': self.designation,
+            'name': self.name,
+            'email': self.email,
+            'mobile_number': self.mobile_number,
+            'country': self.country,
+            'state': self.state,
+            'city': self.city,
+            'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
+            'gender': self.gender,
+            'occupation': self.occupation,
+            'github_url': self.github_url,
+            'linkedin_url': self.linkedin_url,
+            'utm_medium': self.utm_medium,
+            'bob_match': bool(self.bob_match),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None
+        }
+
+
+# View created by init_database (raw SQL). Table definition uses separate metadata so create_all() skips it.
+_user_pii_combined_table = Table(
+    'user_pii_combined',
+    _view_metadata,
+    Column('id', UUID(as_uuid=True), primary_key=True),
+    Column('registered_at', db.DateTime, nullable=True),
+    Column('organization_name', db.String(255), nullable=True),
+    Column('class_stream', db.String(255), nullable=True),
+    Column('domain', db.String(255), nullable=True),
+    Column('designation', db.String(255), nullable=True),
+    Column('name', db.String(255), nullable=True),
+    Column('email', db.String(255), nullable=False),
+    Column('mobile_number', db.String(50), nullable=True),
+    Column('country', db.String(100), nullable=True),
+    Column('state', db.String(100), nullable=True),
+    Column('city', db.String(100), nullable=True),
+    Column('date_of_birth', db.Date, nullable=True),
+    Column('gender', db.String(50), nullable=True),
+    Column('occupation', db.String(255), nullable=True),
+    Column('github_url', db.String(500), nullable=True),
+    Column('linkedin_url', db.String(500), nullable=True),
+    Column('utm_medium', db.String(255), nullable=True),
+    Column('bob_match', db.Boolean, default=False, nullable=False),
+    Column('created_at', db.DateTime, nullable=False),
+    Column('updated_at', db.DateTime, nullable=False),
+    Column('source', db.String(32), nullable=True),
+)
+
+
+class UserPIICombined(db.Model):
+    """
+    Read-only view: user_pii UNION user_pii_injected (emails not in user_pii).
+    One row per email; user_pii wins on duplicate. Created by init_database (raw SQL view).
+    """
+    __table__ = _user_pii_combined_table
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'registered_at': self.registered_at.isoformat() if self.registered_at else None,
+            'organization_name': self.organization_name,
+            'class_stream': self.class_stream,
+            'domain': self.domain,
+            'designation': self.designation,
+            'name': self.name,
+            'email': self.email,
+            'mobile_number': self.mobile_number,
+            'country': self.country,
+            'state': self.state,
+            'city': self.city,
+            'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
+            'gender': self.gender,
+            'occupation': self.occupation,
+            'github_url': self.github_url,
+            'linkedin_url': self.linkedin_url,
+            'utm_medium': self.utm_medium,
+            'bob_match': bool(self.bob_match),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'source': self.source,
         }
 
 
@@ -183,6 +303,60 @@ class SkillLabSubmission(db.Model):
     def to_dict(self):
         return {
             'id': str(self.id),
+            'team_name': self.team_name,
+            'leader_name': self.leader_name,
+            'leader_email': self.leader_email,
+            'leader_phone': self.leader_phone,
+            'team_size': self.team_size,
+            'problem_statement': self.problem_statement,
+            'upload_screenshot': self.upload_screenshot,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by_name': self.created_by_name,
+            'created_by_email': self.created_by_email,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by_name': self.updated_by_name,
+            'updated_by_email': self.updated_by_email,
+            'valid': bool(self.valid),
+            'remark': self.remark,
+        }
+
+
+class CodeLabSubmission(db.Model):
+    """
+    Code Lab submission verification table.
+    Each row = one participant (email) in a specific track + lab.
+    track_number: 1, 2, or 3.  problem_statement: e.g. "Lab 1", "Lab 2".
+    Unique on (leader_email, track_number, problem_statement).
+    """
+    __tablename__ = 'codelab_submission'
+    __table_args__ = (
+        db.UniqueConstraint('leader_email', 'track_number', 'problem_statement', name='uq_codelab_email_track_lab'),
+    )
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    track_number = db.Column(db.Integer, nullable=True)
+    team_name = db.Column(db.String(255), nullable=True)
+    leader_name = db.Column(db.String(255), nullable=True)
+    leader_email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)
+    leader_phone = db.Column(db.String(50), nullable=True)
+    team_size = db.Column(db.Integer, nullable=True)
+    problem_statement = db.Column(db.Text, nullable=True)
+    upload_screenshot = db.Column(db.String(1024), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_by_name = db.Column(db.String(255), nullable=True)
+    created_by_email = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by_name = db.Column(db.String(255), nullable=True)
+    updated_by_email = db.Column(db.String(255), nullable=True)
+    valid = db.Column(db.Boolean, default=False, nullable=False)
+    remark = db.Column(db.Text, nullable=True)
+
+    leader = db.relationship('UserPII', foreign_keys=[leader_email], primaryjoin='CodeLabSubmission.leader_email == UserPII.email', lazy='joined')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'track_number': self.track_number,
             'team_name': self.team_name,
             'leader_name': self.leader_name,
             'leader_email': self.leader_email,

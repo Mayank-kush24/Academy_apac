@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
 from server.config import Config
 from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
-from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, users_registrations, skilllab_submission, mcq_verification
+from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, users_registrations, skilllab_submission, codelab_submission, mcq_verification, import_pii_injected, track_progress
 
 def create_app():
     """Create and configure Flask application"""
@@ -59,6 +59,34 @@ def create_app():
         except Exception as e:
             print(f"[WARNING] Could not create database tables: {str(e)}")
             print("  Run 'python init_database.py' to initialize the database manually")
+        # Ensure user_pii_combined is a VIEW (not a table left over from create_all)
+        try:
+            from sqlalchemy import text as _text
+            inspector = db.inspect(db.engine)
+            _all_tables = inspector.get_table_names()
+            if 'user_pii_injected' in _all_tables:
+                with db.engine.connect() as conn:
+                    conn.execute(_text("DROP VIEW IF EXISTS user_pii_combined CASCADE"))
+                    conn.execute(_text("DROP TABLE IF EXISTS user_pii_combined CASCADE"))
+                    conn.execute(_text("""
+                        CREATE VIEW user_pii_combined AS
+                        SELECT id, registered_at, organization_name, class_stream, domain, designation, name, email,
+                               mobile_number, country, state, city, date_of_birth, gender, occupation,
+                               github_url, linkedin_url, utm_medium, bob_match, created_at, updated_at,
+                               'user_pii' AS source
+                        FROM user_pii
+                        UNION ALL
+                        SELECT id, registered_at, organization_name, class_stream, domain, designation, name, email,
+                               mobile_number, country, state, city, date_of_birth, gender, occupation,
+                               github_url, linkedin_url, utm_medium, bob_match, created_at, updated_at,
+                               'user_pii_injected' AS source
+                        FROM user_pii_injected i
+                        WHERE NOT EXISTS (SELECT 1 FROM user_pii u WHERE u.email = i.email)
+                    """))
+                    conn.commit()
+                print("[OK] user_pii_combined view created")
+        except Exception as e:
+            print(f"[WARNING] Could not create user_pii_combined view: {e}")
         # Register activity log listeners (create/update/delete on UserPII, User)
         try:
             from server.utils.activity_log import register_activity_listeners
@@ -88,7 +116,10 @@ def create_app():
     app.register_blueprint(book_of_business.bp, url_prefix='/api/book-of-business')
     app.register_blueprint(users_registrations.bp, url_prefix='/api/users-registrations')
     app.register_blueprint(skilllab_submission.bp, url_prefix='/api/skilllab-submission')
+    app.register_blueprint(codelab_submission.bp, url_prefix='/api/codelab-submission')
     app.register_blueprint(mcq_verification.bp, url_prefix='/api/mcq-verification')
+    app.register_blueprint(import_pii_injected.bp, url_prefix='/api/import-user-pii-injected')
+    app.register_blueprint(track_progress.bp, url_prefix='/api/track-progress')
     
     # Serve static files with cache headers for faster repeat loads
     @app.route('/static/<path:filename>')
@@ -152,6 +183,12 @@ def create_app():
     def import_page():
         """Import data page"""
         return render_template('import.html')
+
+    # Import User PII Injected (not on nav; access via URL only)
+    @app.route('/import-user-pii-injected')
+    def import_user_pii_injected_page():
+        """Import into user_pii_injected table (no nav link)"""
+        return render_template('import_user_pii_injected.html')
     
     # Users page (admin only - frontend will check)
     @app.route('/users')
@@ -189,11 +226,23 @@ def create_app():
         """Skill Lab Submission Verification (manual intern verification)"""
         return render_template('skilllab_submission.html')
 
+    # Code Lab Submission Verification page
+    @app.route('/codelab-submission')
+    def codelab_submission_page():
+        """Code Lab Submission Verification (manual intern verification)"""
+        return render_template('codelab_submission.html')
+
     # Optional MCQ Verification page
     @app.route('/optional-mcq-verification')
     def optional_mcq_verification_page():
         """Optional MCQ Verification (manual verification of participant MCQ)"""
         return render_template('optional_mcq_verification.html')
+
+    # Track Progress Query page
+    @app.route('/track-progress-query')
+    def track_progress_query_page():
+        """Track Progress Query (filter users by grid status)"""
+        return render_template('track_progress_query.html')
     
     return app
 

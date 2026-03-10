@@ -6,7 +6,7 @@ import io
 import json
 from datetime import datetime
 from flask import Blueprint, request, jsonify, Response, stream_with_context
-from server.models import db, SkillboostProfile, UserPII, CreditLink
+from server.models import db, SkillboostProfile, UserPIICombined, CreditLink
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
@@ -131,8 +131,8 @@ def _credits_query(search=None, sent_filter=None):
     sent_filter: None (all), 'sent' (email_sent_at IS NOT NULL), 'not_sent' (allocated but email_sent_at IS NULL).
     """
     query = (
-        db.session.query(SkillboostProfile, UserPII.name, CreditLink)
-        .outerjoin(UserPII, SkillboostProfile.email == UserPII.email)
+        db.session.query(SkillboostProfile, UserPIICombined.name, CreditLink)
+        .outerjoin(UserPIICombined, SkillboostProfile.email == UserPIICombined.email)
         .outerjoin(CreditLink, SkillboostProfile.credit_link_id == CreditLink.id)
         .filter(SkillboostProfile.valid == True)
         .order_by(SkillboostProfile.created_at.desc())
@@ -323,8 +323,8 @@ def export_not_sent():
     """Export verified, allocated credits that have not been marked as sent (for Sendy)."""
     try:
         query = (
-            db.session.query(SkillboostProfile, UserPII.name, CreditLink)
-            .outerjoin(UserPII, SkillboostProfile.email == UserPII.email)
+            db.session.query(SkillboostProfile, UserPIICombined.name, CreditLink)
+            .outerjoin(UserPIICombined, SkillboostProfile.email == UserPIICombined.email)
             .outerjoin(CreditLink, SkillboostProfile.credit_link_id == CreditLink.id)
             .filter(SkillboostProfile.valid == True)
             .filter(SkillboostProfile.credit_link_id.isnot(None))

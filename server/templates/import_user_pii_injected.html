@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+
+{% block title %}Import User PII (Injected) - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<div class="import-page theme-page">
+    <div class="dashboard-header">
+        <div class="header-content">
+            <div>
+                <h1 class="page-title">Import User PII (Injected)</h1>
+                <p class="page-subtitle">Upload Excel and map fields to import into the <code>user_pii_injected</code> table</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="import-wizard">
+        <div id="step1" class="wizard-step active">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-file-upload"></i> Step 1: Upload Excel File</h3>
+                    <p class="chart-subtitle">Upload an Excel (.xlsx, .xls) or CSV file containing user data</p>
+                </div>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="form-group file-upload-group">
+                        <label class="file-upload-label">Select Excel File</label>
+                        <div class="file-upload-zone" id="fileUploadZone" role="button" tabindex="0" aria-label="Select Excel file">
+                            <input type="file" id="excelFile" name="file" accept=".xlsx,.xls,.csv" required class="file-upload-input" aria-label="Excel or CSV file">
+                            <div class="file-upload-content">
+                                <span class="file-upload-icon"><i class="fas fa-file-excel"></i></span>
+                                <span class="file-upload-text">Drag and drop your Excel file here, or <strong>browse</strong></span>
+                                <span class="file-upload-hint">.xlsx, .xls, or .csv</span>
+                            </div>
+                            <div class="file-name-display" id="fileNameDisplay" aria-live="polite"></div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary import-upload-btn">
+                        <i class="fas fa-upload"></i> Upload & Preview
+                    </button>
+                </form>
+                <div id="uploadError" class="error-message" style="display: none;"></div>
+            </div>
+        </div>
+
+        <div id="step2" class="wizard-step" style="display: none;">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-columns"></i> Step 2: Map Fields</h3>
+                    <p class="chart-subtitle">Map Excel columns to database fields.</p>
+                </div>
+                <div class="table-container">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Excel Column</th>
+                                <th>Sample Value</th>
+                                <th>Database Field</th>
+                            </tr>
+                        </thead>
+                        <tbody id="mappingTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="wizard-actions">
+                    <button class="btn btn-secondary" type="button" onclick="goToStep(1)"><i class="fas fa-arrow-left"></i> Back</button>
+                    <button class="btn btn-primary" type="button" onclick="goToStep(3)">Next <i class="fas fa-arrow-right"></i></button>
+                </div>
+            </div>
+        </div>
+
+        <div id="step3" class="wizard-step" style="display: none;">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-cogs"></i> Step 3: Import Mode</h3>
+                    <p class="chart-subtitle">Choose how to handle existing records</p>
+                </div>
+                <div class="import-mode-options">
+                    <div class="import-mode-option selected" data-mode="create">
+                        <input type="radio" name="importMode" value="create" checked style="display: none;">
+                        <div class="mode-radio"><div class="radio-circle"></div></div>
+                        <div class="mode-content">
+                            <div class="mode-title">Create Only</div>
+                            <div class="mode-description">Only insert new records (skip if email exists)</div>
+                        </div>
+                    </div>
+                    <div class="import-mode-option" data-mode="create_update">
+                        <input type="radio" name="importMode" value="create_update" style="display: none;">
+                        <div class="mode-radio"><div class="radio-circle"></div></div>
+                        <div class="mode-content">
+                            <div class="mode-title">Create or Update</div>
+                            <div class="mode-description">Insert new or update existing (by email)</div>
+                        </div>
+                    </div>
+                    <div class="import-mode-option" data-mode="update_only">
+                        <input type="radio" name="importMode" value="update_only" style="display: none;">
+                        <div class="mode-radio"><div class="radio-circle"></div></div>
+                        <div class="mode-content">
+                            <div class="mode-title">Update Only</div>
+                            <div class="mode-description">Only update existing (skip if email doesn't exist)</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="wizard-actions">
+                    <button class="btn btn-secondary" type="button" onclick="goToStep(2)"><i class="fas fa-arrow-left"></i> Back</button>
+                    <button type="button" class="btn btn-primary action-btn" id="executeImportBtn" onclick="executeImport()"><i class="fas fa-play"></i> Execute Import</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="importProgressOverlay" class="import-progress-overlay" style="display: none;" aria-live="polite">
+            <div class="import-progress-card">
+                <h3 id="importProgressTitle" class="import-progress-title"><i class="fas fa-sync-alt fa-spin"></i> <span id="importProgressTitleText">Parsing file...</span></h3>
+                <p id="importProgressSubtitle" class="import-progress-subtitle">Reading Excel and preparing import.</p>
+                <div class="import-progress-bar-wrap">
+                    <div id="importProgressBar" class="import-progress-bar indeterminate" role="progressbar"></div>
+                </div>
+                <div class="import-progress-stats" id="importProgressStats">
+                    <span class="import-stat created"><strong>Created:</strong> <span id="importStatCreated">0</span></span>
+                    <span class="import-stat updated"><strong>Updated:</strong> <span id="importStatUpdated">0</span></span>
+                    <span class="import-stat skipped"><strong>Skipped:</strong> <span id="importStatSkipped">0</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div id="step4" class="wizard-step" style="display: none;">
+            <div class="glass-card import-step-card">
+                <div class="chart-header">
+                    <h3 class="chart-title"><i class="fas fa-check-circle"></i> Import Results</h3>
+                </div>
+                <div id="importResults" class="import-results"></div>
+                <div class="wizard-actions">
+                    <button class="btn btn-primary action-btn" type="button" onclick="resetWizard()"><i class="fas fa-redo"></i> Import Another File</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {
+    var API_BASE = '/api/import-user-pii-injected';
+    var currentStep = 1;
+    var excelData = null;
+    var fieldMappings = {};
+
+    function escapeHtml(text) {
+        if (text == null || text === undefined) return '';
+        var div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+    function showError(id, msg) {
+        var el = document.getElementById(id);
+        if (el) { el.textContent = msg; el.style.display = 'block'; }
+    }
+    function goToStep(step) {
+        document.querySelectorAll('.wizard-step').forEach(function(s) {
+            s.style.display = 'none';
+            s.classList.remove('active');
+        });
+        var target = document.getElementById('step' + step);
+        if (target) {
+            target.style.display = 'block';
+            target.classList.add('active');
+            currentStep = step;
+        }
+        if (step === 3) {
+            document.querySelectorAll('.import-mode-option').forEach(function(opt) {
+                opt.classList.remove('selected');
+                if (opt.getAttribute('data-mode') === 'create') {
+                    opt.classList.add('selected');
+                    var r = opt.querySelector('input[type="radio"]');
+                    if (r) r.checked = true;
+                }
+            });
+            document.querySelectorAll('.import-mode-option').forEach(function(opt) {
+                opt.onclick = function() {
+                    document.querySelectorAll('.import-mode-option').forEach(function(o) { o.classList.remove('selected'); });
+                    opt.classList.add('selected');
+                    var r = opt.querySelector('input[type="radio"]');
+                    if (r) r.checked = true;
+                };
+            });
+        }
+    }
+    function renderMappingTable() {
+        var tbody = document.getElementById('mappingTableBody');
+        if (!excelData || !tbody) return;
+        var dbFields = excelData.db_fields || [];
+        var preview = excelData.preview_rows && excelData.preview_rows[0] ? excelData.preview_rows[0] : {};
+        tbody.innerHTML = excelData.excel_columns.map(function(col) {
+            var sample = (preview[col] != null ? String(preview[col]) : '').substring(0, 50);
+            var current = fieldMappings[col] || '';
+            return '<tr><td><strong>' + escapeHtml(col) + '</strong></td><td class="text-muted">' + escapeHtml(sample) + '</td><td><select class="mapping-select" data-column="' + escapeHtml(col) + '" onchange="window.updateMapping(\'' + escapeHtml(col).replace(/'/g, "\\'") + '\', this.value)"><option value="">-- Skip --</option>' +
+                dbFields.map(function(f) {
+                    return '<option value="' + escapeHtml(f) + '"' + (current === f ? ' selected' : '') + '>' + escapeHtml(f) + '</option>';
+                }).join('') + '</select></td></tr>';
+        }).join('');
+    }
+    window.updateMapping = function(col, dbField) {
+        if (dbField) fieldMappings[col] = dbField;
+        else delete fieldMappings[col];
+    };
+    window.goToStep = goToStep;
+    function setProgressStats(created, updated, skipped) {
+        var c = document.getElementById('importStatCreated');
+        var u = document.getElementById('importStatUpdated');
+        var s = document.getElementById('importStatSkipped');
+        if (c) c.textContent = (created || 0).toLocaleString();
+        if (u) u.textContent = (updated || 0).toLocaleString();
+        if (s) s.textContent = (skipped || 0).toLocaleString();
+    }
+    function displayResults(result) {
+        var div = document.getElementById('importResults');
+        if (!div) return;
+        var errHtml = (result.errors && result.errors.length) ? '<div class="errors-section"><h3>Errors (' + result.errors.length + ')</h3><div class="error-list">' + result.errors.map(function(e) { return '<div class="error-item">' + escapeHtml(e) + '</div>'; }).join('') + '</div></div>' : '';
+        div.innerHTML = '<div class="results-summary"><div class="result-card success"><h3>' + (result.created || 0) + '</h3><p>Created</p></div><div class="result-card info"><h3>' + (result.updated || 0) + '</h3><p>Updated</p></div><div class="result-card warning"><h3>' + (result.skipped || 0) + '</h3><p>Skipped</p></div><div class="result-card"><h3>' + (result.total_rows || 0) + '</h3><p>Total Rows</p></div></div>' + errHtml;
+    }
+    window.resetWizard = function() {
+        currentStep = 1;
+        excelData = null;
+        fieldMappings = {};
+        var form = document.getElementById('uploadForm');
+        if (form) form.reset();
+        var zone = document.getElementById('fileUploadZone');
+        var fd = document.getElementById('fileNameDisplay');
+        if (zone) zone.classList.remove('has-file');
+        if (fd) fd.innerHTML = '';
+        document.getElementById('uploadError').style.display = 'none';
+        goToStep(1);
+    };
+
+    var zone = document.getElementById('fileUploadZone');
+    var fileInput = document.getElementById('excelFile');
+    var fileNameDisplay = document.getElementById('fileNameDisplay');
+    if (zone && fileInput) {
+        function updateZone() {
+            var f = fileInput.files[0];
+            if (f) {
+                zone.classList.add('has-file');
+                if (fileNameDisplay) fileNameDisplay.innerHTML = '<i class="fas fa-check-circle"></i> ' + escapeHtml(f.name);
+            } else {
+                zone.classList.remove('has-file');
+                if (fileNameDisplay) fileNameDisplay.innerHTML = '';
+            }
+        }
+        fileInput.addEventListener('change', updateZone);
+        ['dragenter','dragover'].forEach(function(ev) {
+            zone.addEventListener(ev, function(e) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-over'); });
+        });
+        ['dragleave','drop'].forEach(function(ev) {
+            zone.addEventListener(ev, function(e) { e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag-over'); });
+        });
+        zone.addEventListener('drop', function(e) {
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files.length) { fileInput.files = files; updateZone(); }
+        });
+    }
+
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        var file = document.getElementById('excelFile').files[0];
+        if (!file) { showError('uploadError', 'Please select a file'); return; }
+        var token = typeof getAuthToken === 'function' ? getAuthToken() : (localStorage && localStorage.getItem('token'));
+        if (!token) { showError('uploadError', 'Not authenticated'); return; }
+        document.getElementById('uploadError').style.display = 'none';
+        var formData = new FormData();
+        formData.append('file', file);
+        try {
+            var res = await fetch(API_BASE + '/preview', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData });
+            var data = await res.json().catch(function() { return {}; });
+            if (!res.ok) throw new Error(data.error || 'Upload failed');
+            excelData = data;
+            fieldMappings = data.auto_mappings || {};
+            renderMappingTable();
+            goToStep(2);
+        } catch (err) {
+            showError('uploadError', err.message || 'Upload failed');
+        }
+    });
+
+    window.executeImport = async function() {
+        var modeEl = document.querySelector('.import-mode-option.selected') || document.querySelector('input[name="importMode"]:checked');
+        var mode = modeEl ? (modeEl.getAttribute ? modeEl.getAttribute('data-mode') : modeEl.value) : 'create';
+        if (!excelData || !fieldMappings) { alert('Complete the previous steps'); return; }
+        var file = document.getElementById('excelFile').files[0];
+        if (!file) { alert('File is required'); return; }
+        var token = typeof getAuthToken === 'function' ? getAuthToken() : (localStorage && localStorage.getItem('token'));
+        if (!token) { alert('Not authenticated'); return; }
+        var formData = new FormData();
+        formData.append('file', file);
+        formData.append('mappings', JSON.stringify(fieldMappings));
+        formData.append('mode', mode);
+        var overlay = document.getElementById('importProgressOverlay');
+        var btn = document.getElementById('executeImportBtn');
+        if (overlay) overlay.style.display = 'flex';
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...'; }
+        setProgressStats(0, 0, 0);
+        try {
+            var response = await fetch(API_BASE + '/execute?stream=1', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData });
+            if (!response.ok) {
+                var err = await response.json().catch(function() { return {}; });
+                throw new Error(err.error || 'Import failed');
+            }
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+            var result = null;
+            while (true) {
+                var chunk = await reader.read();
+                if (chunk.done) break;
+                buffer += decoder.decode(chunk.value, { stream: true });
+                var lines = buffer.split('\n\n');
+                buffer = lines.pop() || '';
+                for (var i = 0; i < lines.length; i++) {
+                    var m = lines[i].match(/^data:\s*(.+)$/m);
+                    if (!m) continue;
+                    try {
+                        var data = JSON.parse(m[1].trim());
+                        if (data.error) throw new Error(data.error);
+                        if (data.total_rows !== undefined && data.created !== undefined) {
+                            result = data;
+                        }
+                        setProgressStats(data.created || 0, data.updated || 0, data.skipped || 0);
+                    } catch (e) {
+                        if (e instanceof Error && e.message !== undefined) throw e;
+                    }
+                }
+            }
+            if (buffer) {
+                var m = buffer.match(/^data:\s*(.+)$/m);
+                if (m) {
+                    try {
+                        var data = JSON.parse(m[1].trim());
+                        if (data.error) throw new Error(data.error);
+                        if (data.total_rows !== undefined) result = data;
+                    } catch (e) {
+                        if (e instanceof Error && e.message) throw e;
+                    }
+                }
+            }
+            if (overlay) overlay.style.display = 'none';
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-play"></i> Execute Import'; }
+            if (result) {
+                displayResults(result);
+                goToStep(4);
+            } else {
+                alert('Import completed but no result received.');
+            }
+        } catch (err) {
+            if (overlay) overlay.style.display = 'none';
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-play"></i> Execute Import'; }
+            alert('Import failed: ' + (err.message || err));
+        }
+    };
+})();
+</script>
+{% endblock %}

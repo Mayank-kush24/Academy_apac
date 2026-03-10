@@ -7,7 +7,7 @@ import io
 from datetime import date
 from flask import Blueprint, request, jsonify, Response
 from sqlalchemy import or_, func, desc
-from server.models import db, UserPII
+from server.models import db, UserPIICombined
 from server.utils.permissions import require_page_access
 from server.utils.state_normalize import (
     normalize_state,
@@ -20,7 +20,7 @@ bp = Blueprint('users_registrations', __name__)
 
 def _users_base():
     """Query base for all users (user_pii)."""
-    return UserPII.query
+    return UserPIICombined.query
 
 
 def _filter_conditions(search=None, countries=None, states=None, cities=None, organizations=None):
@@ -29,13 +29,13 @@ def _filter_conditions(search=None, countries=None, states=None, cities=None, or
     if search:
         conditions.append(
             or_(
-                UserPII.name.ilike(f'%{search}%'),
-                UserPII.email.ilike(f'%{search}%'),
-                UserPII.organization_name.ilike(f'%{search}%'),
+                UserPIICombined.name.ilike(f'%{search}%'),
+                UserPIICombined.email.ilike(f'%{search}%'),
+                UserPIICombined.organization_name.ilike(f'%{search}%'),
             )
         )
     if countries:
-        conditions.append(or_(*[UserPII.country.ilike(f'%{c}%') for c in countries]))
+        conditions.append(or_(*[UserPIICombined.country.ilike(f'%{c}%') for c in countries]))
     if states:
         all_state_values = []
         for state in states:
@@ -45,11 +45,11 @@ def _filter_conditions(search=None, countries=None, states=None, cities=None, or
             else:
                 all_state_values.append(state)
         if all_state_values:
-            conditions.append(UserPII.state.in_(all_state_values))
+            conditions.append(UserPIICombined.state.in_(all_state_values))
     if cities:
-        conditions.append(or_(*[UserPII.city.ilike(f'%{c}%') for c in cities]))
+        conditions.append(or_(*[UserPIICombined.city.ilike(f'%{c}%') for c in cities]))
     if organizations:
-        conditions.append(or_(*[UserPII.organization_name.ilike(f'%{o}%') for o in organizations]))
+        conditions.append(or_(*[UserPIICombined.organization_name.ilike(f'%{o}%') for o in organizations]))
     return conditions
 
 
@@ -87,32 +87,32 @@ def get_stats():
         top_india_city_count = None
         try:
             india_state_q = db.session.query(
-                UserPII.state,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.state,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                UserPII.country.ilike('%India%'),
-                UserPII.state.isnot(None),
-                UserPII.state != ''
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.state.isnot(None),
+                UserPIICombined.state != ''
             )
             india_state_q = _apply_filters(india_state_q)
-            state_row = india_state_q.group_by(UserPII.state).order_by(desc('count')).first()
+            state_row = india_state_q.group_by(UserPIICombined.state).order_by(desc('count')).first()
             if state_row:
                 top_india_state = state_row[0]
                 top_india_state_count = state_row[1]
             india_city_q = db.session.query(
-                UserPII.city,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.city,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                UserPII.country.ilike('%India%'),
-                UserPII.city.isnot(None),
-                UserPII.city != ''
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.city.isnot(None),
+                UserPIICombined.city != ''
             )
             india_city_q = _apply_filters(india_city_q)
-            city_row = india_city_q.group_by(UserPII.city).order_by(desc('count')).first()
+            city_row = india_city_q.group_by(UserPIICombined.city).order_by(desc('count')).first()
             if city_row:
                 top_india_city = city_row[0]
                 top_india_city_count = city_row[1]
@@ -125,30 +125,30 @@ def get_stats():
         top_apac_city_count = None
         try:
             apac_country_q = db.session.query(
-                UserPII.country,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.country,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                ~UserPII.country.ilike('%India%')
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~UserPIICombined.country.ilike('%India%')
             )
             apac_country_q = _apply_filters(apac_country_q)
-            country_row = apac_country_q.group_by(UserPII.country).order_by(desc('count')).first()
+            country_row = apac_country_q.group_by(UserPIICombined.country).order_by(desc('count')).first()
             if country_row:
                 top_apac_country = country_row[0]
                 top_apac_country_count = country_row[1]
             apac_city_q = db.session.query(
-                UserPII.city,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.city,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.country.isnot(None),
-                UserPII.country != '',
-                ~UserPII.country.ilike('%India%'),
-                UserPII.city.isnot(None),
-                UserPII.city != ''
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.city.isnot(None),
+                UserPIICombined.city != ''
             )
             apac_city_q = _apply_filters(apac_city_q)
-            city_row = apac_city_q.group_by(UserPII.city).order_by(desc('count')).first()
+            city_row = apac_city_q.group_by(UserPIICombined.city).order_by(desc('count')).first()
             if city_row:
                 top_apac_city = city_row[0]
                 top_apac_city_count = city_row[1]
@@ -159,14 +159,14 @@ def get_stats():
         top_organization_count = None
         try:
             org_q = db.session.query(
-                UserPII.organization_name,
-                func.count(UserPII.id).label('count')
+                UserPIICombined.organization_name,
+                func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPII.organization_name.isnot(None),
-                UserPII.organization_name != ''
+                UserPIICombined.organization_name.isnot(None),
+                UserPIICombined.organization_name != ''
             )
             org_q = _apply_filters(org_q)
-            org_row = org_q.group_by(UserPII.organization_name).order_by(desc('count')).first()
+            org_row = org_q.group_by(UserPIICombined.organization_name).order_by(desc('count')).first()
             if org_row and org_row[0]:
                 top_organization = org_row[0]
                 top_organization_count = org_row[1]
@@ -216,7 +216,7 @@ def list_registrations():
         for c in filter_conds:
             query = query.filter(c)
 
-        query = query.order_by(UserPII.name.asc().nullslast(), UserPII.email.asc())
+        query = query.order_by(UserPIICombined.name.asc().nullslast(), UserPIICombined.email.asc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         rows = pagination.items
 
@@ -258,7 +258,7 @@ def download_csv():
         query = _users_base()
         for c in filter_conds:
             query = query.filter(c)
-        query = query.order_by(UserPII.name.asc().nullslast(), UserPII.email.asc())
+        query = query.order_by(UserPIICombined.name.asc().nullslast(), UserPIICombined.email.asc())
 
         si = io.StringIO()
         writer = csv.writer(si)
@@ -286,19 +286,19 @@ def get_filter_options():
     """Return distinct country, state, city, organization for all user_pii (for filter dropdowns)."""
     try:
         base = _users_base()
-        countries = [r[0] for r in base.with_entities(UserPII.country).distinct().filter(
-            UserPII.country.isnot(None), UserPII.country != ''
-        ).order_by(UserPII.country).all() if r[0]]
-        raw_states = [r[0] for r in base.with_entities(UserPII.state).distinct().filter(
-            UserPII.state.isnot(None), UserPII.state != ''
-        ).order_by(UserPII.state).all() if r[0]]
+        countries = [r[0] for r in base.with_entities(UserPIICombined.country).distinct().filter(
+            UserPIICombined.country.isnot(None), UserPIICombined.country != ''
+        ).order_by(UserPIICombined.country).all() if r[0]]
+        raw_states = [r[0] for r in base.with_entities(UserPIICombined.state).distinct().filter(
+            UserPIICombined.state.isnot(None), UserPIICombined.state != ''
+        ).order_by(UserPIICombined.state).all() if r[0]]
         states = distinct_canonical_states(raw_states)
-        cities = [r[0] for r in base.with_entities(UserPII.city).distinct().filter(
-            UserPII.city.isnot(None), UserPII.city != ''
-        ).order_by(UserPII.city).all() if r[0]]
-        organizations = [r[0] for r in base.with_entities(UserPII.organization_name).distinct().filter(
-            UserPII.organization_name.isnot(None), UserPII.organization_name != ''
-        ).order_by(UserPII.organization_name).all() if r[0]]
+        cities = [r[0] for r in base.with_entities(UserPIICombined.city).distinct().filter(
+            UserPIICombined.city.isnot(None), UserPIICombined.city != ''
+        ).order_by(UserPIICombined.city).all() if r[0]]
+        organizations = [r[0] for r in base.with_entities(UserPIICombined.organization_name).distinct().filter(
+            UserPIICombined.organization_name.isnot(None), UserPIICombined.organization_name != ''
+        ).order_by(UserPIICombined.organization_name).all() if r[0]]
         return jsonify({
             'countries': countries,
             'states': states,

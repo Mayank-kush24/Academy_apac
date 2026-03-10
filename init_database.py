@@ -215,7 +215,7 @@ def init_database():
                 print("OK: user_pii indexes verified")
             except Exception as ex:
                 print("WARN: Could not create user_pii indexes (may already exist):", str(ex))
-            
+
             # Check if admin user exists
             admin_count = User.query.filter_by(role='admin').count()
             if admin_count == 0:

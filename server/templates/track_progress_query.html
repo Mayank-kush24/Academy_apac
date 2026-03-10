@@ -1,0 +1,399 @@
+{% extends "base.html" %}
+
+{% block title %}Track Progress Query - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<style>
+.tpq-filter-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+.tpq-filter-grid th,
+.tpq-filter-grid td {
+    padding: 8px 10px;
+    border: 1px solid rgba(0,0,0,0.08);
+    text-align: center;
+    vertical-align: middle;
+}
+.tpq-filter-grid th {
+    background: rgba(59,130,246,0.06);
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: #374151;
+}
+.tpq-filter-grid td:first-child {
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.8125rem;
+    color: #374151;
+    white-space: nowrap;
+    background: rgba(0,0,0,0.02);
+}
+.tpq-filter-grid select {
+    width: 100%;
+    padding: 5px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.12);
+    background: #fff;
+    font-size: 0.8125rem;
+    color: #374151;
+    cursor: pointer;
+}
+.tpq-filter-grid select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.15);
+}
+.tpq-filter-grid select:disabled {
+    background: #f3f4f6;
+    color: #9ca3af;
+    cursor: not-allowed;
+}
+.tpq-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(0,0,0,0.06);
+}
+.tpq-stat {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #374151;
+}
+.tpq-stat span {
+    color: #3b82f6;
+}
+.result-grid-cell {
+    font-size: 0.75rem;
+    text-align: center;
+    white-space: nowrap;
+}
+.result-grid-cell .valid { color: #22c55e; font-weight: 600; }
+.result-grid-cell .not-valid { color: #ef4444; font-weight: 600; }
+.result-grid-cell .pending { color: #999; }
+.result-grid-cell .pass { color: #16a34a; font-weight: 600; }
+.result-grid-cell .fail { color: #dc2626; font-weight: 600; }
+.result-grid-cell .empty { color: #d1d5db; }
+@media (max-width: 900px) {
+    .tpq-filter-grid { font-size: 0.75rem; }
+    .tpq-filter-grid select { font-size: 0.75rem; }
+}
+</style>
+<div class="dashboard-premium" id="trackProgressQueryPage">
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div>
+                    <h1 class="page-title">Track Progress Query</h1>
+                    <p class="page-subtitle">Filter and query users by their track progress grid status across all tracks</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filter grid -->
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+            <div style="padding: 1.25rem;">
+                <!-- Search bar -->
+                <div style="display: flex; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
+                        <input type="text" id="tpqSearch" class="form-control" placeholder="Name, email, or organization..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
+                    </div>
+                </div>
+
+                <!-- Track progress filter grid -->
+                <div style="overflow-x: auto;">
+                    <table class="tpq-filter-grid">
+                        <thead>
+                            <tr>
+                                <th style="min-width: 140px;">COHORT 1</th>
+                                <th style="min-width: 130px;">Track 1</th>
+                                <th style="min-width: 130px;">Track 2</th>
+                                <th style="min-width: 130px;">Track 3</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>WEBINAR</td>
+                                <td><select id="f_webinar_t1"><option value="">All</option><option value="valid">Valid</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_webinar_t2"><option value="">All</option><option value="valid">Valid</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_webinar_t3"><option value="">All</option><option value="valid">Valid</option><option value="empty">Empty</option></select></td>
+                            </tr>
+                            <tr>
+                                <td style="color: #9ca3af;">MCQ</td>
+                                <td><select disabled><option>N/A</option></select></td>
+                                <td><select disabled><option>N/A</option></select></td>
+                                <td><select disabled><option>N/A</option></select></td>
+                            </tr>
+                            <tr>
+                                <td>Optional MCQ</td>
+                                <td><select id="f_opt_mcq_t1"><option value="">All</option><option value="pass">Pass</option><option value="fail">Fail</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_opt_mcq_t2"><option value="">All</option><option value="pass">Pass</option><option value="fail">Fail</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_opt_mcq_t3"><option value="">All</option><option value="pass">Pass</option><option value="fail">Fail</option><option value="empty">Empty</option></select></td>
+                            </tr>
+                            <tr>
+                                <td>CODE LAB</td>
+                                <td><select id="f_codelab_t1"><option value="">All</option><option value="valid">Valid</option><option value="not_valid">Not Valid</option><option value="pending">Pending</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_codelab_t2"><option value="">All</option><option value="valid">Valid</option><option value="not_valid">Not Valid</option><option value="pending">Pending</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_codelab_t3"><option value="">All</option><option value="valid">Valid</option><option value="not_valid">Not Valid</option><option value="pending">Pending</option><option value="empty">Empty</option></select></td>
+                            </tr>
+                            <tr>
+                                <td style="color: #9ca3af;">PROJECT SUBMISSION</td>
+                                <td><select disabled><option>N/A</option></select></td>
+                                <td><select disabled><option>N/A</option></select></td>
+                                <td><select disabled><option>N/A</option></select></td>
+                            </tr>
+                            <tr>
+                                <td>SKILL LAB</td>
+                                <td><select id="f_skilllab_t1"><option value="">All</option><option value="valid">Valid</option><option value="not_valid">Not Valid</option><option value="pending">Pending</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_skilllab_t2"><option value="">All</option><option value="valid">Valid</option><option value="not_valid">Not Valid</option><option value="pending">Pending</option><option value="empty">Empty</option></select></td>
+                                <td><select id="f_skilllab_t3"><option value="">All</option><option value="valid">Valid</option><option value="not_valid">Not Valid</option><option value="pending">Pending</option><option value="empty">Empty</option></select></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Actions -->
+                <div class="tpq-actions">
+                    <button type="button" class="btn btn-primary" onclick="tpqApply()">
+                        <i class="fas fa-search"></i> Apply Filters
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="tpqClear()">
+                        <i class="fas fa-times"></i> Clear All
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="tpqDownload()" style="margin-left: auto;">
+                        <i class="fas fa-download"></i> Download CSV
+                    </button>
+                    <div class="tpq-stat" id="tpqStatCount">Total: <span>—</span></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results table -->
+        <div class="glass-card">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th rowspan="2" style="vertical-align: middle;">Name</th>
+                            <th rowspan="2" style="vertical-align: middle;">Email</th>
+                            <th rowspan="2" style="vertical-align: middle;">Organization</th>
+                            <th colspan="3" style="text-align: center; border-bottom: 2px solid rgba(59,130,246,0.3);">Webinar</th>
+                            <th colspan="3" style="text-align: center; border-bottom: 2px solid rgba(234,179,8,0.3);">Optional MCQ</th>
+                            <th colspan="3" style="text-align: center; border-bottom: 2px solid rgba(34,197,94,0.3);">Code Lab</th>
+                            <th colspan="3" style="text-align: center; border-bottom: 2px solid rgba(168,85,247,0.3);">Skill Lab</th>
+                        </tr>
+                        <tr>
+                            <th style="text-align:center; font-size:0.75rem;">T1</th>
+                            <th style="text-align:center; font-size:0.75rem;">T2</th>
+                            <th style="text-align:center; font-size:0.75rem;">T3</th>
+                            <th style="text-align:center; font-size:0.75rem;">T1</th>
+                            <th style="text-align:center; font-size:0.75rem;">T2</th>
+                            <th style="text-align:center; font-size:0.75rem;">T3</th>
+                            <th style="text-align:center; font-size:0.75rem;">T1</th>
+                            <th style="text-align:center; font-size:0.75rem;">T2</th>
+                            <th style="text-align:center; font-size:0.75rem;">T3</th>
+                            <th style="text-align:center; font-size:0.75rem;">T1</th>
+                            <th style="text-align:center; font-size:0.75rem;">T2</th>
+                            <th style="text-align:center; font-size:0.75rem;">T3</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tpqTableBody">
+                        <tr><td colspan="15" class="text-center">Apply filters above to query track progress.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="tpqPaginationBar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; flex-wrap: wrap; gap: 0.5rem;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+    var FILTER_IDS = [
+        'f_webinar_t1', 'f_webinar_t2', 'f_webinar_t3',
+        'f_opt_mcq_t1', 'f_opt_mcq_t2', 'f_opt_mcq_t3',
+        'f_codelab_t1', 'f_codelab_t2', 'f_codelab_t3',
+        'f_skilllab_t1', 'f_skilllab_t2', 'f_skilllab_t3',
+    ];
+
+    var PARAM_MAP = {
+        'f_webinar_t1': 'webinar_t1', 'f_webinar_t2': 'webinar_t2', 'f_webinar_t3': 'webinar_t3',
+        'f_opt_mcq_t1': 'opt_mcq_t1', 'f_opt_mcq_t2': 'opt_mcq_t2', 'f_opt_mcq_t3': 'opt_mcq_t3',
+        'f_codelab_t1': 'codelab_t1', 'f_codelab_t2': 'codelab_t2', 'f_codelab_t3': 'codelab_t3',
+        'f_skilllab_t1': 'skilllab_t1', 'f_skilllab_t2': 'skilllab_t2', 'f_skilllab_t3': 'skilllab_t3',
+    };
+
+    function escapeHtml(s) {
+        if (s == null || s === undefined) return '';
+        var div = document.createElement('div');
+        div.textContent = String(s);
+        return div.innerHTML;
+    }
+
+    function buildParams(page) {
+        var params = new URLSearchParams();
+        var search = document.getElementById('tpqSearch').value.trim();
+        if (search) params.set('search', search);
+        if (page) {
+            params.set('page', page);
+            params.set('per_page', '20');
+        }
+        FILTER_IDS.forEach(function(fid) {
+            var el = document.getElementById(fid);
+            if (el && el.value) {
+                params.set(PARAM_MAP[fid], el.value);
+            }
+        });
+        return params;
+    }
+
+    function gridCellHtml(value, type) {
+        if (!value) return '<span class="empty">—</span>';
+        var lower = value.toLowerCase();
+        if (type === 'webinar') {
+            if (lower === 'valid') return '<i class="fas fa-check-circle valid"></i>';
+            return '<span class="empty">—</span>';
+        }
+        if (type === 'optmcq') {
+            if (lower === 'pass') return '<span class="pass">Pass</span>';
+            if (lower === 'fail') return '<span class="fail">Fail</span>';
+            return '<span class="empty">—</span>';
+        }
+        if (lower.includes('valid') && !lower.includes('not')) return '<span class="valid">' + escapeHtml(value) + '</span>';
+        if (lower.includes('not valid')) return '<span class="not-valid">' + escapeHtml(value) + '</span>';
+        if (lower.includes('pending')) return '<span class="pending">' + escapeHtml(value) + '</span>';
+        return '<span class="empty">—</span>';
+    }
+
+    function renderTable(rows) {
+        var tbody = document.getElementById('tpqTableBody');
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center">No results found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(function(r) {
+            var g = r.grid || {};
+            return '<tr>' +
+                '<td>' + escapeHtml(r.name || '') + '</td>' +
+                '<td style="font-size:0.8125rem;">' + escapeHtml(r.email || '') + '</td>' +
+                '<td style="font-size:0.8125rem;">' + escapeHtml(r.organization || '') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.webinar_t1, 'webinar') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.webinar_t2, 'webinar') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.webinar_t3, 'webinar') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.opt_mcq_t1, 'optmcq') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.opt_mcq_t2, 'optmcq') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.opt_mcq_t3, 'optmcq') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.codelab_t1, 'codelab') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.codelab_t2, 'codelab') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.codelab_t3, 'codelab') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.skilllab_t1, 'skilllab') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.skilllab_t2, 'skilllab') + '</td>' +
+                '<td class="result-grid-cell">' + gridCellHtml(g.skilllab_t3, 'skilllab') + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    function renderPagination(data) {
+        var bar = document.getElementById('tpqPaginationBar');
+        if (!data || data.pages <= 1) {
+            bar.innerHTML = '<span class="text-muted">Page ' + (data ? data.page : 1) + ' of ' + (data ? data.pages : 1) + ' &middot; Total ' + (data ? data.total : 0) + ' rows</span>';
+            return;
+        }
+        var total = data.total, page = data.page, pages = data.pages, perPage = data.per_page;
+        var from = (page - 1) * perPage + 1, to = Math.min(page * perPage, total);
+        var html = '<span class="text-muted">Showing ' + from + '–' + to + ' of ' + total + '</span>';
+        html += '<div style="display: flex; gap: 0.5rem; align-items: center;">';
+        if (page > 1) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="tpqLoadPage(' + (page - 1) + ')">Previous</button>';
+        html += '<span class="text-muted">Page ' + page + ' of ' + pages + '</span>';
+        if (page < pages) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="tpqLoadPage(' + (page + 1) + ')">Next</button>';
+        html += '</div>';
+        bar.innerHTML = html;
+    }
+
+    function updateStat(total) {
+        var el = document.getElementById('tpqStatCount');
+        if (el) el.innerHTML = 'Total: <span>' + (total != null ? Number(total).toLocaleString() : '—') + '</span>';
+    }
+
+    window.tpqLoadPage = function(page) {
+        page = page || 1;
+        if (!token) { window.location.href = '/login'; return; }
+
+        var params = buildParams(page);
+        document.getElementById('tpqTableBody').innerHTML = '<tr><td colspan="15" class="text-center">Loading...</td></tr>';
+
+        fetch('/api/track-progress/query?' + params.toString(), { headers: headers })
+            .then(function(res) {
+                if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                renderTable(data.rows);
+                renderPagination(data);
+                updateStat(data.total);
+            })
+            .catch(function(err) {
+                document.getElementById('tpqTableBody').innerHTML = '<tr><td colspan="15" class="text-center text-danger">' + escapeHtml(err.message || 'Failed to load') + '</td></tr>';
+            });
+    };
+
+    window.tpqApply = function() {
+        tpqLoadPage(1);
+    };
+
+    window.tpqClear = function() {
+        document.getElementById('tpqSearch').value = '';
+        FILTER_IDS.forEach(function(fid) {
+            var el = document.getElementById(fid);
+            if (el) el.value = '';
+        });
+        document.getElementById('tpqTableBody').innerHTML = '<tr><td colspan="15" class="text-center">Apply filters above to query track progress.</td></tr>';
+        document.getElementById('tpqPaginationBar').innerHTML = '';
+        updateStat(null);
+    };
+
+    window.tpqDownload = function() {
+        var params = buildParams();
+        var url = '/api/track-progress/download?' + params.toString();
+        var a = document.createElement('a');
+        a.href = url;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+
+        fetch(url, { headers: headers })
+            .then(function(res) {
+                if (!res.ok) throw new Error('Download failed');
+                return res.blob();
+            })
+            .then(function(blob) {
+                var objUrl = URL.createObjectURL(blob);
+                a.href = objUrl;
+                a.download = 'track_progress_query.csv';
+                a.click();
+                URL.revokeObjectURL(objUrl);
+                a.remove();
+            })
+            .catch(function(err) {
+                alert(err.message || 'Download failed');
+                a.remove();
+            });
+    };
+
+    document.getElementById('tpqSearch').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') tpqApply();
+    });
+})();
+</script>
+{% endblock %}

@@ -1,34 +1,31 @@
 """
-Skill Lab Submission Verification page and API.
+Code Lab Submission Verification page and API.
 Interns access this page to manually verify team submissions,
 toggling the 'valid' checkbox and adding remarks.
 """
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from sqlalchemy import or_, and_, func
-from server.models import db, SkillLabSubmission
+from sqlalchemy import or_, and_
+from server.models import db, CodeLabSubmission
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
 from server.utils.cache import cache_result
 
-bp = Blueprint('skilllab_submission', __name__)
+bp = Blueprint('codelab_submission', __name__)
 
 
 @cache_result(ttl=120)
-def _get_skilllab_submission_stats_cached():
-    """Cached stats (2 min). Cleared on import.
-    Submissions with a remark are considered reviewed and not pending.
-    """
-    total = SkillLabSubmission.query.count() or 0
-    verified = SkillLabSubmission.query.filter(SkillLabSubmission.valid == True).count() or 0
-    # Reviewed = valid=True OR has non-empty remark (so not pending)
-    reviewed = SkillLabSubmission.query.filter(
+def _get_codelab_submission_stats_cached():
+    """Cached stats (2 min). Cleared on import."""
+    total = CodeLabSubmission.query.count() or 0
+    verified = CodeLabSubmission.query.filter(CodeLabSubmission.valid == True).count() or 0
+    reviewed = CodeLabSubmission.query.filter(
         or_(
-            SkillLabSubmission.valid == True,
+            CodeLabSubmission.valid == True,
             and_(
-                SkillLabSubmission.remark.isnot(None),
-                SkillLabSubmission.remark != '',
+                CodeLabSubmission.remark.isnot(None),
+                CodeLabSubmission.remark != '',
             ),
         )
     ).count() or 0
@@ -43,58 +40,61 @@ def _get_skilllab_submission_stats_cached():
 
 
 @bp.route('/stats', methods=['GET'])
-@require_page_access('skilllab_submission')
+@require_page_access('codelab_submission')
 def get_stats():
-    """Return aggregate stats for Skill Lab submissions (cached 2 min)."""
+    """Return aggregate stats for Code Lab submissions (cached 2 min)."""
     try:
-        data = _get_skilllab_submission_stats_cached()
+        data = _get_codelab_submission_stats_cached()
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @bp.route('/list', methods=['GET'])
-@require_page_access('skilllab_submission')
+@require_page_access('codelab_submission')
 def list_submissions():
     """
-    List Skill Lab submissions with pagination, search, and valid filter.
+    List Code Lab submissions with pagination, search, and valid filter.
     Query params: search, valid (true/false/all), page, per_page.
     """
     try:
         search = request.args.get('search', '').strip()
         valid_filter = request.args.get('valid', '').strip().lower()
         problem_filter = request.args.get('problem_statement', '').strip()
+        track_param = request.args.get('track', '').strip()
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
-        query = SkillLabSubmission.query
+        query = CodeLabSubmission.query
 
         if search:
             query = query.filter(
                 or_(
-                    SkillLabSubmission.team_name.ilike(f'%{search}%'),
-                    SkillLabSubmission.leader_name.ilike(f'%{search}%'),
-                    SkillLabSubmission.leader_email.ilike(f'%{search}%'),
+                    CodeLabSubmission.team_name.ilike(f'%{search}%'),
+                    CodeLabSubmission.leader_name.ilike(f'%{search}%'),
+                    CodeLabSubmission.leader_email.ilike(f'%{search}%'),
                 )
             )
 
         if valid_filter == 'true':
-            query = query.filter(SkillLabSubmission.valid == True)
+            query = query.filter(CodeLabSubmission.valid == True)
         elif valid_filter == 'false':
-            # Pending = not reviewed: valid=False and no remark
             query = query.filter(
-                SkillLabSubmission.valid == False,
+                CodeLabSubmission.valid == False,
                 or_(
-                    SkillLabSubmission.remark.is_(None),
-                    SkillLabSubmission.remark == '',
+                    CodeLabSubmission.remark.is_(None),
+                    CodeLabSubmission.remark == '',
                 ),
             )
 
         if problem_filter:
-            query = query.filter(SkillLabSubmission.problem_statement.ilike(f'%{problem_filter}%'))
+            query = query.filter(CodeLabSubmission.problem_statement.ilike(f'%{problem_filter}%'))
 
-        query = query.order_by(SkillLabSubmission.created_at.desc())
+        if track_param in ('1', '2', '3'):
+            query = query.filter(CodeLabSubmission.track_number == int(track_param))
+
+        query = query.order_by(CodeLabSubmission.created_at.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
         rows = [row.to_dict() for row in pagination.items]
@@ -116,7 +116,7 @@ def _is_reviewed(submission):
 
 
 @bp.route('/<submission_id>/verify', methods=['PUT'])
-@require_page_access('skilllab_submission')
+@require_page_access('codelab_submission')
 def verify_submission(submission_id):
     """
     Update the valid flag and remark for a submission (intern verification).
@@ -124,13 +124,12 @@ def verify_submission(submission_id):
     Once reviewed, only admin users can edit.
     """
     try:
-        submission = SkillLabSubmission.query.filter_by(id=submission_id).first()
+        submission = CodeLabSubmission.query.filter_by(id=submission_id).first()
         if not submission:
             return jsonify({'error': 'Submission not found'}), 404
 
         user = get_current_user()
 
-        # If already reviewed, only admin can edit
         if _is_reviewed(submission):
             if not user or user.role != 'admin':
                 return jsonify({'error': 'This submission has already been reviewed. Only admin users can modify it.'}), 403
@@ -141,7 +140,6 @@ def verify_submission(submission_id):
         if 'remark' in data:
             submission.remark = (data['remark'] or '').strip() or None
 
-        # Record who verified
         if user:
             submission.updated_by_name = user.name
             submission.updated_by_email = user.email
@@ -157,18 +155,18 @@ def verify_submission(submission_id):
 
 
 @bp.route('/filters', methods=['GET'])
-@require_page_access('skilllab_submission')
+@require_page_access('codelab_submission')
 def get_filter_options():
     """Return distinct problem statements for filter dropdown."""
     try:
         problem_statements = [
-            r[0] for r in db.session.query(SkillLabSubmission.problem_statement)
+            r[0] for r in db.session.query(CodeLabSubmission.problem_statement)
             .filter(
-                SkillLabSubmission.problem_statement.isnot(None),
-                SkillLabSubmission.problem_statement != ''
+                CodeLabSubmission.problem_statement.isnot(None),
+                CodeLabSubmission.problem_statement != ''
             )
             .distinct()
-            .order_by(SkillLabSubmission.problem_statement)
+            .order_by(CodeLabSubmission.problem_statement)
             .all()
             if r[0]
         ]
