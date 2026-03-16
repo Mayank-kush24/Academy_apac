@@ -1108,7 +1108,7 @@
    ============================================ */
 .primary-analytics-row {
     display: grid;
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: 1fr;
     gap: 24px;
     margin-bottom: 32px;
 }
@@ -1119,6 +1119,45 @@
 
 .chart-secondary {
     padding: 24px;
+}
+
+.segmentation-card {
+    margin-bottom: 32px;
+}
+.segmentation-container {
+    height: 420px !important;
+    min-height: 420px !important;
+    max-height: 420px !important;
+}
+
+.chart-header:has(.seg-back-btn) {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+.seg-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    color: #6B7280;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+.seg-back-btn:hover {
+    color: #1f2937;
+    background: #e5e7eb;
+    border-color: #d1d5db;
 }
 
 /* Registration source bifurcation card (placeholder) */

@@ -13,6 +13,50 @@ from server.utils.state_normalize import normalize_state
 
 bp = Blueprint('dashboard', __name__)
 
+INDUSTRY_DOMAIN_MAP = {
+    'Technology': [
+        'Software development', 'Software Development',
+        'Information Technology', 'FinTech', 'Fintech',
+        'Cloud Computing', 'DevOps', 'Cybersecurity',
+        'Web Development', 'Mobile Development', 'IT Services',
+        'SaaS', 'Blockchain', 'IoT',
+    ],
+    'Data & AI': [
+        'Artificial Intelligence', 'Data Analytics', 'Data Science',
+        'Machine Learning', 'Deep Learning', 'Big Data',
+        'Business Intelligence', 'Natural Language Processing', 'NLP',
+        'Computer Vision', 'Generative AI', 'Gen AI',
+    ],
+    'Business & Commerce': [
+        'E-Commerce', 'E-commerce', 'Marketing & Advertising',
+        'Marketing', 'Advertising', 'Sales', 'Retail',
+        'Business Development', 'Consulting', 'Management',
+        'Finance', 'Banking', 'Insurance', 'Real Estate',
+    ],
+    'Manufacturing & Engineering': [
+        'Manufacturing', 'Engineering', 'Automotive',
+        'Aerospace', 'Electronics', 'Hardware',
+        'Construction', 'Energy', 'Oil & Gas',
+    ],
+    'Education & Research': [
+        'Education & Skill Development', 'Education', 'Academia',
+        'Research', 'Training', 'EdTech', 'E-Learning',
+    ],
+    'Healthcare & Life Sciences': [
+        'Healthcare', 'Health', 'Pharma', 'Pharmaceutical',
+        'Biotechnology', 'Medical', 'Life Sciences',
+    ],
+    'Media & Design': [
+        'Media', 'Entertainment', 'Gaming', 'Design',
+        'UI/UX', 'Graphic Design', 'Content Creation',
+    ],
+}
+
+_DOMAIN_INDUSTRY_LOOKUP = {}
+for _industry, _domains in INDUSTRY_DOMAIN_MAP.items():
+    for _d in _domains:
+        _DOMAIN_INDUSTRY_LOOKUP[_d.strip().lower()] = _industry
+
 # Module-level cached combined dashboard (summary + charts) - one cache entry per period
 @cache_result(ttl=300)
 def _get_dashboard_data_cached(period):
@@ -44,7 +88,7 @@ def get_dashboard_data():
             'charts': {
                 'registration_trends': [], 'gender_distribution': [],
                 'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
-                'occupation_distribution': [], 'top_domains': [], 'top_cities': [], 'top_cities_outside_india': [], 'top_organizations': [],
+                'occupation_distribution': [], 'top_domains': [], 'user_segmentation': {'industries': []}, 'top_cities': [], 'top_cities_outside_india': [], 'top_organizations': [],
                 'india_state_registrations': [], 'apac_country_registrations': []
             }
         }), 200
@@ -866,6 +910,7 @@ def get_charts():
             'gender_distribution': [],
             'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
             'top_domains': [],
+            'user_segmentation': {'industries': []},
             'top_cities': [],
             'top_cities_outside_india': [],
             'top_states': [],
@@ -961,8 +1006,9 @@ def _fetch_charts_data(period, summary=None):
                 {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}
             ]
         
-        # Top domains (top 10)
+        # Top domains + industry→domain segmentation
         top_domains_data = []
+        user_segmentation = {'industries': []}
         try:
             domains_query = db.session.query(
                 UserPIICombined.domain,
@@ -973,12 +1019,37 @@ def _fetch_charts_data(period, summary=None):
             )
             if date_cond is not None:
                 domains_query = domains_query.filter(date_cond)
-            top_domains = domains_query.group_by(
+            all_domains = domains_query.group_by(
                 UserPIICombined.domain
-            ).order_by(desc('count')).limit(10).all()
-            top_domains_data = [{'label': d[0], 'value': d[1]} for d in top_domains]
+            ).order_by(desc('count')).all()
+
+            top_domains_data = [{'label': d[0], 'value': d[1]} for d in all_domains[:10]]
+
+            industry_buckets = {}
+            for domain_name, count in all_domains:
+                if domain_name is None or not isinstance(domain_name, str):
+                    continue
+                industry = _DOMAIN_INDUSTRY_LOOKUP.get(domain_name.strip().lower(), 'Other')
+                if industry not in industry_buckets:
+                    industry_buckets[industry] = {'total': 0, 'domains': []}
+                industry_buckets[industry]['total'] += int(count) if count else 0
+                industry_buckets[industry]['domains'].append({'label': domain_name, 'value': int(count) if count else 0})
+
+            industries_list = []
+            for ind, bucket in industry_buckets.items():
+                if ind == 'Other':
+                    continue
+                bucket['domains'].sort(key=lambda x: x['value'], reverse=True)
+                industries_list.append({
+                    'label': ind,
+                    'value': int(bucket['total']),
+                    'domains': bucket['domains'],
+                })
+            industries_list.sort(key=lambda x: x['value'], reverse=True)
+            user_segmentation = {'industries': industries_list}
         except:
             top_domains_data = []
+            user_segmentation = {'industries': []}
         
         # Top cities (top 10)
         top_cities_data = []
@@ -1074,7 +1145,8 @@ def _fetch_charts_data(period, summary=None):
             )
             exclude_na = ~or_(
                 func.lower(func.trim(UserPIICombined.organization_name)) == 'na',
-                func.lower(func.trim(UserPIICombined.organization_name)) == 'n/a'
+                func.lower(func.trim(UserPIICombined.organization_name)) == 'n/a',
+                func.lower(func.trim(UserPIICombined.organization_name)) == 'freelance'
             )
             orgs_query = db.session.query(
                 UserPIICombined.organization_name,
@@ -1371,6 +1443,7 @@ def _fetch_charts_data(period, summary=None):
             'gender_distribution': gender_distribution,
             'registration_source_bifurcation': registration_source_bifurcation,
             'top_domains': top_domains_data,
+            'user_segmentation': user_segmentation,
             'top_cities': top_cities_data,
             'top_cities_outside_india': top_cities_outside_india_data,
             'top_states': top_states_data,
@@ -1391,6 +1464,7 @@ def _fetch_charts_data(period, summary=None):
             'gender_distribution': [],
             'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
             'top_domains': [],
+            'user_segmentation': {'industries': []},
             'top_cities': [],
             'top_cities_outside_india': [],
             'top_states': [],

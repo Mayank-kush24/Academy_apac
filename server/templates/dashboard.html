@@ -304,17 +304,21 @@
                 </div>
             </div>
 
-            <!-- Right: Segmentation (30%) -->
-            <div class="glass-card chart-secondary">
-                <div class="chart-header">
-                    <div>
-                        <h3 class="chart-title">User Segmentation</h3>
-                        <p class="chart-subtitle">Domain distribution</p>
-                    </div>
+        </div>
+
+        <!-- User Segmentation (full width, below Registration Trend) -->
+        <div class="glass-card chart-primary segmentation-card">
+            <div class="chart-header">
+                <div>
+                    <h3 class="chart-title">User Segmentation</h3>
+                    <p class="chart-subtitle" id="segmentationSubtitle">Industry distribution</p>
                 </div>
-                <div class="chart-container-compact">
-                    <canvas id="domainsChart"></canvas>
-                </div>
+                <button class="seg-back-btn" id="segBackBtn" title="Back to industries" style="display:none;">
+                    <i class="fas fa-arrow-left"></i> Industries
+                </button>
+            </div>
+            <div class="chart-container-large segmentation-container">
+                <canvas id="domainsChart"></canvas>
             </div>
         </div>
 

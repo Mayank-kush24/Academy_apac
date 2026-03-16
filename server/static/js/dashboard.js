@@ -215,7 +215,7 @@ async function loadDashboardData() {
             };
         }
         if (!chartsData) {
-            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
+            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], user_segmentation: { industries: [] }, top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
@@ -592,8 +592,10 @@ function renderCharts(data, summary = null) {
         showEmptyChart('registrationSourceChart', 'No registration source data available');
     }
     
-    // Top Domains (Bar Chart) - User Segmentation only (no separate Top Domains card)
-    if (data.top_domains && data.top_domains.length > 0) {
+    // User Segmentation (drill-down bar chart)
+    if (data.user_segmentation && data.user_segmentation.industries && data.user_segmentation.industries.length > 0) {
+        renderSegmentationChart(data.user_segmentation);
+    } else if (data.top_domains && data.top_domains.length > 0) {
         renderBarChart('domainsChart', 'Top Domains', data.top_domains);
     } else {
         showEmptyChart('domainsChart', 'No domain data available');
@@ -1590,6 +1592,130 @@ function renderDonutChart(canvasId, title, data, opts) {
         },
         plugins: []
     });
+}
+
+/* ── User-Segmentation drill-down (Industry → Domain) ── */
+
+const _segDataLabelsPlugin = {
+    id: 'segDataLabels',
+    afterDatasetsDraw(chart) {
+        const { ctx, data: chartData } = chart;
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data) return;
+        ctx.save();
+        ctx.font = "500 11px 'Inter', sans-serif";
+        ctx.fillStyle = '#6B7280';
+        ctx.textAlign = 'center';
+        meta.data.forEach((bar, i) => {
+            const val = chartData.datasets[0].data[i];
+            if (val == null) return;
+            const label = typeof val === 'number' ? val.toLocaleString() : val;
+            ctx.fillText(label, bar.x, bar.y - 6);
+        });
+        ctx.restore();
+    }
+};
+
+function _renderSegmentationLevel(canvasId, items, title, onBarClick) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const container = canvas.parentElement;
+    if (container) {
+        container.style.height = '420px';
+        container.style.minHeight = '420px';
+        container.style.maxHeight = '420px';
+    }
+
+    if (Chart.getChart(canvas)) Chart.getChart(canvas).destroy();
+
+    const labels = items.map(d => d.label || '(unknown)');
+    const values = items.map(d => Number(d.value) || 0);
+
+    const chart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label: title,
+                data: values,
+                backgroundColor: 'rgba(59,130,246,0.7)',
+                borderColor: 'rgba(59,130,246,1)',
+                borderWidth: 1,
+                borderRadius: 6,
+                minBarLength: 12
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            layout: { padding: { top: 24, bottom: 8 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: { enabled: false }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        font: { family: "'Inter', sans-serif", size: 11 },
+                        color: '#6B7280',
+                        maxRotation: 35,
+                        minRotation: 0
+                    },
+                    grid: { display: false }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        font: { family: "'Inter', sans-serif", size: 11 },
+                        color: '#6B7280'
+                    },
+                    grid: { color: 'rgba(0,0,0,0.05)' }
+                }
+            },
+            onClick(event) {
+                if (!onBarClick) return;
+                const xScale = chart.scales.x;
+                const idx = xScale.getValueForPixel(event.x);
+                if (idx >= 0 && idx < items.length) onBarClick(idx);
+            },
+            onHover(event) {
+                if (!onBarClick) { canvas.style.cursor = 'default'; return; }
+                const xScale = chart.scales.x;
+                const idx = xScale.getValueForPixel(event.x);
+                canvas.style.cursor = (idx >= 0 && idx < items.length) ? 'pointer' : 'default';
+            }
+        },
+        plugins: [_segDataLabelsPlugin]
+    });
+
+    const containerWidth = container ? container.offsetWidth : 0;
+    if (containerWidth === 0) {
+        setTimeout(() => { chart.resize(); }, 100);
+    }
+}
+
+function renderSegmentationChart(segData) {
+    const filteredIndustries = (segData.industries || []).filter(ind => ind.label !== 'Other');
+    const subtitle = document.getElementById('segmentationSubtitle');
+    const backBtn = document.getElementById('segBackBtn');
+
+    function drillInto(index) {
+        const industry = filteredIndustries[index];
+        if (!industry || !industry.domains) return;
+        if (subtitle) subtitle.textContent = 'Domains in ' + industry.label;
+        if (backBtn) backBtn.style.display = '';
+        _renderSegmentationLevel('domainsChart', industry.domains, industry.label, null);
+    }
+
+    function showIndustries() {
+        if (subtitle) subtitle.textContent = 'Industry distribution';
+        if (backBtn) backBtn.style.display = 'none';
+        _renderSegmentationLevel('domainsChart', filteredIndustries, 'Industries', drillInto);
+    }
+
+    if (backBtn) backBtn.onclick = showIndustries;
+    showIndustries();
 }
 
 /**
