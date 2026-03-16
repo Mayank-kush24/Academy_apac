@@ -15,9 +15,9 @@ from server.utils.cache import cache_result
 bp = Blueprint('codelab_submission', __name__)
 
 
-@cache_result(ttl=120)
+@cache_result(ttl=900)
 def _get_codelab_submission_stats_cached():
-    """Cached stats (2 min). Cleared on import."""
+    """Cached stats (15 min). Cleared on import."""
     total = CodeLabSubmission.query.count() or 0
     verified = CodeLabSubmission.query.filter(CodeLabSubmission.valid == True).count() or 0
     reviewed = CodeLabSubmission.query.filter(

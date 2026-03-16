@@ -4,11 +4,13 @@ Lists all users from user_pii with same stats, filters and columns as Book of Bu
 """
 import csv
 import io
+import re
 from datetime import date
 from flask import Blueprint, request, jsonify, Response
 from sqlalchemy import or_, func, desc
 from server.models import db, UserPIICombined
 from server.utils.permissions import require_page_access
+from server.utils.industry_map import get_industry, INDUSTRY_DOMAIN_MAP
 from server.utils.state_normalize import (
     normalize_state,
     get_state_filter_values,
@@ -17,13 +19,24 @@ from server.utils.state_normalize import (
 
 bp = Blueprint('users_registrations', __name__)
 
+_PAREN_RE = re.compile(r'\s*\(.*?\)\s*$')
+
+def _clean_designation(designation, occupation):
+    """Return cleaned designation: 'Student' when occupation contains student,
+    otherwise strip trailing parenthesized numbers."""
+    occ = (occupation or '').strip().lower()
+    if 'student' in occ:
+        return 'Student'
+    raw = (designation or '').strip()
+    return _PAREN_RE.sub('', raw).strip() if raw else ''
+
 
 def _users_base():
     """Query base for all users (user_pii)."""
     return UserPIICombined.query
 
 
-def _filter_conditions(search=None, countries=None, states=None, cities=None, organizations=None):
+def _filter_conditions(search=None, countries=None, states=None, cities=None, organizations=None, designations=None, industries=None):
     """Return list of filter conditions. Accepts lists for multi-select filters."""
     conditions = []
     if search:
@@ -50,6 +63,17 @@ def _filter_conditions(search=None, countries=None, states=None, cities=None, or
         conditions.append(or_(*[UserPIICombined.city.ilike(f'%{c}%') for c in cities]))
     if organizations:
         conditions.append(or_(*[UserPIICombined.organization_name.ilike(f'%{o}%') for o in organizations]))
+    if designations:
+        conditions.append(or_(*[UserPIICombined.designation.ilike(f'%{d}%') for d in designations]))
+    if industries:
+        domain_values = set()
+        for ind in industries:
+            for dom in INDUSTRY_DOMAIN_MAP.get(ind, []):
+                domain_values.add(dom.strip().lower())
+        domain_clauses = [func.lower(UserPIICombined.domain).in_(domain_values)] if domain_values else []
+        for ind in industries:
+            domain_clauses.append(UserPIICombined.domain.ilike(f'%{ind}%'))
+        conditions.append(or_(*domain_clauses))
     return conditions
 
 
@@ -66,9 +90,12 @@ def get_stats():
         states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
         cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
         organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
+        designations = [x.strip() for x in request.args.getlist('designation') if x and x.strip()]
+        industries = [x.strip() for x in request.args.getlist('industry') if x and x.strip()]
         filter_conds = _filter_conditions(
             search=search or None, countries=countries or None, states=states or None,
-            cities=cities or None, organizations=organizations or None
+            cities=cities or None, organizations=organizations or None,
+            designations=designations or None, industries=industries or None
         )
 
         base = _users_base()
@@ -204,13 +231,16 @@ def list_registrations():
         states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
         cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
         organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
+        designations = [x.strip() for x in request.args.getlist('designation') if x and x.strip()]
+        industries = [x.strip() for x in request.args.getlist('industry') if x and x.strip()]
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
         filter_conds = _filter_conditions(
             search=search or None, countries=countries or None, states=states or None,
-            cities=cities or None, organizations=organizations or None
+            cities=cities or None, organizations=organizations or None,
+            designations=designations or None, industries=industries or None
         )
         query = _users_base()
         for c in filter_conds:
@@ -228,6 +258,9 @@ def list_registrations():
                     'state': normalize_state(r.state) if r.state else '',
                     'city': r.city or '',
                     'organization': r.organization_name or '',
+                    'designation': _clean_designation(r.designation, r.occupation),
+                    'industry': get_industry(r.domain, r.designation, r.organization_name),
+                    'occupation': r.occupation or '',
                 }
                 for r in rows
             ],
@@ -250,10 +283,13 @@ def download_csv():
         states = [x.strip() for x in request.args.getlist('state') if x and x.strip()]
         cities = [x.strip() for x in request.args.getlist('city') if x and x.strip()]
         organizations = [x.strip() for x in request.args.getlist('organization') if x and x.strip()]
+        designations = [x.strip() for x in request.args.getlist('designation') if x and x.strip()]
+        industries = [x.strip() for x in request.args.getlist('industry') if x and x.strip()]
 
         filter_conds = _filter_conditions(
             search=search or None, countries=countries or None, states=states or None,
-            cities=cities or None, organizations=organizations or None
+            cities=cities or None, organizations=organizations or None,
+            designations=designations or None, industries=industries or None
         )
         query = _users_base()
         for c in filter_conds:
@@ -262,12 +298,14 @@ def download_csv():
 
         si = io.StringIO()
         writer = csv.writer(si)
-        writer.writerow(['Name', 'Country', 'State', 'City', 'Organization'])
+        writer.writerow(['Name', 'Country', 'State', 'City', 'Organization', 'Designation', 'Industry'])
         for r in query.all():
             writer.writerow([
                 r.name or '', r.country or '',
                 normalize_state(r.state) if r.state else '',
                 r.city or '', r.organization_name or '',
+                _clean_designation(r.designation, r.occupation),
+                get_industry(r.domain, r.designation, r.organization_name) or '',
             ])
 
         output = si.getvalue()
@@ -299,11 +337,32 @@ def get_filter_options():
         organizations = [r[0] for r in base.with_entities(UserPIICombined.organization_name).distinct().filter(
             UserPIICombined.organization_name.isnot(None), UserPIICombined.organization_name != ''
         ).order_by(UserPIICombined.organization_name).all() if r[0]]
+        raw_designations = [r[0] for r in base.with_entities(UserPIICombined.designation).distinct().filter(
+            UserPIICombined.designation.isnot(None), UserPIICombined.designation != ''
+        ).order_by(UserPIICombined.designation).all() if r[0]]
+        import re as _re
+        seen_desig = {}
+        for d in raw_designations:
+            cleaned = _re.sub(r'\s*\(.*?\)\s*$', '', d).strip()
+            if cleaned and cleaned.lower() not in seen_desig:
+                seen_desig[cleaned.lower()] = cleaned
+        designations = sorted(seen_desig.values(), key=str.lower)
+        raw_domains = [r[0] for r in base.with_entities(UserPIICombined.domain).distinct().filter(
+            UserPIICombined.domain.isnot(None), UserPIICombined.domain != ''
+        ).order_by(UserPIICombined.domain).all() if r[0]]
+        industry_set = set()
+        for dom in raw_domains:
+            ind = get_industry(dom)
+            if ind:
+                industry_set.add(ind)
+        industries = sorted(industry_set, key=str.lower)
         return jsonify({
             'countries': countries,
             'states': states,
             'cities': cities,
             'organizations': organizations,
+            'designations': designations,
+            'industries': industries,
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

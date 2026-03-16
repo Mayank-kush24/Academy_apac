@@ -174,6 +174,36 @@
                             <input type="hidden" id="filterOrganization" name="filterOrganization" value="">
                         </div>
                     </div>
+                    <div style="min-width: 180px;" class="searchable-select-wrap">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Designation</label>
+                        <div class="searchable-select" data-filter="designation">
+                            <button type="button" class="searchable-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="searchable-select-value">All designations</span>
+                                <i class="fas fa-chevron-down searchable-select-arrow"></i>
+                            </button>
+                            <div class="searchable-select-dropdown" hidden>
+                                <input type="text" class="searchable-select-search" placeholder="Search designation..." autocomplete="off">
+                                <button type="button" class="searchable-select-clear" style="margin: 4px 8px; font-size: 0.8125rem; color: #6b7280; background: none; border: none; cursor: pointer;">Clear</button>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterDesignation" name="filterDesignation" value="">
+                        </div>
+                    </div>
+                    <div style="min-width: 180px;" class="searchable-select-wrap">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Industry</label>
+                        <div class="searchable-select" data-filter="industry">
+                            <button type="button" class="searchable-select-trigger" aria-haspopup="listbox" aria-expanded="false">
+                                <span class="searchable-select-value">All industries</span>
+                                <i class="fas fa-chevron-down searchable-select-arrow"></i>
+                            </button>
+                            <div class="searchable-select-dropdown" hidden>
+                                <input type="text" class="searchable-select-search" placeholder="Search industry..." autocomplete="off">
+                                <button type="button" class="searchable-select-clear" style="margin: 4px 8px; font-size: 0.8125rem; color: #6b7280; background: none; border: none; cursor: pointer;">Clear</button>
+                                <ul class="searchable-select-list" role="listbox"></ul>
+                            </div>
+                            <input type="hidden" id="filterIndustry" name="filterIndustry" value="">
+                        </div>
+                    </div>
                     <button type="button" class="btn btn-primary" onclick="applyFilters()">
                         <i class="fas fa-search"></i> Apply
                     </button>
@@ -197,10 +227,12 @@
                                 <th>State</th>
                                 <th>City</th>
                                 <th>Organization</th>
+                                <th>Designation</th>
+                                <th>Industry</th>
                             </tr>
                         </thead>
                         <tbody id="tableBody">
-                            <tr><td colspan="5" class="text-center">Loading...</td></tr>
+                            <tr><td colspan="7" class="text-center">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -224,7 +256,7 @@
     function renderTable(rows) {
         var tbody = document.getElementById('tableBody');
         if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">No users found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center">No users found.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(function(r) {
@@ -233,7 +265,15 @@
             var state = (r.state && r.state.trim()) ? escapeHtml(r.state) : '<span class="text-muted">—</span>';
             var city = (r.city && r.city.trim()) ? escapeHtml(r.city) : '<span class="text-muted">—</span>';
             var org = (r.organization && r.organization.trim()) ? escapeHtml(r.organization) : '<span class="text-muted">—</span>';
-            return '<tr><td>' + name + '</td><td>' + country + '</td><td>' + state + '</td><td>' + city + '</td><td>' + org + '</td></tr>';
+            var rawDesig = (r.occupation && r.occupation.toLowerCase().indexOf('student') !== -1)
+                ? 'Student'
+                : (r.designation && r.designation.trim()) ? r.designation.replace(/\s*\(.*?\)\s*$/, '').trim() : '';
+            var designation = rawDesig ? escapeHtml(rawDesig) : '<span class="text-muted">—</span>';
+            var occ = (r.occupation || '').toLowerCase();
+            var isProfessional = occ.indexOf('professional') !== -1 || occ.indexOf('startup') !== -1 || occ.indexOf('freelance') !== -1;
+            var rawIndustry = (r.industry && r.industry.trim()) ? r.industry.trim() : '';
+            var industry = rawIndustry ? escapeHtml(rawIndustry) : (isProfessional ? 'Other' : '<span class="text-muted">—</span>');
+            return '<tr><td>' + name + '</td><td>' + country + '</td><td>' + state + '</td><td>' + city + '</td><td>' + org + '</td><td>' + designation + '</td><td>' + industry + '</td></tr>';
         }).join('');
     }
 
@@ -266,6 +306,8 @@
         var states = getMultiFilterValues('filterState');
         var cities = getMultiFilterValues('filterCity');
         var organizations = getMultiFilterValues('filterOrganization');
+        var designations = getMultiFilterValues('filterDesignation');
+        var industries = getMultiFilterValues('filterIndustry');
         var params = new URLSearchParams();
         params.set('page', page);
         params.set('per_page', '20');
@@ -274,6 +316,8 @@
         states.forEach(function(s) { params.append('state', s); });
         cities.forEach(function(c) { params.append('city', c); });
         organizations.forEach(function(o) { params.append('organization', o); });
+        designations.forEach(function(d) { params.append('designation', d); });
+        industries.forEach(function(i) { params.append('industry', i); });
         var url = '/api/users-registrations/list?' + params.toString();
         var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
         if (!token) {
@@ -310,6 +354,8 @@
         document.getElementById('filterState').value = '';
         document.getElementById('filterCity').value = '';
         document.getElementById('filterOrganization').value = '';
+        document.getElementById('filterDesignation').value = '';
+        document.getElementById('filterIndustry').value = '';
         document.querySelectorAll('.searchable-select').forEach(function(wrap) {
             var valueSpan = wrap.querySelector('.searchable-select-trigger .searchable-select-value');
             var dropdown = wrap.querySelector('.searchable-select-dropdown');
@@ -455,7 +501,9 @@
                     { filter: 'country', allLabel: 'All countries', items: data.countries || [] },
                     { filter: 'state', allLabel: 'All states', items: data.states || [] },
                     { filter: 'city', allLabel: 'All cities', items: data.cities || [] },
-                    { filter: 'organization', allLabel: 'All organizations', items: data.organizations || [] }
+                    { filter: 'organization', allLabel: 'All organizations', items: data.organizations || [] },
+                    { filter: 'designation', allLabel: 'All designations', items: data.designations || [] },
+                    { filter: 'industry', allLabel: 'All industries', items: data.industries || [] }
                 ];
                 configs.forEach(function(cfg) {
                     var wrap = document.querySelector('.searchable-select[data-filter="' + cfg.filter + '"]');
@@ -494,12 +542,16 @@
         var states = getMultiFilterValues('filterState');
         var cities = getMultiFilterValues('filterCity');
         var organizations = getMultiFilterValues('filterOrganization');
+        var designations = getMultiFilterValues('filterDesignation');
+        var industries = getMultiFilterValues('filterIndustry');
         var params = new URLSearchParams();
         if (search) params.set('search', search);
         countries.forEach(function(c) { params.append('country', c); });
         states.forEach(function(s) { params.append('state', s); });
         cities.forEach(function(c) { params.append('city', c); });
         organizations.forEach(function(o) { params.append('organization', o); });
+        designations.forEach(function(d) { params.append('designation', d); });
+        industries.forEach(function(i) { params.append('industry', i); });
         var url = '/api/users-registrations/stats' + (params.toString() ? '?' + params.toString() : '');
         fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
             .then(function(res) {
@@ -575,11 +627,15 @@
             var states = getMultiFilterValues('filterState');
             var cities = getMultiFilterValues('filterCity');
             var organizations = getMultiFilterValues('filterOrganization');
+            var designations = getMultiFilterValues('filterDesignation');
+            var industries = getMultiFilterValues('filterIndustry');
             if (search) params.set('search', search);
             countries.forEach(function(c) { params.append('country', c); });
             states.forEach(function(s) { params.append('state', s); });
             cities.forEach(function(c) { params.append('city', c); });
             organizations.forEach(function(o) { params.append('organization', o); });
+            designations.forEach(function(d) { params.append('designation', d); });
+            industries.forEach(function(i) { params.append('industry', i); });
         }
 
         var url = '/api/users-registrations/download' + (params.toString() ? '?' + params.toString() : '');

@@ -9,6 +9,10 @@ let lastLoadedPeriod = null;
 let periodDebounceTimer = null;
 const PERIOD_DEBOUNCE_MS = 150;
 
+function _removeChartSkeletons() {
+    document.querySelectorAll('.chart-skeleton').forEach(el => el.remove());
+}
+
 // Load dashboard data on page load
 document.addEventListener('DOMContentLoaded', function() {
     // Only load if we're on the dashboard page
@@ -219,6 +223,7 @@ async function loadDashboardData() {
         }
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
+        _removeChartSkeletons();
         lastLoadedPeriod = currentPeriod;
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
@@ -270,7 +275,7 @@ async function loadDashboardData() {
         });
     } finally {
         isLoading = false;
-        // Remove loading state (if old structure exists)
+        _removeChartSkeletons();
         const loadingIndicator = document.querySelector('.command-bar');
         if (loadingIndicator) {
             loadingIndicator.style.opacity = '1';
@@ -590,6 +595,13 @@ function renderCharts(data, summary = null) {
         renderDonutChart('registrationSourceChart', 'Registration source bifurcation', data.registration_source_bifurcation, { palette: 'registration' });
     } else {
         showEmptyChart('registrationSourceChart', 'No registration source data available');
+    }
+    
+    // Occupation Distribution (Donut)
+    if (data.occupation_distribution && data.occupation_distribution.length > 0) {
+        renderDonutChart('occupationChart', 'Occupation Distribution', data.occupation_distribution, { palette: 'occupation' });
+    } else {
+        showEmptyChart('occupationChart', 'No occupation data available');
     }
     
     // User Segmentation (drill-down bar chart)

@@ -1,9 +1,10 @@
 """
 Dashboard analytics routes
 """
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from server.models import db, UserPIICombined, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, OptionalMcqResponse
 from server.utils.auth import get_current_user
 from server.utils.mcq_answer_key import score_submission, get_response_score
@@ -13,56 +14,28 @@ from server.utils.state_normalize import normalize_state
 
 bp = Blueprint('dashboard', __name__)
 
-INDUSTRY_DOMAIN_MAP = {
-    'Technology': [
-        'Software development', 'Software Development',
-        'Information Technology', 'FinTech', 'Fintech',
-        'Cloud Computing', 'DevOps', 'Cybersecurity',
-        'Web Development', 'Mobile Development', 'IT Services',
-        'SaaS', 'Blockchain', 'IoT',
-    ],
-    'Data & AI': [
-        'Artificial Intelligence', 'Data Analytics', 'Data Science',
-        'Machine Learning', 'Deep Learning', 'Big Data',
-        'Business Intelligence', 'Natural Language Processing', 'NLP',
-        'Computer Vision', 'Generative AI', 'Gen AI',
-    ],
-    'Business & Commerce': [
-        'E-Commerce', 'E-commerce', 'Marketing & Advertising',
-        'Marketing', 'Advertising', 'Sales', 'Retail',
-        'Business Development', 'Consulting', 'Management',
-        'Finance', 'Banking', 'Insurance', 'Real Estate',
-    ],
-    'Manufacturing & Engineering': [
-        'Manufacturing', 'Engineering', 'Automotive',
-        'Aerospace', 'Electronics', 'Hardware',
-        'Construction', 'Energy', 'Oil & Gas',
-    ],
-    'Education & Research': [
-        'Education & Skill Development', 'Education', 'Academia',
-        'Research', 'Training', 'EdTech', 'E-Learning',
-    ],
-    'Healthcare & Life Sciences': [
-        'Healthcare', 'Health', 'Pharma', 'Pharmaceutical',
-        'Biotechnology', 'Medical', 'Life Sciences',
-    ],
-    'Media & Design': [
-        'Media', 'Entertainment', 'Gaming', 'Design',
-        'UI/UX', 'Graphic Design', 'Content Creation',
-    ],
-}
-
-_DOMAIN_INDUSTRY_LOOKUP = {}
-for _industry, _domains in INDUSTRY_DOMAIN_MAP.items():
-    for _d in _domains:
-        _DOMAIN_INDUSTRY_LOOKUP[_d.strip().lower()] = _industry
+from server.utils.industry_map import INDUSTRY_DOMAIN_MAP, _DOMAIN_INDUSTRY_LOOKUP, get_industry
 
 # Module-level cached combined dashboard (summary + charts) - one cache entry per period
-@cache_result(ttl=300)
+@cache_result(ttl=900)
 def _get_dashboard_data_cached(period):
-    """Fetch summary and charts in one go; cached for 5 min."""
-    summary = _fetch_summary_data(period)
-    charts = _fetch_charts_data(period, summary=summary)
+    """Fetch summary and charts in parallel; cached for 15 min (invalidated on import)."""
+    app = current_app._get_current_object()
+
+    def _run_summary():
+        with app.app_context():
+            return _fetch_summary_data(period)
+
+    def _run_charts():
+        with app.app_context():
+            return _fetch_charts_data(period)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        fut_summary = pool.submit(_run_summary)
+        fut_charts = pool.submit(_run_charts)
+        summary = fut_summary.result()
+        charts = fut_charts.result()
+
     return {'summary': summary, 'charts': charts}
 
 
@@ -114,9 +87,9 @@ def get_summary():
         }), 200
 
 
-@cache_result(ttl=300)
+@cache_result(ttl=900)
 def _get_region_breakdown_cached(region, period):
-    """Cached region breakdown data (5 min)."""
+    """Cached region breakdown data (15 min)."""
     cutoff_date = _get_period_dates(period)
     date_cond = _date_filter_condition(cutoff_date)
     SEA_COUNTRIES = [
@@ -895,9 +868,9 @@ def get_charts():
     """Get chart data for dashboard (cached)"""
     from server.utils.cache import cache_result
     
-    @cache_result(ttl=300)  # Cache for 5 minutes
+    @cache_result(ttl=900)
     def _get_charts(period):
-        """Internal function to fetch charts (cached)"""
+        """Internal function to fetch charts (cached 15 min)"""
         return _fetch_charts_data(period)
     
     try:
@@ -946,6 +919,21 @@ def _utm_to_registration_source(utm_medium):
     if 'homepage' in u:
         return 'Hack2skill'
     return 'Other'
+
+
+def _normalize_occupation(raw_occupation):
+    """Map raw occupation values to exactly 4 categories: Professional, Student, Startup, Freelance."""
+    if not raw_occupation or not str(raw_occupation).strip():
+        return 'Professional'
+    u = str(raw_occupation).strip().lower().replace('-', '_').replace(' ', '_')
+    if 'student' in u or u in ('college_student', 'school_student', 'college student', 'school student'):
+        return 'Student'
+    if 'startup' in u:
+        return 'Startup'
+    if 'freelance' in u or 'freelancer' in u:
+        return 'Freelance'
+    # professional, PROFESSIONAL, or any other value (e.g. job titles) -> Professional
+    return 'Professional'
 
 
 def _fetch_charts_data(period, summary=None):
@@ -1204,7 +1192,7 @@ def _fetch_charts_data(period, summary=None):
         except:
             designation_data = []
         
-        # Top occupations (top 10)
+        # Occupation distribution: normalize to 4 categories (Professional, Student, Startup, Freelance)
         occupation_data = []
         try:
             occupation_query = db.session.query(
@@ -1216,11 +1204,18 @@ def _fetch_charts_data(period, summary=None):
             )
             if date_cond is not None:
                 occupation_query = occupation_query.filter(date_cond)
-            occupations = occupation_query.group_by(
-                UserPIICombined.occupation
-            ).order_by(desc('count')).limit(10).all()
-            occupation_data = [{'label': o[0], 'value': o[1]} for o in occupations]
-        except:
+            occupations = occupation_query.group_by(UserPIICombined.occupation).all()
+            agg = {'Professional': 0, 'Student': 0, 'Startup': 0, 'Freelance': 0}
+            for raw_occ, cnt in occupations:
+                label = _normalize_occupation(raw_occ)
+                agg[label] = agg.get(label, 0) + (cnt or 0)
+            occupation_data = [
+                {'label': 'Professional', 'value': agg['Professional']},
+                {'label': 'Student', 'value': agg['Student']},
+                {'label': 'Startup', 'value': agg['Startup']},
+                {'label': 'Freelance', 'value': agg['Freelance']}
+            ]
+        except Exception:
             occupation_data = []
         
         # Age groups distribution - Optimized using SQL CASE statements

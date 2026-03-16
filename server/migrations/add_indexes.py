@@ -72,6 +72,25 @@ def add_indexes():
             # Using GIN index for better text search performance
             ("CREATE INDEX IF NOT EXISTS idx_user_pii_name_trgm ON user_pii USING gin(name gin_trgm_ops)", "Name trigram index (requires pg_trgm extension)"),
             ("CREATE INDEX IF NOT EXISTS idx_user_pii_email_trgm ON user_pii USING gin(email gin_trgm_ops)", "Email trigram index"),
+
+            # ── user_pii_injected (mirrors user_pii indexes for the UNION ALL view) ──
+            ("CREATE INDEX IF NOT EXISTS idx_upi_email ON user_pii_injected(email)", "user_pii_injected email"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_organization ON user_pii_injected(organization_name)", "user_pii_injected organization_name"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_domain ON user_pii_injected(domain)", "user_pii_injected domain"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_country ON user_pii_injected(country)", "user_pii_injected country"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_state ON user_pii_injected(state)", "user_pii_injected state"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_city ON user_pii_injected(city)", "user_pii_injected city"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_created_at ON user_pii_injected(created_at)", "user_pii_injected created_at"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_registered_at ON user_pii_injected(registered_at)", "user_pii_injected registered_at"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_gender ON user_pii_injected(gender)", "user_pii_injected gender"),
+            ("CREATE INDEX IF NOT EXISTS idx_upi_occupation ON user_pii_injected(occupation)", "user_pii_injected occupation"),
+
+            # ── Submission / lab tables ──
+            ("CREATE INDEX IF NOT EXISTS idx_skillboost_email ON skillboost_profile(email)", "skillboost_profile email"),
+            ("CREATE INDEX IF NOT EXISTS idx_skilllab_leader_email ON skilllab_submission(leader_email)", "skilllab_submission leader_email"),
+            ("CREATE INDEX IF NOT EXISTS idx_codelab_leader_email ON codelab_submission(leader_email)", "codelab_submission leader_email"),
+            ("CREATE INDEX IF NOT EXISTS idx_mcq_email ON optional_mcq_response(email)", "optional_mcq_response email"),
+            ("CREATE INDEX IF NOT EXISTS idx_mcq_track ON optional_mcq_response(track_number)", "optional_mcq_response track_number"),
         ]
         
         successful = 0

@@ -3,8 +3,10 @@ Flask application initialization for Gen AI Academy APAC Edition
 """
 from flask import Flask, render_template, send_from_directory, request, jsonify, redirect
 from flask_cors import CORS
+from flask_compress import Compress
 import os
 import sys
+import time
 
 # Add parent directory to path if running directly
 if __name__ == '__main__':
@@ -30,6 +32,16 @@ def create_app():
     
     # Enable CORS
     CORS(app)
+    
+    # Enable gzip/brotli compression for all responses
+    Compress(app)
+
+    # Cache-busting version injected into all templates (changes on restart / deploy)
+    _asset_version = str(int(time.time()))
+
+    @app.context_processor
+    def inject_asset_version():
+        return {'v': _asset_version}
     
     # Initialize database with connection pooling
     # Engine options are set in Config.init_app() via app.config['SQLALCHEMY_ENGINE_OPTIONS']
@@ -121,17 +133,23 @@ def create_app():
     app.register_blueprint(import_pii_injected.bp, url_prefix='/api/import-user-pii-injected')
     app.register_blueprint(track_progress.bp, url_prefix='/api/track-progress')
     
-    # Serve static files with cache headers for faster repeat loads
+    # Serve static files with aggressive cache headers for faster repeat loads
     @app.route('/static/<path:filename>')
     def static_files(filename):
-        """Serve static files with browser cache (1 hour for js/css, 24h for images/fonts)."""
+        """Serve static files with browser cache (24h for all assets)."""
         resp = send_from_directory(app.static_folder, filename)
         if resp.status_code == 200:
             lower = filename.lower()
             if lower.endswith(('.js', '.css', '.map')):
-                resp.headers['Cache-Control'] = 'public, max-age=3600'  # 1 hour
+                resp.headers['Cache-Control'] = 'public, max-age=86400'
             elif lower.endswith(('.ico', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.woff', '.woff2', '.ttf', '.eot')):
-                resp.headers['Cache-Control'] = 'public, max-age=86400'  # 24 hours
+                resp.headers['Cache-Control'] = 'public, max-age=604800'
+            fpath = os.path.join(app.static_folder, filename)
+            try:
+                mtime = str(int(os.path.getmtime(fpath)))
+                resp.headers['ETag'] = f'"{mtime}"'
+            except OSError:
+                pass
         return resp
     
     # Home page

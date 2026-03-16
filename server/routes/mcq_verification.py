@@ -18,9 +18,9 @@ from server.utils.cache import cache_result
 bp = Blueprint('mcq_verification', __name__)
 
 
-@cache_result(ttl=300)
+@cache_result(ttl=900)
 def _get_mcq_stats_cached():
-    """Compute MCQ stats (expensive); cached 5 min. Clear on MCQ import."""
+    """Compute MCQ stats (expensive); cached 15 min. Clear on MCQ import."""
     total = OptionalMcqResponse.query.count() or 0
     auto_passed = 0
     if total > 0:

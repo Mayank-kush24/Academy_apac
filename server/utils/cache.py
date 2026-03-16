@@ -12,7 +12,7 @@ _cache = {}
 _cache_timestamps = {}
 
 # Default TTL (Time To Live) in seconds
-DEFAULT_TTL = 300  # 5 minutes
+DEFAULT_TTL = 900  # 15 minutes (data only changes on import; cache is invalidated then)
 
 
 def get_cache_key(*args, **kwargs):

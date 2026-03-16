@@ -300,6 +300,7 @@
                     </div>
                 </div>
                 <div class="chart-container-large">
+                    <div class="chart-skeleton" id="skel-registrationTrends"><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:65%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:80%"></div><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:60%"></div></div>
                     <canvas id="registrationTrendsChart"></canvas>
                 </div>
             </div>
@@ -318,11 +319,12 @@
                 </button>
             </div>
             <div class="chart-container-large segmentation-container">
+                <div class="chart-skeleton" id="skel-domains"><div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:60%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:35%"></div><div class="skel-bar" style="height:25%"></div><div class="skel-bar" style="height:20%"></div></div>
                 <canvas id="domainsChart"></canvas>
             </div>
         </div>
 
-        <!-- Registration source + Gender (2 equal doughnut charts) -->
+        <!-- Registration source + Gender + Occupation (3 equal doughnut charts) -->
         <div class="bifurcation-row">
             <div class="glass-card chart-donut bifurcation-donut">
                 <div class="chart-header">
@@ -332,6 +334,7 @@
                     </div>
                 </div>
                 <div class="chart-container-donut">
+                    <div class="chart-skeleton" id="skel-regSource"><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:85%"></div><div class="skel-bar" style="height:40%"></div></div>
                     <canvas id="registrationSourceChart"></canvas>
                 </div>
             </div>
@@ -341,7 +344,18 @@
                     <p class="chart-subtitle">Demographic breakdown</p>
                 </div>
                 <div class="chart-container-donut">
+                    <div class="chart-skeleton" id="skel-gender"><div class="skel-bar" style="height:80%"></div><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:35%"></div></div>
                     <canvas id="genderChart"></canvas>
+                </div>
+            </div>
+            <div class="glass-card chart-donut bifurcation-donut">
+                <div class="chart-header">
+                    <h3 class="chart-title">Occupation Distribution</h3>
+                    <p class="chart-subtitle">By occupation / role</p>
+                </div>
+                <div class="chart-container-donut">
+                    <div class="chart-skeleton" id="skel-occupation"><div class="skel-bar" style="height:75%"></div><div class="skel-bar" style="height:60%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:30%"></div></div>
+                    <canvas id="occupationChart"></canvas>
                 </div>
             </div>
         </div>
@@ -498,5 +512,5 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/dashboard.js?v={{ v }}"></script>
 {% endblock %}

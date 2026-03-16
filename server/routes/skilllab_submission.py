@@ -15,9 +15,9 @@ from server.utils.cache import cache_result
 bp = Blueprint('skilllab_submission', __name__)
 
 
-@cache_result(ttl=120)
+@cache_result(ttl=900)
 def _get_skilllab_submission_stats_cached():
-    """Cached stats (2 min). Cleared on import.
+    """Cached stats (15 min). Cleared on import.
     Submissions with a remark are considered reviewed and not pending.
     """
     total = SkillLabSubmission.query.count() or 0

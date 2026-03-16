@@ -7,11 +7,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>{% block title %}Gen AI Academy APAC{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-    <link rel="stylesheet" href="/static/css/dashboard-enterprise.css">
-    <link rel="stylesheet" href="/static/css/dashboard-boutiq.css">
-    <link rel="stylesheet" href="/static/css/dashboard-premium.css">
-    <link rel="stylesheet" href="/static/css/liquid-glass.css">
+    <link rel="stylesheet" href="/static/css/styles.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/dashboard-enterprise.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/dashboard-boutiq.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/dashboard-premium.css?v={{ v }}">
+    <link rel="stylesheet" href="/static/css/liquid-glass.css?v={{ v }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;600;700&family=Google+Sans+Display:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -146,7 +146,7 @@
         </main>
     </div>
     
-    <script src="/static/js/auth.js"></script>
+    <script src="/static/js/auth.js?v={{ v }}"></script>
     <script>
         // Initialize mobile sidebar state
         function initMobileSidebar() {
