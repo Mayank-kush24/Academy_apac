@@ -85,10 +85,10 @@
                     <i class="fas fa-map-marker-alt"></i>
                 </div>
                 <div class="kpi-content">
-                    <div class="kpi-label kpi-label-overline">Top India Location</div>
+                    <div class="kpi-label kpi-label-overline">Top Registrations — India</div>
                     <div class="kpi-india-lines" id="topIndiaLocationLines">
-                        <div class="kpi-india-line" id="topIndiaStateLine">—</div>
-                        <div class="kpi-india-line" id="topIndiaCityLine">—</div>
+                        <div class="kpi-india-line"><span class="kpi-line-label">State</span> <span id="topIndiaStateLine">—</span></div>
+                        <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topIndiaCityLine">—</span></div>
                     </div>
                     <div class="kpi-change positive" id="topIndiaLocationChange">
                         <i class="fas fa-arrow-up"></i>
@@ -102,10 +102,10 @@
                     <i class="fas fa-flag"></i>
                 </div>
                 <div class="kpi-content">
-                    <div class="kpi-label kpi-label-overline">Outside India</div>
+                    <div class="kpi-label kpi-label-overline">Top Registrations — Outside India</div>
                     <div class="kpi-india-lines" id="topOutsideIndiaLines">
-                        <div class="kpi-india-line" id="topOutsideIndiaCountryLine">—</div>
-                        <div class="kpi-india-line" id="topOutsideIndiaCityLine">—</div>
+                        <div class="kpi-india-line"><span class="kpi-line-label">Country</span> <span id="topOutsideIndiaCountryLine">—</span></div>
+                        <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topOutsideIndiaCityLine">—</span></div>
                     </div>
                     <div class="kpi-sparkline">
                         <canvas id="topApacCountryMiniChart" width="120" height="32"></canvas>
@@ -201,17 +201,28 @@
                     </div>
                 </div>
             </div>
-            <div class="glass-card kpi-small">
+            <a href="/codelab-submission" class="glass-card kpi-small kpi-small-link" title="Code Lab Submissions" style="text-decoration:none;color:inherit;">
                 <div class="kpi-small-icon">
                     <i class="fas fa-laptop-code"></i>
                 </div>
                 <div class="kpi-small-content">
-                    <div class="kpi-small-label">Code labs done</div>
-                    <div class="kpi-small-value wip-placeholder">
-                        <span class="wip-badge">Work in Progress</span>
+                    <div class="kpi-small-label">Code Lab Submissions</div>
+                    <div class="codelab-stats-row">
+                        <div class="codelab-stat">
+                            <span class="codelab-stat-value" id="codelabTotal">—</span>
+                            <span class="codelab-stat-label">Submitted</span>
+                        </div>
+                        <div class="codelab-stat">
+                            <span class="codelab-stat-value codelab-verified" id="codelabVerified">—</span>
+                            <span class="codelab-stat-label">Verified</span>
+                        </div>
+                        <div class="codelab-stat">
+                            <span class="codelab-stat-value codelab-pending" id="codelabPending">—</span>
+                            <span class="codelab-stat-label">Pending</span>
+                        </div>
                     </div>
                 </div>
-            </div>
+            </a>
             <a href="/optional-mcq-verification" class="glass-card kpi-small kpi-small-link optional-mcq-card" title="Optional MCQ completion by track">
                 <div class="kpi-small-icon">
                     <i class="fas fa-clipboard-check"></i>

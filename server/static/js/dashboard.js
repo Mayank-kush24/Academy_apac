@@ -395,6 +395,16 @@ function updateKPICards(summary, chartsData) {
     const clSubMetaEl = document.getElementById('codeLabSubmissionsMeta');
     if (clSubMetaEl) clSubMetaEl.textContent = 'Total Submissions';
 
+    // Code Lab stats card (submitted / verified / pending)
+    const clTotal = document.getElementById('codelabTotal');
+    const clVerified = document.getElementById('codelabVerified');
+    const clPending = document.getElementById('codelabPending');
+    const totalCl = summary.total_codelab_submissions;
+    const verifiedCl = summary.verified_codelab_submissions;
+    if (clTotal) clTotal.textContent = (totalCl != null) ? formatNumber(totalCl) : '—';
+    if (clVerified) clVerified.textContent = (verifiedCl != null) ? formatNumber(verifiedCl) : '—';
+    if (clPending) clPending.textContent = (totalCl != null && verifiedCl != null) ? formatNumber(Math.max(0, totalCl - verifiedCl)) : '—';
+
     // Optional MCQ completion by track
     const byTrack = summary.optional_mcq_by_track;
     if (Array.isArray(byTrack)) {
