@@ -89,8 +89,11 @@ def add_indexes():
             ("CREATE INDEX IF NOT EXISTS idx_skillboost_email ON skillboost_profile(email)", "skillboost_profile email"),
             ("CREATE INDEX IF NOT EXISTS idx_skilllab_leader_email ON skilllab_submission(leader_email)", "skilllab_submission leader_email"),
             ("CREATE INDEX IF NOT EXISTS idx_codelab_leader_email ON codelab_submission(leader_email)", "codelab_submission leader_email"),
+            ("CREATE INDEX IF NOT EXISTS idx_project_submission_leader_email ON project_submission(leader_email)", "project_submission leader_email"),
             ("CREATE INDEX IF NOT EXISTS idx_mcq_email ON optional_mcq_response(email)", "optional_mcq_response email"),
             ("CREATE INDEX IF NOT EXISTS idx_mcq_track ON optional_mcq_response(track_number)", "optional_mcq_response track_number"),
+            ("CREATE INDEX IF NOT EXISTS idx_main_mcq_email ON main_mcq_response(email)", "main_mcq_response email"),
+            ("CREATE INDEX IF NOT EXISTS idx_main_mcq_track ON main_mcq_response(track_number)", "main_mcq_response track_number"),
         ]
         
         successful = 0

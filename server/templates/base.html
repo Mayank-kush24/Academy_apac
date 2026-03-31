@@ -74,9 +74,17 @@
                         <i class="nav-icon fas fa-code"></i>
                         <span>Code Lab Submissions</span>
                     </a>
+                    <a href="/project-submission" class="nav-item" id="navProjectSubmission" data-page-id="project_submission" style="display: none;">
+                        <i class="nav-icon fas fa-folder-open"></i>
+                        <span>Project Submissions</span>
+                    </a>
                     <a href="/optional-mcq-verification" class="nav-item" id="navOptionalMcqVerification" data-page-id="optional_mcq_verification" style="display: none;">
                         <i class="nav-icon fas fa-tasks"></i>
                         <span>Optional MCQ Verification</span>
+                    </a>
+                    <a href="/mcq-verification" class="nav-item" id="navMcqVerification" data-page-id="mcq_verification" style="display: none;">
+                        <i class="nav-icon fas fa-clipboard-check"></i>
+                        <span>MCQ Verification</span>
                     </a>
                     <a href="/track-progress-query" class="nav-item" id="navTrackProgressQuery" data-page-id="track_progress_query" style="display: none;">
                         <i class="nav-icon fas fa-filter"></i>
@@ -242,7 +250,7 @@
                     if (allowed && Array.isArray(allowed) && allowed.length > 0) {
                         show = allowed.indexOf(pageId) !== -1;
                     } else {
-                        if (pageId === 'home' || pageId === 'dashboard' || pageId === 'profiles' || pageId === 'skill_lab_credits' || pageId === 'book_of_business' || pageId === 'users_registrations' || pageId === 'skilllab_submission' || pageId === 'codelab_submission' || pageId === 'optional_mcq_verification' || pageId === 'track_progress_query') show = true;
+                        if (pageId === 'home' || pageId === 'dashboard' || pageId === 'profiles' || pageId === 'skill_lab_credits' || pageId === 'book_of_business' || pageId === 'users_registrations' || pageId === 'skilllab_submission' || pageId === 'codelab_submission' || pageId === 'project_submission' || pageId === 'optional_mcq_verification' || pageId === 'mcq_verification' || pageId === 'track_progress_query') show = true;
                         if (pageId === 'import' && (role === 'admin' || role === 'editor')) show = true;
                         if (pageId === 'users' && role === 'admin') show = true;
                     }

@@ -4,7 +4,7 @@ Excel parsing and field mapping utilities
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.exc import DataError, IntegrityError
-from server.models import UserPII, UserPIIInjected, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, OptionalMcqResponse
+from server.models import UserPII, UserPIIInjected, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqResponse, MainMcqResponse
 
 
 # Substring to auto-detect Skill Lab / Google Skills Boost sheet (case-insensitive)
@@ -30,6 +30,30 @@ LAB_COMPLETION_SHEET_SUBSTRINGS = [
 MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING = "MCQ Optional Track 1  Agent"
 MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING = "MCQ Optional Track 2 Connec"
 MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING = "MCQ Optional Track 3 Poweri"
+
+# Substrings to auto-detect Main MCQ sheets (16, 17, 18)
+MCQ_MAIN_TRACK1_SHEET_SUBSTRING = "16.MCQ Track 1"
+MCQ_MAIN_TRACK2_SHEET_SUBSTRING = "17.MCQ Track 2"
+MCQ_MAIN_TRACK3_SHEET_SUBSTRING = "18.MCQ Track 3"
+
+# Project Submission sheets (Track 1–3), e.g. "1.Project Submission Track 1"
+PROJECT_SUBMISSION_SHEET_DEFINITIONS = [
+    {'track': 1, 'substring': 'Project Submission Track 1'},
+    {'track': 2, 'substring': 'Project Submission Track 2'},
+    {'track': 3, 'substring': 'Project Submission Track 3'},
+]
+
+# Batch outer commit every N successful DB rows during import (nested savepoints per row keep one failure from aborting the whole batch)
+IMPORT_BATCH_COMMIT_SIZE = 500
+# Chunk size for SQL IN (...) when preloading rows by email
+IMPORT_EMAIL_IN_CHUNK = 500
+
+
+def _chunk_list(items, size):
+    """Yield lists of at most `size` elements from iterable."""
+    buf = list(items)
+    for i in range(0, len(buf), size):
+        yield buf[i:i + size]
 
 
 def get_sheet_names(file_path):
@@ -69,6 +93,88 @@ def find_sheet_by_substring(file_path, substring):
     except Exception:
         pass
     return None
+
+
+def load_all_skillboost_sheets(file_path):
+    """
+    Open the workbook once and load all sheets needed for action center import.
+    Returns a dict: profile_sheet_name, profile_df, submission_sheet_name, submission_df,
+    codelab_sheet_name, codelab_df, lab_completion_sheets (list of {lab, track, sheet_name, df}),
+    main_mcq_sheets (list of {track, sheet_name, df}),
+    project_submission_sheets (list of {track, sheet_name, df}).
+    Missing sheets are omitted. Use this to avoid re-opening the same file many times.
+    """
+    result = {
+        'profile_sheet_name': None,
+        'profile_df': None,
+        'submission_sheet_name': None,
+        'submission_df': None,
+        'codelab_sheet_name': None,
+        'codelab_df': None,
+        'lab_completion_sheets': [],
+        'main_mcq_sheets': [],
+        'project_submission_sheets': [],
+    }
+    try:
+        engine = 'openpyxl' if str(file_path).lower().endswith('.xlsx') else None
+        xl = pd.ExcelFile(file_path, engine=engine)
+        sheet_names = xl.sheet_names
+
+        def _find(substring):
+            for name in sheet_names:
+                if substring.lower() in name.lower():
+                    return name
+            return None
+
+        profile_sheet = _find(SKILLBOOST_SHEET_SUBSTRING)
+        if profile_sheet:
+            result['profile_sheet_name'] = profile_sheet
+            result['profile_df'] = pd.read_excel(xl, sheet_name=profile_sheet)
+
+        sub_sheet = _find(SKILLLAB_SUBMISSION_SHEET_SUBSTRING)
+        if sub_sheet:
+            result['submission_sheet_name'] = sub_sheet
+            result['submission_df'] = pd.read_excel(xl, sheet_name=sub_sheet)
+
+        codelab_sheet = _find(CODELAB_SUBMISSION_SHEET_SUBSTRING)
+        if codelab_sheet:
+            result['codelab_sheet_name'] = codelab_sheet
+            result['codelab_df'] = pd.read_excel(xl, sheet_name=codelab_sheet)
+
+        for lc_info in LAB_COMPLETION_SHEET_SUBSTRINGS:
+            lc_sheet = _find(lc_info['substring'])
+            if lc_sheet:
+                result['lab_completion_sheets'].append({
+                    'lab': lc_info['lab'],
+                    'track': lc_info['track'],
+                    'sheet_name': lc_sheet,
+                    'df': pd.read_excel(xl, sheet_name=lc_sheet),
+                })
+
+        for track, substring in [
+            (1, MCQ_MAIN_TRACK1_SHEET_SUBSTRING),
+            (2, MCQ_MAIN_TRACK2_SHEET_SUBSTRING),
+            (3, MCQ_MAIN_TRACK3_SHEET_SUBSTRING),
+        ]:
+            main_sheet = _find(substring)
+            if main_sheet:
+                result['main_mcq_sheets'].append({
+                    'track': track,
+                    'sheet_name': main_sheet,
+                    'df': pd.read_excel(xl, sheet_name=main_sheet),
+                })
+
+        for ps in PROJECT_SUBMISSION_SHEET_DEFINITIONS:
+            ps_sheet = _find(ps['substring'])
+            if ps_sheet:
+                result['project_submission_sheets'].append({
+                    'track': ps['track'],
+                    'sheet_name': ps_sheet,
+                    'df': pd.read_excel(xl, sheet_name=ps_sheet),
+                })
+    except Exception:
+        pass
+    return result
 
 
 def get_skillboost_preview(file_path):
@@ -146,6 +252,40 @@ def get_skillboost_preview(file_path):
                     'track': lc_info['track'],
                     'sheet_name': lc_sheet,
                     'rows': len(lc_df) if lc_df is not None else 0,
+                })
+    except Exception:
+        pass
+
+    # Detect Main MCQ sheets (16, 17, 18)
+    result['main_mcq_sheets'] = []
+    try:
+        for track, substring in [
+            (1, MCQ_MAIN_TRACK1_SHEET_SUBSTRING),
+            (2, MCQ_MAIN_TRACK2_SHEET_SUBSTRING),
+            (3, MCQ_MAIN_TRACK3_SHEET_SUBSTRING),
+        ]:
+            main_sheet = find_sheet_by_substring(file_path, substring)
+            if main_sheet:
+                main_df = parse_excel_sheet(file_path, main_sheet)
+                result['main_mcq_sheets'].append({
+                    'track': track,
+                    'sheet_name': main_sheet,
+                    'rows': len(main_df) if main_df is not None else 0,
+                })
+    except Exception:
+        pass
+
+    # Project Submission Track 1–3
+    result['project_submission_sheets'] = []
+    try:
+        for ps in PROJECT_SUBMISSION_SHEET_DEFINITIONS:
+            ps_sheet = find_sheet_by_substring(file_path, ps['substring'])
+            if ps_sheet:
+                ps_df = parse_excel_sheet(file_path, ps_sheet)
+                result['project_submission_sheets'].append({
+                    'track': ps['track'],
+                    'sheet_name': ps_sheet,
+                    'rows': len(ps_df) if ps_df is not None else 0,
                 })
     except Exception:
         pass
@@ -1006,6 +1146,9 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
     - Email: required; strip, lowercase. Link: optional; if missing/empty store empty string (import row).
     - Skips only rows with missing email (or duplicate in file / already verified).
     - All emails are imported (no skip for email not in user_pii).
+
+    Large files: preloads existing rows only for emails present in the sheet; batched commits;
+    one savepoint per row so a single bad row does not lose the whole batch.
     """
     from server.models import db
 
@@ -1020,15 +1163,26 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
     if not profile_link_col or profile_link_col not in df.columns:
         raise Exception("Profile link column not found in sheet")
 
-    # Existing (email, link) -> row for skillboost_profile (link may be '' for missing)
-    existing = {}
+    emails_for_lookup = set()
     try:
-        for row in SkillboostProfile.query.all():
-            key = (row.email, row.google_cloud_skills_boost_profile_link or '')
-            existing[key] = row
+        ser = df[email_col].dropna().astype(str).str.strip().str.lower()
+        emails_for_lookup = set(ser[ser.str.len() > 0])
     except Exception:
         pass
+
+    existing = {}
+    try:
+        for chunk in _chunk_list(emails_for_lookup, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for sp_row in SkillboostProfile.query.filter(SkillboostProfile.email.in_(chunk)).all():
+                key = (sp_row.email, sp_row.google_cloud_skills_boost_profile_link or '')
+                existing[key] = sp_row
+    except Exception:
+        pass
+
     inserted_this_run = set()
+    since_outer_commit = 0
 
     for index, row in df.iterrows():
         try:
@@ -1045,7 +1199,6 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 if len(errors) < 100:
                     errors.append(f"Row {index + 2}: Missing email")
                 continue
-            # Profile link optional: use empty string when missing so we still import the row
             if pd.isna(link_val):
                 link = ''
             else:
@@ -1061,32 +1214,41 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 if key in inserted_this_run:
                     skipped += 1
                     continue
-                rec.updated_at = datetime.utcnow()
-                db.session.commit()
+                with db.session.begin_nested():
+                    rec.updated_at = datetime.utcnow()
                 updated += 1
-                continue
-            # New row
-            rec = SkillboostProfile(
-                email=email,
-                google_cloud_skills_boost_profile_link=link,
-                valid=False,
-                remarks=None,
-            )
-            db.session.add(rec)
-            db.session.commit()
-            existing[key] = rec
-            inserted_this_run.add(key)
-            created += 1
+                since_outer_commit += 1
+            else:
+                with db.session.begin_nested():
+                    rec = SkillboostProfile(
+                        email=email,
+                        google_cloud_skills_boost_profile_link=link,
+                        valid=False,
+                        remarks=None,
+                    )
+                    db.session.add(rec)
+                existing[key] = rec
+                inserted_this_run.add(key)
+                created += 1
+                since_outer_commit += 1
+
+            if since_outer_commit >= IMPORT_BATCH_COMMIT_SIZE:
+                db.session.commit()
+                since_outer_commit = 0
             if progress_callback:
                 try:
                     progress_callback(created, updated, skipped)
                 except Exception:
                     pass
         except Exception as e:
-            db.session.rollback()
             skipped += 1
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     return {
         'total_rows': total_rows,
@@ -1168,6 +1330,230 @@ def _find_leader_email_column(columns):
     return None
 
 
+# Project submission sheets: headers match action-center export (leader email -> user_pii.email)
+_PROJECT_SUBMISSION_COL_MAP = {
+    'team name': 'team_name',
+    'team_name': 'team_name',
+    'leader name': 'leader_name',
+    'leader_name': 'leader_name',
+    'leader email': 'leader_email',
+    'leader_email': 'leader_email',
+    'leader phone': 'leader_phone',
+    'leader_phone': 'leader_phone',
+    'team size': 'team_size',
+    'team_size': 'team_size',
+    'problem statements': 'problem_statement',
+    'problem statement': 'problem_statement',
+    'problem_statement': 'problem_statement',
+    'problem_statements': 'problem_statement',
+    'cloud run deployment link': 'cloud_run_deployment_link',
+    'cloud_run_deployment_link': 'cloud_run_deployment_link',
+    'github repository link': 'github_repository_link',
+    'github_repository_link': 'github_repository_link',
+    'demo video link': 'demo_video_link',
+    'demo_video_link': 'demo_video_link',
+    'final project ppt': 'final_project_ppt',
+    'final_project_ppt': 'final_project_ppt',
+    'created at': 'created_at',
+    'created_at': 'created_at',
+    'created by name': 'created_by_name',
+    'created_by_name': 'created_by_name',
+    'created by email': 'created_by_email',
+    'created_by_email': 'created_by_email',
+    'updated at': 'updated_at',
+    'updated_at': 'updated_at',
+    'updated by name': 'updated_by_name',
+    'updated_by_name': 'updated_by_name',
+    'updated by email': 'updated_by_email',
+    'updated_by_email': 'updated_by_email',
+}
+
+
+def _map_project_submission_columns(columns):
+    """Map XLSX columns to ProjectSubmission model fields (excludes track_number, set from sheet)."""
+    mapping = {}
+    for col in columns:
+        if col is None:
+            continue
+        key = str(col).strip().lower()
+        if key in _PROJECT_SUBMISSION_COL_MAP:
+            mapping[col] = _PROJECT_SUBMISSION_COL_MAP[key]
+    return mapping
+
+
+def import_project_submission(df, track_number, progress_callback=None):
+    """
+    Import one Project Submission track sheet into project_submission.
+    Upsert by (leader_email, track_number). Leader email must exist in user_pii.
+    """
+    from sqlalchemy import func
+    from server.models import db
+
+    columns = list(df.columns)
+    col_map = _map_project_submission_columns(columns)
+    leader_email_col = _find_leader_email_column(columns)
+
+    if not leader_email_col:
+        raise Exception(
+            "Could not find a 'Leader Email' column in the project submission sheet. "
+            "Please ensure the sheet has a column named 'Leader Email'."
+        )
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    emails_in_sheet = []
+    try:
+        for v in df[leader_email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.append(e)
+    except Exception:
+        pass
+    unique_sheet_emails = list(dict.fromkeys(emails_in_sheet))
+
+    pii_by_lower = {}
+    try:
+        for chunk in _chunk_list(unique_sheet_emails, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for p in UserPII.query.filter(func.lower(UserPII.email).in_(chunk)).all():
+                el = (p.email or '').strip().lower()
+                if el:
+                    pii_by_lower[el] = p
+    except Exception:
+        pass
+
+    existing = {}
+    try:
+        for chunk in _chunk_list(unique_sheet_emails, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for ps_row in ProjectSubmission.query.filter(
+                ProjectSubmission.track_number == track_number,
+                func.lower(ProjectSubmission.leader_email).in_(chunk),
+            ).all():
+                existing[(ps_row.leader_email or '').lower()] = ps_row
+    except Exception:
+        pass
+
+    link_fields = (
+        'cloud_run_deployment_link', 'github_repository_link', 'demo_video_link', 'final_project_ppt',
+    )
+    short_str_fields = (
+        'team_name', 'leader_name', 'leader_phone', 'created_by_name', 'created_by_email',
+        'updated_by_name', 'updated_by_email',
+    )
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(leader_email_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing leader email")
+                continue
+            email_norm = str(email_val).strip().lower()
+            if not email_norm or '@' not in email_norm:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Invalid leader email")
+                continue
+
+            pii = pii_by_lower.get(email_norm)
+            if not pii:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Leader email not found in user PII ({email_norm})")
+                continue
+
+            canonical_email = (pii.email or '').strip()
+            if not canonical_email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Empty user PII email")
+                continue
+
+            data = {'track_number': track_number}
+            for xlsx_col, model_field in col_map.items():
+                if model_field == 'leader_email':
+                    continue
+                val = row.get(xlsx_col)
+                if pd.isna(val):
+                    val = None
+                elif model_field == 'team_size':
+                    try:
+                        val = int(val)
+                    except (ValueError, TypeError):
+                        val = None
+                elif model_field in ('created_at', 'updated_at'):
+                    if val is not None:
+                        try:
+                            if isinstance(val, str):
+                                val = pd.to_datetime(val)
+                            elif not isinstance(val, datetime):
+                                val = pd.to_datetime(val)
+                        except Exception:
+                            val = None
+                else:
+                    val = str(val).strip() if val is not None else None
+                    if val and model_field in short_str_fields:
+                        val = val[:255]
+                    elif val and model_field in link_fields:
+                        val = val[:1024]
+                    elif val and model_field == 'problem_statement':
+                        pass
+                data[model_field] = val
+
+            data['leader_email'] = canonical_email
+
+            rec = existing.get(canonical_email.lower())
+            if rec:
+                for field, val in data.items():
+                    if field in ('leader_email', 'track_number'):
+                        continue
+                    if val is not None:
+                        setattr(rec, field, val)
+                rec.updated_at = datetime.utcnow()
+                updated += 1
+            else:
+                rec = ProjectSubmission(**data)
+                db.session.add(rec)
+                existing[canonical_email.lower()] = rec
+                created += 1
+
+            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+                db.session.commit()
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+    }
+
+
 def import_skilllab_submission(df, progress_callback=None):
     """
     Import Skill Lab submissions from a DataFrame into skilllab_submission.
@@ -1194,11 +1580,26 @@ def import_skilllab_submission(df, progress_callback=None):
     skipped = 0
     errors = []
 
-    # Pre-load existing submissions keyed by leader_email for O(1) lookup
+    from sqlalchemy import func
+
+    emails_in_sheet = set()
+    try:
+        for v in df[leader_email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.add(e)
+    except Exception:
+        pass
+
     existing = {}
     try:
-        for row in SkillLabSubmission.query.all():
-            existing[row.leader_email.lower()] = row
+        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for srow in SkillLabSubmission.query.filter(
+                func.lower(SkillLabSubmission.leader_email).in_(chunk)
+            ).all():
+                existing[srow.leader_email.lower()] = srow
     except Exception:
         pass
 
@@ -1260,15 +1661,16 @@ def import_skilllab_submission(df, progress_callback=None):
                     if val is not None:
                         setattr(rec, field, val)
                 rec.updated_at = datetime.utcnow()
-                db.session.commit()
                 updated += 1
             else:
                 # Create new record
                 rec = SkillLabSubmission(**data)
                 db.session.add(rec)
-                db.session.commit()
                 existing[email] = rec
                 created += 1
+
+            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+                db.session.commit()
 
             if progress_callback:
                 try:
@@ -1281,6 +1683,11 @@ def import_skilllab_submission(df, progress_callback=None):
             skipped += 1
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     return {
         'total_rows': total_rows,
@@ -1317,10 +1724,26 @@ def import_codelab_submission(df, progress_callback=None):
     skipped = 0
     errors = []
 
+    from sqlalchemy import func
+
+    emails_in_sheet = set()
+    try:
+        for v in df[leader_email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.add(e)
+    except Exception:
+        pass
+
     existing = {}
     try:
-        for row in CodeLabSubmission.query.all():
-            existing[row.leader_email.lower()] = row
+        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for crow in CodeLabSubmission.query.filter(
+                func.lower(CodeLabSubmission.leader_email).in_(chunk)
+            ).all():
+                existing[crow.leader_email.lower()] = crow
     except Exception:
         pass
 
@@ -1378,14 +1801,15 @@ def import_codelab_submission(df, progress_callback=None):
                     if val is not None:
                         setattr(rec, field, val)
                 rec.updated_at = datetime.utcnow()
-                db.session.commit()
                 updated += 1
             else:
                 rec = CodeLabSubmission(**data)
                 db.session.add(rec)
-                db.session.commit()
                 existing[email] = rec
                 created += 1
+
+            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+                db.session.commit()
 
             if progress_callback:
                 try:
@@ -1398,6 +1822,11 @@ def import_codelab_submission(df, progress_callback=None):
             skipped += 1
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     return {
         'total_rows': total_rows,
@@ -1463,10 +1892,26 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
     skipped = 0
     errors = []
 
+    emails_in_sheet = set()
+    try:
+        for v in df[email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.add(e)
+    except Exception:
+        pass
+
     existing = {}
     try:
-        for row in CodeLabSubmission.query.filter_by(track_number=track_number, problem_statement=problem_stmt).all():
-            existing[row.leader_email.lower()] = row
+        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for row in CodeLabSubmission.query.filter(
+                CodeLabSubmission.track_number == track_number,
+                CodeLabSubmission.problem_statement == problem_stmt,
+                CodeLabSubmission.leader_email.in_(chunk),
+            ).all():
+                existing[row.leader_email.lower()] = row
     except Exception:
         pass
 
@@ -1504,7 +1949,6 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
                 if upload_val:
                     rec.upload_screenshot = upload_val
                 rec.updated_at = datetime.utcnow()
-                db.session.commit()
                 updated += 1
             else:
                 rec = CodeLabSubmission(
@@ -1515,9 +1959,11 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
                     upload_screenshot=upload_val,
                 )
                 db.session.add(rec)
-                db.session.commit()
                 existing[email] = rec
                 created += 1
+
+            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+                db.session.commit()
 
             if progress_callback:
                 try:
@@ -1530,6 +1976,11 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
             skipped += 1
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     return {
         'total_rows': total_rows,
@@ -1544,8 +1995,10 @@ def _find_mcq_question_columns(columns, email_col):
     """
     Resolve 10 question columns from Excel headers.
     Returns list of (xlsx_column_name, model_field) for question_1..question_10.
-    Matches headers that start with "Q1.", "Q2.", ... "Q10." (Excel often has "Q1. What", "Q2. Why...")
-    or exact "q1", "question 1", etc. Fallback: first 10 non-email columns.
+    Matches headers that start with "Q1.", "Q2.", ... "Q10." (Excel often has "Q1. What", "Q2. Why...").
+    Or exact "q1", "question 1", etc.
+    Fallback: columns G–P (7th–16th column) are the 10 answer columns for all tracks.
+    Last fallback: first 10 non-email columns.
     """
     col_list = [c for c in columns if c is not None and str(c).strip()]
     email_col_str = email_col.strip().lower() if email_col else ''
@@ -1588,6 +2041,11 @@ def _find_mcq_question_columns(columns, email_col):
     out = [x for x in result if x is not None]
     if len(out) >= 10:
         return out[:10]
+
+    # Fallback: columns G through P (7th–16th column, 0-based indices 6–15) are the 10 answer columns for all tracks
+    cols = list(columns)
+    if len(cols) >= 16:
+        return [(cols[6 + i], model_fields[i]) for i in range(10)]
 
     # Fallback: positional (first 10 non-email columns)
     result = []
@@ -1649,10 +2107,27 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
     skipped = 0
     errors = []
 
+    from sqlalchemy import func
+
+    emails_in_sheet = set()
+    try:
+        for v in df[email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.add(e)
+    except Exception:
+        pass
+
     existing = {}
     try:
-        for row in OptionalMcqResponse.query.filter_by(track_number=track_number).all():
-            existing[row.email.lower()] = row
+        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for mrow in OptionalMcqResponse.query.filter(
+                OptionalMcqResponse.track_number == track_number,
+                func.lower(OptionalMcqResponse.email).in_(chunk),
+            ).all():
+                existing[mrow.email.lower()] = mrow
     except Exception:
         pass
 
@@ -1737,14 +2212,15 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
                     if k == 'email':
                         continue
                     setattr(rec, k, v)
-                db.session.commit()
                 updated += 1
             else:
                 rec = OptionalMcqResponse(**data)
                 db.session.add(rec)
-                db.session.commit()
                 existing[email] = rec
                 created += 1
+
+            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+                db.session.commit()
 
             if progress_callback:
                 try:
@@ -1757,6 +2233,161 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
             skipped += 1
             if len(errors) < 100:
                 errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+    }
+
+
+def import_main_mcq_response(df, track_number, progress_callback=None):
+    """
+    Import Main MCQ (MCQ Verification) responses from a DataFrame into main_mcq_response.
+    Upsert by (track_number, email): update if exists, else insert.
+    Uses main_mcq_answer_key.score_submission for text-based scoring.
+    Returns dict: total_rows, created, updated, skipped, errors.
+    """
+    from server.models import db
+    from server.utils.main_mcq_answer_key import score_submission as main_score_submission
+
+    columns = list(df.columns)
+    email_col = _find_leader_email_column(columns)
+    if not email_col:
+        raise Exception(
+            "Could not find a 'Leader Email' column in the Main MCQ sheet. "
+            "Please ensure the sheet has a column named 'Leader Email'."
+        )
+    question_cols = _find_mcq_question_columns(columns, email_col)
+    if not question_cols:
+        raise Exception("Could not find 10 question columns in the Main MCQ sheet.")
+
+    leader_name_col = _find_mcq_column(columns, 'leader name', 'Leader Name')
+    leader_phone_col = _find_mcq_column(columns, 'leader phone', 'Leader Phone')
+    team_size_col = _find_mcq_column(columns, 'team size', 'Team size', 'team_size')
+    problem_col = _find_mcq_column(columns, 'problem statements', 'Problem Statements', 'problem statement')
+
+    total_rows = len(df)
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+
+    from sqlalchemy import func
+
+    emails_in_sheet = set()
+    try:
+        for v in df[email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.add(e)
+    except Exception:
+        pass
+
+    existing = {}
+    try:
+        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for mrow in MainMcqResponse.query.filter(
+                MainMcqResponse.track_number == track_number,
+                func.lower(MainMcqResponse.email).in_(chunk),
+            ).all():
+                existing[mrow.email.lower()] = mrow
+    except Exception:
+        pass
+
+    for index, row in df.iterrows():
+        try:
+            email_val = row.get(email_col)
+            if pd.isna(email_val):
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing email")
+                continue
+            email = str(email_val).strip().lower()
+            if not email or '@' not in email:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Invalid email")
+                continue
+
+            def _get(col, default=None):
+                if col is None:
+                    return default
+                v = row.get(col)
+                if pd.isna(v):
+                    return default
+                return str(v).strip() or default
+
+            data = {'track_number': track_number, 'email': email}
+            if leader_name_col:
+                data['leader_name'] = _get(leader_name_col)
+            if leader_phone_col:
+                data['leader_phone'] = _get(leader_phone_col)
+            if team_size_col:
+                try:
+                    v = row.get(team_size_col)
+                    data['team_size'] = int(v) if v is not None and not pd.isna(v) else None
+                except (ValueError, TypeError):
+                    data['team_size'] = None
+            if problem_col:
+                data['problem_statement'] = _get(problem_col)
+
+            for xlsx_col, model_field in question_cols:
+                val = row.get(xlsx_col)
+                if pd.isna(val):
+                    data[model_field] = None
+                else:
+                    data[model_field] = str(val).strip() or None
+
+            auto = main_score_submission(
+                track_number,
+                data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
+                data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
+                data.get('question_9'), data.get('question_10'),
+            )
+            data['score'] = auto['correct_count']
+
+            rec = existing.get(email)
+            if rec:
+                for k, v in data.items():
+                    if k == 'email':
+                        continue
+                    setattr(rec, k, v)
+                updated += 1
+            else:
+                rec = MainMcqResponse(**data)
+                db.session.add(rec)
+                existing[email] = rec
+                created += 1
+
+            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+                db.session.commit()
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            db.session.rollback()
+            skipped += 1
+            if len(errors) < 100:
+                errors.append(f"Row {index + 2}: {str(e)}")
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     return {
         'total_rows': total_rows,

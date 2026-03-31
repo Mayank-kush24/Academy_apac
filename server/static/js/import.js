@@ -611,9 +611,19 @@ async function runSkillboostPreview(file) {
                     html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Optional MCQ Track ' + m.track + '</strong>: Sheet &quot;' + escapeHtml(m.sheet_name || '') + '&quot; with <strong>' + (m.rows || 0).toLocaleString() + '</strong> row(s).';
                 });
             }
+            if (data.main_mcq_sheets && data.main_mcq_sheets.length > 0) {
+                data.main_mcq_sheets.forEach(function(m) {
+                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Main MCQ Track ' + m.track + '</strong>: Sheet &quot;' + escapeHtml(m.sheet_name || '') + '&quot; with <strong>' + (m.rows || 0).toLocaleString() + '</strong> row(s).';
+                });
+            }
             if (data.lab_completion_sheets && data.lab_completion_sheets.length > 0) {
                 data.lab_completion_sheets.forEach(function(lc) {
                     html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Lab Completion ' + lc.lab + ' Track ' + lc.track + '</strong>: Sheet &quot;' + escapeHtml(lc.sheet_name || '') + '&quot; with <strong>' + (lc.rows || 0).toLocaleString() + '</strong> row(s).';
+                });
+            }
+            if (data.project_submission_sheets && data.project_submission_sheets.length > 0) {
+                data.project_submission_sheets.forEach(function(ps) {
+                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Project Submission Track ' + ps.track + '</strong>: Sheet &quot;' + escapeHtml(ps.sheet_name || '') + '&quot; with <strong>' + (ps.rows || 0).toLocaleString() + '</strong> row(s).';
                 });
             }
             previewResultEl.innerHTML = html;
@@ -679,13 +689,21 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
         if (errorEl) { errorEl.textContent = 'Not authenticated'; errorEl.style.display = 'block'; }
         return;
     }
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...'; }
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing (large files may take several minutes)...'; }
+    const skillboostImportTimeoutMs = 25 * 60 * 1000;
+    const skillboostController = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const skillboostTimeoutId = skillboostController && typeof setTimeout === 'function'
+        ? setTimeout(function() { try { skillboostController.abort(); } catch (e) { /* ignore */ } }, skillboostImportTimeoutMs)
+        : null;
     try {
-        const response = await fetch('/api/import/skillboost', {
+        const fetchOpts = {
             method: 'POST',
             headers: { 'Authorization': 'Bearer ' + token },
             body: formData
-        });
+        };
+        if (skillboostController) fetchOpts.signal = skillboostController.signal;
+        const response = await fetch('/api/import/skillboost', fetchOpts);
+        if (skillboostTimeoutId) clearTimeout(skillboostTimeoutId);
         const data = await response.json().catch(function() { return {}; });
         if (!response.ok) {
             if (errorEl) { errorEl.textContent = data.error || 'Import failed'; errorEl.style.display = 'block'; }
@@ -713,6 +731,17 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
                     msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> MCQ Track ' + e.track + ' error: ' + escapeHtml(e.error) + '</div>';
                 });
             }
+            if (data.main_mcq && data.main_mcq.length > 0) {
+                data.main_mcq.forEach(function(m) {
+                    msgHtml += '<div style="margin-top: 8px;"><i class="fas fa-clipboard-check" style="color: #059669;"></i> <strong>MCQ Verification Track ' + m.track + '</strong> (sheet: ' + escapeHtml(m.sheet_name || '') + '): ' +
+                        (m.created || 0) + ' created, ' + (m.updated || 0) + ' updated, ' + (m.skipped || 0) + ' skipped.</div>';
+                });
+            }
+            if (data.main_mcq_errors && data.main_mcq_errors.length > 0) {
+                data.main_mcq_errors.forEach(function(e) {
+                    msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Main MCQ Track ' + (e.track != null ? e.track : '?') + ' error: ' + escapeHtml(e.error) + '</div>';
+                });
+            }
             if (data.lab_completions && data.lab_completions.length > 0) {
                 data.lab_completions.forEach(function(lc) {
                     if (lc.error) {
@@ -731,6 +760,16 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
             if (data.codelab_submission_error) {
                 msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Code Lab Submission error: ' + escapeHtml(data.codelab_submission_error) + '</div>';
             }
+            if (data.project_submissions && data.project_submissions.length > 0) {
+                data.project_submissions.forEach(function(ps) {
+                    if (ps.error) {
+                        msgHtml += '<div style="margin-top: 8px; color: #ef4444;"><i class="fas fa-exclamation-triangle"></i> Project Track ' + (ps.track != null ? ps.track : '?') + ' error: ' + escapeHtml(ps.error) + '</div>';
+                    } else {
+                        msgHtml += '<div style="margin-top: 8px;"><i class="fas fa-folder-open" style="color: #7c3aed;"></i> <strong>Project Submission Track ' + (ps.track != null ? ps.track : '?') + '</strong> (sheet: ' + escapeHtml(ps.sheet_name || '') + '): ' +
+                            (ps.created || 0) + ' created, ' + (ps.updated || 0) + ' updated, ' + (ps.skipped || 0) + ' skipped.</div>';
+                    }
+                });
+            }
             successEl.innerHTML = msgHtml;
             successEl.style.display = 'block';
         }
@@ -746,6 +785,13 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
                 }
             });
         }
+        if (data.main_mcq && data.main_mcq.length > 0) {
+            data.main_mcq.forEach(function(m) {
+                if (m.errors && m.errors.length > 0) {
+                    allErrors = allErrors.concat(m.errors.map(function(e) { return '[Main MCQ Track ' + m.track + '] ' + e; }));
+                }
+            });
+        }
         if (data.lab_completions && data.lab_completions.length > 0) {
             data.lab_completions.forEach(function(lc) {
                 if (lc.errors && lc.errors.length > 0) {
@@ -755,6 +801,14 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
         }
         if (data.codelab_submission && data.codelab_submission.errors && data.codelab_submission.errors.length > 0) {
             allErrors = allErrors.concat(data.codelab_submission.errors.map(function(e) { return '[Code Lab Submission] ' + e; }));
+        }
+        if (data.project_submissions && data.project_submissions.length > 0) {
+            data.project_submissions.forEach(function(ps) {
+                if (ps.errors && ps.errors.length > 0) {
+                    var t = ps.track != null ? ps.track : '?';
+                    allErrors = allErrors.concat(ps.errors.map(function(e) { return '[Project Track ' + t + '] ' + e; }));
+                }
+            });
         }
         if (allErrors.length > 0 && errorsListEl) {
             errorsListEl.innerHTML = '<strong class="text-warning"><i class="fas fa-exclamation-triangle"></i> Import notes / errors (' + allErrors.length + '):</strong><ul class="import-errors-ul">' +
@@ -772,7 +826,14 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
         const previewResultEl = document.getElementById('skillboostPreviewResult');
         if (previewResultEl) previewResultEl.style.display = 'none';
     } catch (err) {
-        if (errorEl) { errorEl.textContent = err.message || 'Request failed'; errorEl.style.display = 'block'; }
+        if (skillboostTimeoutId) clearTimeout(skillboostTimeoutId);
+        var msg = err && err.message ? err.message : 'Request failed';
+        if (err && err.name === 'AbortError') {
+            msg = 'Import timed out after 25 minutes. The server may still be processing; check counts on the dashboard or try importing again (skips already-imported rows where applicable).';
+        } else if (msg === 'Failed to fetch' || (typeof TypeError !== 'undefined' && err instanceof TypeError)) {
+            msg = 'Connection closed or timed out before the server responded. Large Action Center exports can take many minutes — retry the import, or increase proxy/server timeouts (e.g. nginx proxy_read_timeout).';
+        }
+        if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-upload"></i> Import Skill Lab Profiles'; }
     }

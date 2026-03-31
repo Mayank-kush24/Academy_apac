@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+
+{% block title %}MCQ Verification - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<style>
+.mcq-submission-detail { margin-bottom: 0.75rem; font-size: 0.9375rem; }
+.mcq-submission-detail label { font-weight: 600; color: #374151; display: block; margin-bottom: 2px; }
+.mcq-submission-detail .value { color: #111; word-break: break-word; }
+.mcq-submission-q { margin-bottom: 0.5rem; padding: 0.5rem 0; border-bottom: 1px solid rgba(0,0,0,0.06); font-size: 0.875rem; }
+.mcq-submission-q:last-child { border-bottom: none; }
+.mcq-submission-q .q-label { font-weight: 600; color: #4b5563; line-height: 1.4; word-break: break-word; }
+.mcq-submission-q .q-value { color: #111; margin-top: 4px; word-break: break-word; }
+.mcq-status-pass { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.8125rem; font-weight: 600; background: rgba(34, 197, 94, 0.15); color: #16a34a; }
+.mcq-status-fail { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.8125rem; font-weight: 600; background: rgba(239, 68, 68, 0.12); color: #dc2626; }
+.mcq-q-correct { color: #16a34a; font-weight: 600; }
+.mcq-q-incorrect { color: #dc2626; }
+.mcq-q-correct-answer { font-size: 0.8125rem; color: #6b7280; margin-top: 2px; }
+@media (max-width: 900px) {
+    .mcq-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 480px) {
+    .mcq-stats-section { grid-template-columns: 1fr !important; }
+}
+</style>
+<div class="dashboard-premium" id="mcqVerificationPage">
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div>
+                    <h1 class="page-title">MCQ Verification</h1>
+                    <p class="page-subtitle">Main MCQ completion by track — auto-scored from imported responses (sheets 16/17/18.MCQ Track 1/2/3)</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats cards: Total, Passed (6+/10), Pending (<6/10), Pass rate -->
+        <div class="mcq-stats-section" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 2rem;">
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, rgba(59,130,246,0.2) 0%, rgba(96,165,250,0.25) 100%); display: flex; align-items: center; justify-content: center; color: #2563eb;">
+                        <i class="fas fa-list-alt" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Total</div>
+                        <div id="statTotal" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(34, 197, 94, 0.15); display: flex; align-items: center; justify-content: center; color: #16a34a;">
+                        <i class="fas fa-check-circle" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Passed (6+/10)</div>
+                        <div id="statPassed" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(234, 179, 8, 0.15); display: flex; align-items: center; justify-content: center; color: #ca8a04;">
+                        <i class="fas fa-times-circle" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Pending (&lt;6/10)</div>
+                        <div id="statPending" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(168, 85, 247, 0.15); display: flex; align-items: center; justify-content: center; color: #7c3aed;">
+                        <i class="fas fa-percentage" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Pass rate</div>
+                        <div id="statRate" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search & filter -->
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+            <div style="padding: 1rem 1.25rem;">
+                <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Name or email..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
+                    </div>
+                    <div style="min-width: 120px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Track</label>
+                        <select id="trackFilter" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); background: #fff; font-size: 0.9375rem;">
+                            <option value="">All</option>
+                            <option value="1">Track 1</option>
+                            <option value="2">Track 2</option>
+                            <option value="3">Track 3</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="applyFilters()">
+                        <i class="fas fa-search"></i> Apply
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="clearFilters()">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="downloadMainMcqCsv(true)" title="CSV: Name, Email, Track, Score (6/10 or above)">
+                        <i class="fas fa-download"></i> Download passed (6+/10)
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="downloadMainMcqCsv(false)" title="CSV: Name, Email, Track, Score (all)">
+                        <i class="fas fa-download"></i> Download all
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Table: Name, Email, Track, Score, View submission -->
+        <div class="glass-card">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th style="text-align: center;">Track</th>
+                            <th style="text-align: center;">Score</th>
+                            <th style="text-align: center;">Status</th>
+                            <th style="text-align: center;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="paginationBar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; flex-wrap: wrap; gap: 0.5rem;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- View Submission Modal -->
+<div id="submissionModal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; z-index: 10000; background: rgba(0,0,0,0.4); align-items: center; justify-content: center;">
+    <div class="modal-content modal-large" onclick="event.stopPropagation()" style="margin: auto; max-width: 640px; max-height: 90vh; overflow: auto; background: var(--glass-bg, #fff); border-radius: 12px; box-shadow: 0 20px 40px rgba(0,0,0,0.15);">
+        <div class="modal-header" style="padding: 1rem 1.25rem; border-bottom: 1px solid rgba(0,0,0,0.08); display: flex; align-items: center; justify-content: space-between;">
+            <h2 id="submissionModalTitle" style="margin: 0; font-size: 1.125rem;">Submission</h2>
+            <button type="button" class="modal-close" onclick="closeSubmissionModal()" style="background: none; border: none; font-size: 1.25rem; cursor: pointer; color: #6b7280;">&times;</button>
+        </div>
+        <div id="submissionModalBody" class="modal-body" style="padding: 1.25rem;">
+            <div class="text-center text-muted">Loading...</div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+
+    function escapeHtml(s) {
+        if (s == null || s === undefined) return '';
+        var div = document.createElement('div');
+        div.textContent = String(s);
+        return div.innerHTML;
+    }
+
+    function loadStats() {
+        fetch('/api/mcq-verification/main/stats', { headers: headers })
+            .then(function(res) {
+                if (!res.ok) return null;
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                var totalEl = document.getElementById('statTotal');
+                var passedEl = document.getElementById('statPassed');
+                var pendingEl = document.getElementById('statPending');
+                var rateEl = document.getElementById('statRate');
+                var total = data.total_submissions != null ? Number(data.total_submissions) : 0;
+                var passed = data.passed_6 != null ? Number(data.passed_6) : 0;
+                var pending = Math.max(0, total - passed);
+                if (totalEl) totalEl.textContent = total.toLocaleString();
+                if (passedEl) passedEl.textContent = passed.toLocaleString();
+                if (pendingEl) pendingEl.textContent = pending.toLocaleString();
+                if (rateEl) rateEl.textContent = (data.auto_pass_rate != null) ? data.auto_pass_rate + '%' : '—';
+            })
+            .catch(function() {});
+    }
+
+    var currentPageRows = [];
+
+    function renderTable(rows) {
+        currentPageRows = rows || [];
+        var tbody = document.getElementById('tableBody');
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No submissions found. Import main MCQ data from the Import page (sheets 16/17/18.MCQ Track 1/2/3).</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(function(r, idx) {
+            var nameCell = (r.leader_name && r.leader_name.trim()) ? escapeHtml(r.leader_name) : (r.name && r.name.trim()) ? escapeHtml(r.name) : (r.email ? '<span class="text-muted">' + escapeHtml(r.email) + '</span>' : '<span class="text-muted">—</span>');
+            var emailCell = (r.email && r.email.trim()) ? escapeHtml(r.email) : '<span class="text-muted">—</span>';
+            var trackCell = 'Track ' + (r.track_number != null ? r.track_number : '—');
+            var scoreCell = (r.score_display != null) ? escapeHtml(r.score_display) : (r.score != null ? (r.score + '/10') : '—');
+            var statusCell = (r.passed === true) ? '<span class="mcq-status-pass">Pass</span>' : '<span class="mcq-status-fail">Fail</span>';
+            var btn = '<button type="button" class="btn btn-sm btn-primary" onclick="openSubmissionModal(' + idx + ')" title="View full submission"><i class="fas fa-eye"></i> View submission</button>';
+            return '<tr><td>' + nameCell + '</td><td>' + emailCell + '</td><td style="text-align: center;">' + trackCell + '</td><td style="text-align: center;">' + scoreCell + '</td><td style="text-align: center;">' + statusCell + '</td><td style="text-align: center;">' + btn + '</td></tr>';
+        }).join('');
+    }
+
+    window.openSubmissionModal = function(index) {
+        var row = currentPageRows[index];
+        if (!row) return;
+        var titleEl = document.getElementById('submissionModalTitle');
+        var bodyEl = document.getElementById('submissionModalBody');
+        var name = (row.leader_name && row.leader_name.trim()) ? row.leader_name : (row.name && row.name.trim()) ? row.name : row.email || 'Submission';
+        if (titleEl) titleEl.textContent = name + ' — Track ' + (row.track_number != null ? row.track_number : '—') + ' · Score ' + (row.score_display || (row.score != null ? row.score + '/10' : '—'));
+        var html = '';
+        html += '<div class="mcq-submission-detail"><label>Name</label><div class="value">' + escapeHtml((row.leader_name || row.name || '—').trim() || '—') + '</div></div>';
+        html += '<div class="mcq-submission-detail"><label>Email</label><div class="value">' + escapeHtml((row.email || '—').trim()) + '</div></div>';
+        html += '<div class="mcq-submission-detail"><label>Track</label><div class="value">Track ' + (row.track_number != null ? row.track_number : '—') + '</div></div>';
+        html += '<div class="mcq-submission-detail"><label>Score (auto)</label><div class="value">' + escapeHtml(row.score_display || (row.score != null ? row.score + '/10' : '—')) + (row.passed ? ' <span class="mcq-status-pass">Pass</span>' : ' <span class="mcq-status-fail">Fail</span>') + '</div></div>';
+        if (row.leader_phone != null && String(row.leader_phone).trim()) html += '<div class="mcq-submission-detail"><label>Leader Phone</label><div class="value">' + escapeHtml(String(row.leader_phone).trim()) + '</div></div>';
+        if (row.team_size != null) html += '<div class="mcq-submission-detail"><label>Team size</label><div class="value">' + escapeHtml(String(row.team_size)) + '</div></div>';
+        if (row.problem_statement != null && String(row.problem_statement).trim()) html += '<div class="mcq-submission-detail"><label>Problem Statements</label><div class="value">' + escapeHtml(String(row.problem_statement).trim()) + '</div></div>';
+        html += '<div style="margin-top: 1rem; font-weight: 600;">Responses (auto-marked)</div>';
+        var results = row.results || [];
+        var labels = row.question_labels || [];
+        for (var i = 0; i < results.length; i++) {
+            var res = results[i];
+            var val = (res.raw != null && String(res.raw).trim()) ? String(res.raw).trim() : '—';
+            var isCorrect = res.is_correct === true;
+            var statusText = isCorrect ? ' <span class="mcq-q-correct">Correct</span>' : ' <span class="mcq-q-incorrect">Incorrect</span>' + (res.correct_answer ? ' <span class="mcq-q-correct-answer">Correct: ' + escapeHtml(res.correct_answer) + '</span>' : '');
+            var questionText = (labels[i] != null && String(labels[i]).trim()) ? String(labels[i]).trim() : (res.question_id || ("Q" + (i+1))) + '.';
+            html += '<div class="mcq-submission-q"><div class="q-label">' + escapeHtml(questionText) + statusText + '</div><div class="q-value">' + escapeHtml(val) + '</div></div>';
+        }
+        if (results.length === 0) {
+            for (var j = 1; j <= 10; j++) {
+                var q = row['question_' + j];
+                var val = (q != null && String(q).trim()) ? String(q).trim() : '—';
+                var questionText = (labels[j-1] != null && String(labels[j-1]).trim()) ? String(labels[j-1]).trim() : 'Q' + j + '.';
+                html += '<div class="mcq-submission-q"><div class="q-label">' + escapeHtml(questionText) + '</div><div class="q-value">' + escapeHtml(val) + '</div></div>';
+            }
+        }
+        if (row.created_at != null && row.created_at.trim()) html += '<div class="mcq-submission-detail" style="margin-top: 1rem;"><label>Created At</label><div class="value">' + escapeHtml(row.created_at) + '</div></div>';
+        if (bodyEl) bodyEl.innerHTML = html;
+        var modal = document.getElementById('submissionModal');
+        if (modal) { modal.style.display = 'flex'; modal.onclick = function(e) { if (e.target === modal) closeSubmissionModal(); }; }
+    };
+
+    window.closeSubmissionModal = function() {
+        var modal = document.getElementById('submissionModal');
+        if (modal) modal.style.display = 'none';
+    };
+
+    function renderPagination(data) {
+        var bar = document.getElementById('paginationBar');
+        if (!data || data.pages <= 1) {
+            bar.innerHTML = '<span class="text-muted">Page ' + (data ? data.page : 1) + ' of ' + (data ? data.pages : 1) + ' · Total ' + (data ? data.total : 0) + ' rows</span>';
+            return;
+        }
+        var total = data.total, page = data.page, pages = data.pages;
+        var from = (page - 1) * data.per_page + 1, to = Math.min(page * data.per_page, total);
+        var html = '<span class="text-muted">Showing ' + from + '–' + to + ' of ' + total + '</span>';
+        html += '<div style="display: flex; gap: 0.5rem; align-items: center;">';
+        if (page > 1) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadPage(' + (page - 1) + ')">Previous</button>';
+        html += '<span class="text-muted">Page ' + page + ' of ' + pages + '</span>';
+        if (page < pages) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadPage(' + (page + 1) + ')">Next</button>';
+        html += '</div>';
+        bar.innerHTML = html;
+    }
+
+    window.loadPage = function(page) {
+        page = page || 1;
+        var search = document.getElementById('searchInput').value.trim();
+        var trackF = document.getElementById('trackFilter').value;
+        var params = new URLSearchParams();
+        params.set('page', page);
+        params.set('per_page', '20');
+        if (search) params.set('search', search);
+        if (trackF) params.set('track', trackF);
+        if (!token) { window.location.href = '/login'; return; }
+        fetch('/api/mcq-verification/main/responses/list?' + params.toString(), { headers: headers })
+            .then(function(res) {
+                if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                renderTable(data.rows);
+                renderPagination({ total: data.total, page: data.page, per_page: data.per_page, pages: data.pages });
+            })
+            .catch(function(err) {
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + escapeHtml(err.message || 'Failed to load') + '</td></tr>';
+            });
+    };
+
+    window.applyFilters = function() {
+        loadStats();
+        loadPage(1);
+    };
+
+    window.clearFilters = function() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('trackFilter').value = '';
+        loadStats();
+        loadPage(1);
+    };
+
+    window.downloadMainMcqCsv = function(passedOnly) {
+        if (!token) { window.location.href = '/login'; return; }
+        var url = '/api/mcq-verification/main/export?' + (passedOnly ? 'passed_only=1' : '');
+        fetch(url, { headers: headers })
+            .then(function(res) {
+                if (res.status === 403) { alert('Access not allowed.'); return null; }
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Export failed'); });
+                return res.text();
+            })
+            .then(function(csvText) {
+                if (!csvText) return;
+                var filename = passedOnly ? 'mcq-verification-passed-6plus.csv' : 'mcq-verification-all.csv';
+                var blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
+                var link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+            })
+            .catch(function(err) {
+                alert(err.message || 'Download failed');
+            });
+    };
+
+    document.getElementById('searchInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') applyFilters();
+    });
+
+    loadStats();
+    loadPage(1);
+})();
+</script>
+{% endblock %}

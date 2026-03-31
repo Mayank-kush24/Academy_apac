@@ -1,0 +1,426 @@
+{% extends "base.html" %}
+
+{% block title %}Project Submission Verification - Gen AI Academy APAC{% endblock %}
+
+{% block content %}
+<style>
+.verify-checkbox {
+    width: 18px; height: 18px; cursor: pointer; accent-color: #22c55e;
+}
+.remark-input {
+    width: 100%; min-width: 120px; padding: 4px 8px; border-radius: 6px;
+    border: 1px solid rgba(0,0,0,0.1); font-size: 0.8125rem; background: #fff;
+    color: #374151; box-sizing: border-box;
+}
+.remark-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+.save-row-btn {
+    padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; border: none;
+    background: #3b82f6; color: #fff; cursor: pointer; white-space: nowrap;
+}
+.save-row-btn:hover { background: #2563eb; }
+.save-row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.save-row-btn.saved { background: #22c55e; }
+.submission-links-cell a {
+    color: #3b82f6; text-decoration: none; font-size: 0.75rem; display: inline-block; margin-right: 8px; margin-bottom: 4px;
+}
+.submission-links-cell a:hover { text-decoration: underline; }
+a.project-col-link {
+    color: #3b82f6; text-decoration: none; font-size: 0.8125rem; white-space: nowrap;
+}
+a.project-col-link:hover { text-decoration: underline; }
+.track-filter-bar {
+    display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.08);
+}
+.track-filter-bar .track-btn {
+    padding: 8px 16px; font-size: 0.875rem; font-weight: 500; border-radius: 8px; border: 1px solid rgba(0,0,0,0.12);
+    background: #fff; color: #374151; cursor: pointer; transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.track-filter-bar .track-btn:hover {
+    background: rgba(59, 130, 246, 0.08); border-color: rgba(59, 130, 246, 0.4); color: #2563eb;
+}
+.track-filter-bar .track-btn.active {
+    background: #3b82f6; border-color: #3b82f6; color: #fff;
+}
+@media (max-width: 900px) {
+    .submission-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
+}
+@media (max-width: 480px) {
+    .submission-stats-section { grid-template-columns: 1fr !important; }
+}
+</style>
+<div class="dashboard-premium" id="projectSubmissionPage">
+    <div class="dashboard-container">
+        <div class="dashboard-header">
+            <div class="header-content">
+                <div>
+                    <h1 class="page-title">Project Submission Verification</h1>
+                    <p class="page-subtitle">Verify final project submissions per track (imported from the action-center XLSX)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="submission-stats-section" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 2rem;">
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, rgba(59,130,246,0.2) 0%, rgba(96,165,250,0.25) 100%); display: flex; align-items: center; justify-content: center; color: #2563eb;">
+                        <i class="fas fa-folder-open" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Total Submissions</div>
+                        <div id="statTotal" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(34, 197, 94, 0.15); display: flex; align-items: center; justify-content: center; color: #16a34a;">
+                        <i class="fas fa-check-circle" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Verified</div>
+                        <div id="statVerified" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(234, 179, 8, 0.15); display: flex; align-items: center; justify-content: center; color: #ca8a04;">
+                        <i class="fas fa-clock" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Pending</div>
+                        <div id="statPending" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="glass-card" style="padding: 1.5rem;">
+                <div style="display: flex; align-items: center; gap: 1rem;">
+                    <div style="width: 48px; height: 48px; border-radius: 12px; background: rgba(168, 85, 247, 0.15); display: flex; align-items: center; justify-content: center; color: #7c3aed;">
+                        <i class="fas fa-percentage" style="font-size: 1.25rem;"></i>
+                    </div>
+                    <div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Verification Rate</div>
+                        <div id="statRate" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card" style="margin-bottom: 1.5rem;">
+            <div style="padding: 1rem 1.25rem;">
+                <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end;">
+                    <div style="flex: 1; min-width: 200px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Team name, leader name, or email..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
+                    </div>
+                    <div style="min-width: 140px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Status</label>
+                        <select id="validFilter" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); background: #fff; font-size: 0.9375rem;">
+                            <option value="">All</option>
+                            <option value="true">Verified</option>
+                            <option value="false">Pending</option>
+                        </select>
+                    </div>
+                    <div style="min-width: 200px;">
+                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Problem Statements</label>
+                        <select id="problemFilter" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); background: #fff; font-size: 0.9375rem;">
+                            <option value="">All</option>
+                        </select>
+                    </div>
+                    <button type="button" class="btn btn-primary" onclick="applyFilters()">
+                        <i class="fas fa-search"></i> Apply
+                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="clearFilters()">
+                        <i class="fas fa-times"></i> Clear
+                    </button>
+                </div>
+                <div class="track-filter-bar">
+                    <span style="font-size: 0.875rem; font-weight: 500; color: var(--text-muted, #6b7280); margin-right: 0.25rem;">Track:</span>
+                    <button type="button" class="track-btn active" id="trackBtnAll" data-track="">All</button>
+                    <button type="button" class="track-btn" id="trackBtn1" data-track="1">Track 1</button>
+                    <button type="button" class="track-btn" id="trackBtn2" data-track="2">Track 2</button>
+                    <button type="button" class="track-btn" id="trackBtn3" data-track="3">Track 3</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card">
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Team / Leader</th>
+                            <th>Track</th>
+                            <th>Problem</th>
+                            <th>Cloud Run Deployment Link</th>
+                            <th>Final Project PPT</th>
+                            <th>GitHub / Demo</th>
+                            <th style="text-align: center;">Valid</th>
+                            <th>Remark</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                        <tr><td colspan="9" class="text-center">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="paginationBar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; flex-wrap: wrap; gap: 0.5rem;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+    var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+    var currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
+    var isAdmin = currentUser && currentUser.role === 'admin';
+
+    function escapeHtml(s) {
+        if (s == null || s === undefined) return '';
+        var div = document.createElement('div');
+        div.textContent = String(s);
+        return div.innerHTML;
+    }
+
+    function formatNum(n) {
+        if (n == null || n === undefined) return '—';
+        return Number(n).toLocaleString();
+    }
+
+    function truncate(s, max) {
+        if (!s) return '';
+        return s.length > max ? s.slice(0, max - 3) + '...' : s;
+    }
+
+    function linkLine(label, url) {
+        if (!url || !String(url).trim()) return '';
+        var u = String(url).trim();
+        return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(label) + '</a>';
+    }
+
+    function linkCell(url) {
+        if (!url || !String(url).trim()) return '<span class="text-muted">—</span>';
+        var u = String(url).trim();
+        return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener" class="project-col-link" title="' + escapeHtml(u) + '"><i class="fas fa-external-link-alt"></i> Open link</a>';
+    }
+
+    function loadStats() {
+        fetch('/api/project-submission/stats', { headers: headers })
+            .then(function(res) { return res.ok ? res.json() : null; })
+            .then(function(data) {
+                if (!data) return;
+                var el;
+                el = document.getElementById('statTotal');
+                if (el) el.textContent = formatNum(data.total_submissions);
+                el = document.getElementById('statVerified');
+                if (el) el.textContent = formatNum(data.verified_submissions);
+                el = document.getElementById('statPending');
+                if (el) el.textContent = formatNum(data.pending_submissions);
+                el = document.getElementById('statRate');
+                if (el) el.textContent = data.verification_rate != null ? data.verification_rate + '%' : '—';
+            })
+            .catch(function() {});
+    }
+
+    function loadFilterOptions() {
+        fetch('/api/project-submission/filters', { headers: headers })
+            .then(function(res) { return res.ok ? res.json() : null; })
+            .then(function(data) {
+                if (!data) return;
+                var sel = document.getElementById('problemFilter');
+                if (!sel) return;
+                sel.innerHTML = '<option value="">All</option>';
+                (data.problem_statements || []).forEach(function(ps) {
+                    var opt = document.createElement('option');
+                    opt.value = ps;
+                    opt.textContent = truncate(ps, 80);
+                    sel.appendChild(opt);
+                });
+            })
+            .catch(function() {});
+    }
+
+    function renderTable(rows) {
+        var tbody = document.getElementById('tableBody');
+        if (!rows || rows.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No submissions found.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(function(r) {
+            var id = r.id;
+            var nameParts = [];
+            if (r.team_name && r.team_name.trim()) nameParts.push('<strong>' + escapeHtml(r.team_name) + '</strong>');
+            if (r.leader_name && r.leader_name.trim()) nameParts.push('<span class="text-muted" style="font-size: 0.8125rem;">' + escapeHtml(r.leader_name) + '</span>');
+            if (r.leader_email) nameParts.push('<span class="text-muted" style="font-size: 0.75rem;">' + escapeHtml(r.leader_email) + '</span>');
+            var nameCell = nameParts.length > 0 ? nameParts.join('<br>') : '<span class="text-muted">—</span>';
+            var trackCell = r.track_number ? 'Track ' + r.track_number : '<span class="text-muted">—</span>';
+            var probCell = r.problem_statement ? escapeHtml(truncate(r.problem_statement, 120)) : '<span class="text-muted">—</span>';
+            var cloudRunCell = linkCell(r.cloud_run_deployment_link);
+            var pptCell = linkCell(r.final_project_ppt);
+            var links = [];
+            var L = linkLine('GitHub', r.github_repository_link);
+            if (L) links.push(L);
+            L = linkLine('Demo', r.demo_video_link);
+            if (L) links.push(L);
+            var linksCell = links.length ? '<div class="submission-links-cell">' + links.join(' ') + '</div>' : '<span class="text-muted">—</span>';
+            var validChecked = r.valid ? 'checked' : '';
+            var remarkVal = r.remark ? escapeHtml(r.remark) : '';
+            var isReviewed = r.valid || (r.remark && r.remark.trim());
+            var locked = isReviewed && !isAdmin;
+            var checkboxDisabled = locked ? 'disabled' : '';
+            var remarkDisabled = (locked || r.valid) ? 'disabled' : '';
+            var btnHtml = locked
+                ? '<span class="text-muted" style="font-size: 0.75rem;"><i class="fas fa-lock"></i> Locked</span>'
+                : '<button class="save-row-btn" data-id="' + escapeHtml(id) + '" onclick="saveRow(this)">Save</button>';
+            return '<tr data-id="' + escapeHtml(id) + '"' + (locked ? ' style="opacity: 0.7;"' : '') + '>' +
+                '<td>' + nameCell + '</td>' +
+                '<td>' + trackCell + '</td>' +
+                '<td>' + probCell + '</td>' +
+                '<td>' + cloudRunCell + '</td>' +
+                '<td>' + pptCell + '</td>' +
+                '<td>' + linksCell + '</td>' +
+                '<td style="text-align: center;"><input type="checkbox" class="verify-checkbox" data-id="' + escapeHtml(id) + '" ' + validChecked + ' ' + checkboxDisabled + ' onchange="onValidToggle(this)"></td>' +
+                '<td><input type="text" class="remark-input" data-id="' + escapeHtml(id) + '" value="' + remarkVal + '" placeholder="Add remark..." ' + remarkDisabled + '></td>' +
+                '<td>' + btnHtml + '</td>' +
+                '</tr>';
+        }).join('');
+    }
+
+    function renderPagination(data) {
+        var bar = document.getElementById('paginationBar');
+        if (!data || data.pages <= 1) {
+            bar.innerHTML = '<span class="text-muted">Page ' + (data ? data.page : 1) + ' of ' + (data ? data.pages : 1) + ' &middot; Total ' + (data ? data.total : 0) + ' rows</span>';
+            return;
+        }
+        var total = data.total, page = data.page, pages = data.pages, perPage = data.per_page;
+        var from = (page - 1) * perPage + 1, to = Math.min(page * perPage, total);
+        var html = '<span class="text-muted">Showing ' + from + '–' + to + ' of ' + total + '</span>';
+        html += '<div style="display: flex; gap: 0.5rem; align-items: center;">';
+        if (page > 1) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadPage(' + (page - 1) + ')">Previous</button>';
+        html += '<span class="text-muted">Page ' + page + ' of ' + pages + '</span>';
+        if (page < pages) html += '<button type="button" class="btn btn-sm btn-secondary" onclick="loadPage(' + (page + 1) + ')">Next</button>';
+        html += '</div>';
+        bar.innerHTML = html;
+    }
+
+    window.loadPage = function(page) {
+        page = page || 1;
+        var search = document.getElementById('searchInput').value.trim();
+        var validF = document.getElementById('validFilter').value;
+        var problemF = document.getElementById('problemFilter').value;
+        var trackEl = document.querySelector('.track-filter-bar .track-btn.active');
+        var track = trackEl ? (trackEl.getAttribute('data-track') || '') : '';
+        var params = new URLSearchParams();
+        params.set('page', page);
+        params.set('per_page', '20');
+        if (search) params.set('search', search);
+        if (validF) params.set('valid', validF);
+        if (problemF) params.set('problem_statement', problemF);
+        if (track) params.set('track', track);
+        if (!token) { window.location.href = '/login'; return; }
+        fetch('/api/project-submission/list?' + params.toString(), { headers: headers })
+            .then(function(res) {
+                if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
+                return res.json();
+            })
+            .then(function(data) {
+                if (!data) return;
+                renderTable(data.rows);
+                renderPagination({ total: data.total, page: data.page, per_page: data.per_page, pages: data.pages });
+            })
+            .catch(function(err) {
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="9" class="text-center text-danger">' + escapeHtml(err.message || 'Failed to load') + '</td></tr>';
+            });
+    };
+
+    window.onValidToggle = function(checkbox) {
+        var row = checkbox.closest('tr');
+        var remarkInput = row.querySelector('.remark-input');
+        if (checkbox.checked) {
+            if (remarkInput) { remarkInput.value = ''; remarkInput.disabled = true; }
+        } else {
+            if (remarkInput) { remarkInput.disabled = false; }
+        }
+    };
+
+    window.saveRow = function(btn) {
+        var id = btn.getAttribute('data-id');
+        var row = btn.closest('tr');
+        var checkbox = row.querySelector('.verify-checkbox');
+        var remarkInput = row.querySelector('.remark-input');
+        var valid = checkbox ? checkbox.checked : false;
+        var remark = remarkInput ? remarkInput.value.trim() : '';
+        if (!valid && !remark) {
+            alert('Please either check the Valid box or enter a remark.');
+            return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Saving...';
+        fetch('/api/project-submission/' + id + '/verify', {
+            method: 'PUT',
+            headers: Object.assign({}, headers, { 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ valid: valid, remark: remark })
+        })
+            .then(function(res) {
+                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Save failed'); });
+                return res.json();
+            })
+            .then(function() {
+                btn.textContent = 'Saved!';
+                btn.classList.add('saved');
+                setTimeout(function() {
+                    btn.textContent = 'Save';
+                    btn.classList.remove('saved');
+                    btn.disabled = false;
+                }, 1500);
+                loadStats();
+            })
+            .catch(function(err) {
+                alert(err.message || 'Save failed');
+                btn.textContent = 'Save';
+                btn.disabled = false;
+            });
+    };
+
+    window.applyFilters = function() {
+        loadStats();
+        loadPage(1);
+    };
+
+    window.clearFilters = function() {
+        document.getElementById('searchInput').value = '';
+        document.getElementById('validFilter').value = '';
+        document.getElementById('problemFilter').value = '';
+        var trackBar = document.querySelector('.track-filter-bar');
+        if (trackBar) {
+            trackBar.querySelectorAll('.track-btn').forEach(function(btn) {
+                btn.classList.toggle('active', btn.getAttribute('data-track') === '');
+            });
+        }
+        loadStats();
+        loadPage(1);
+    };
+
+    document.querySelectorAll('.track-filter-bar .track-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.track-filter-bar .track-btn').forEach(function(b) { b.classList.remove('active'); });
+            this.classList.add('active');
+            loadPage(1);
+        });
+    });
+
+    document.getElementById('searchInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') applyFilters();
+    });
+
+    loadStats();
+    loadFilterOptions();
+    loadPage(1);
+})();
+</script>
+{% endblock %}

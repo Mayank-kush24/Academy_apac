@@ -3,7 +3,7 @@ User profiles routes (for viewing user_pii data)
 """
 from flask import Blueprint, request, jsonify
 from sqlalchemy import or_, and_, func, text, case
-from server.models import db, UserPIICombined, ActivityLog, SkillboostProfile, CreditLink, SkillLabSubmission, CodeLabSubmission, OptionalMcqResponse
+from server.models import db, UserPIICombined, ActivityLog, SkillboostProfile, CreditLink, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqResponse, MainMcqResponse
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role, require_page_access
 from server.utils.state_normalize import (
@@ -11,6 +11,7 @@ from server.utils.state_normalize import (
     get_state_filter_values,
     distinct_canonical_states,
 )
+from server.utils.country_normalize import country_filter_or_conditions, distinct_canonical_countries
 from server.utils.date_format import format_datetime_utc
 
 bp = Blueprint('profiles', __name__)
@@ -55,17 +56,22 @@ def get_profiles():
             )
             query = query.filter(search_filter)
         
-        # Organization filter (multiple allowed)
+        # Organization filter (multiple allowed, normalized)
         if organizations:
-            query = query.filter(or_(*[UserPIICombined.organization_name.ilike(f'%{o}%') for o in organizations]))
+            from server.utils.org_normalize import get_org_filter_conditions
+            org_cond = get_org_filter_conditions(UserPIICombined.organization_name, organizations)
+            if org_cond is not None:
+                query = query.filter(org_cond)
         
         # Domain filter (multiple allowed)
         if domains:
             query = query.filter(or_(*[UserPIICombined.domain.ilike(f'%{d}%') for d in domains]))
         
-        # Country filter (multiple allowed)
+        # Country filter (multiple allowed; canonical + alias match)
         if countries:
-            query = query.filter(or_(*[UserPIICombined.country.ilike(f'%{c}%') for c in countries]))
+            cf = country_filter_or_conditions(UserPIICombined.country, countries)
+            if cf is not None:
+                query = query.filter(cf)
         
         # State filter (multiple allowed; match canonical + all mapped variants per selection)
         if states:
@@ -201,20 +207,25 @@ def get_filter_options():
     def _get_filter_options():
         """Internal function to fetch filter options"""
         # Get distinct values for filters - limit to top 1000 for performance
-        organizations = db.session.query(UserPIICombined.organization_name).filter(
+        from server.utils.org_normalize import normalize_org_list
+        raw_orgs = db.session.query(UserPIICombined.organization_name).filter(
             UserPIICombined.organization_name.isnot(None),
             UserPIICombined.organization_name != ''
         ).distinct().order_by(UserPIICombined.organization_name).limit(1000).all()
+        organizations = normalize_org_list([o[0] for o in raw_orgs])
         
         domains = db.session.query(UserPIICombined.domain).filter(
             UserPIICombined.domain.isnot(None),
             UserPIICombined.domain != ''
         ).distinct().order_by(UserPIICombined.domain).limit(1000).all()
         
-        countries = db.session.query(UserPIICombined.country).filter(
-            UserPIICombined.country.isnot(None),
-            UserPIICombined.country != ''
-        ).distinct().order_by(UserPIICombined.country).limit(1000).all()
+        raw_countries = [
+            c[0] for c in db.session.query(UserPIICombined.country).filter(
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != ''
+            ).distinct().order_by(UserPIICombined.country).limit(1000).all()
+        ]
+        countries = distinct_canonical_countries(raw_countries)
         
         raw_states = [s[0] for s in db.session.query(UserPIICombined.state).filter(
             UserPIICombined.state.isnot(None),
@@ -248,9 +259,9 @@ def get_filter_options():
         ).distinct().order_by(UserPIICombined.occupation).limit(1000).all()
         
         return {
-            'organizations': [o[0] for o in organizations],
+            'organizations': organizations,
             'domains': [d[0] for d in domains],
-            'countries': [c[0] for c in countries],
+            'countries': countries,
             'states': states,
             'cities': [c[0] for c in cities],
             'genders': [g[0] for g in genders],
@@ -309,6 +320,18 @@ def get_profile_detail(profile_id):
         except Exception:
             pass
 
+        # Project submissions for this user (by email)
+        project_submissions = []
+        try:
+            email_key = (profile.email or '').strip().lower()
+            if email_key:
+                psubs = ProjectSubmission.query.filter(
+                    func.lower(ProjectSubmission.leader_email) == email_key
+                ).all()
+                project_submissions = [s.to_dict() for s in psubs]
+        except Exception:
+            pass
+
         # Optional MCQ scores per track (same marking as Optional MCQ Verification page: 6+ = pass)
         optional_mcq_scores = []
         try:
@@ -326,6 +349,22 @@ def get_profile_detail(profile_id):
         except Exception:
             pass
 
+        # Main MCQ (MCQ Verification) scores per track — 6+ = verified
+        main_mcq_scores = []
+        try:
+            email_lower = (profile.email or '').strip().lower()
+            if email_lower:
+                rows = MainMcqResponse.query.filter(func.lower(MainMcqResponse.email) == email_lower).all()
+                for r in rows:
+                    score = r.score if r.score is not None else 0
+                    main_mcq_scores.append({
+                        'track_number': r.track_number,
+                        'score': score,
+                        'score_display': f'{score}/10',
+                    })
+        except Exception:
+            pass
+
         profile_dict = profile.to_dict()
         if profile_dict.get('state'):
             profile_dict['state'] = normalize_state(profile_dict['state'])
@@ -334,7 +373,9 @@ def get_profile_detail(profile_id):
             'skillboost_profiles': skillboost_profiles,
             'skilllab_submissions': skilllab_submissions,
             'codelab_submissions': codelab_submissions,
+            'project_submissions': project_submissions,
             'optional_mcq_scores': optional_mcq_scores,
+            'main_mcq_scores': main_mcq_scores,
         }), 200
         
     except Exception as e:

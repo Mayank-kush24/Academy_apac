@@ -126,6 +126,8 @@ BEGIN
         RETURN COALESCE((p_row).id::TEXT, '');
     ELSIF p_table_name = 'optional_mcq_response' THEN
         RETURN COALESCE((p_row).id::TEXT, '');
+    ELSIF p_table_name = 'main_mcq_response' THEN
+        RETURN COALESCE((p_row).id::TEXT, '');
     ELSE
         -- Default: try single column 'id'
         RETURN COALESCE((p_row).id::TEXT, '');
@@ -194,6 +196,17 @@ BEGIN
     END IF;
 END $$;
 
+-- project_submission (final project per track; leader_email -> user_pii)
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'project_submission') THEN
+        DROP TRIGGER IF EXISTS tr_project_submission_log ON project_submission;
+        CREATE TRIGGER tr_project_submission_log
+            AFTER INSERT OR UPDATE OR DELETE ON project_submission
+            FOR EACH ROW EXECUTE PROCEDURE log_activity();
+    END IF;
+END $$;
+
 -- optional_mcq_verification
 DO $$
 BEGIN
@@ -212,6 +225,17 @@ BEGIN
         DROP TRIGGER IF EXISTS tr_optional_mcq_response_log ON optional_mcq_response;
         CREATE TRIGGER tr_optional_mcq_response_log
             AFTER INSERT OR UPDATE OR DELETE ON optional_mcq_response
+            FOR EACH ROW EXECUTE PROCEDURE log_activity();
+    END IF;
+END $$;
+
+-- main_mcq_response
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'main_mcq_response') THEN
+        DROP TRIGGER IF EXISTS tr_main_mcq_response_log ON main_mcq_response;
+        CREATE TRIGGER tr_main_mcq_response_log
+            AFTER INSERT OR UPDATE OR DELETE ON main_mcq_response
             FOR EACH ROW EXECUTE PROCEDURE log_activity();
     END IF;
 END $$;

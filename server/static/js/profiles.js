@@ -95,6 +95,39 @@ function getCodeLabTrackCell(submissions, trackLabel) {
 }
 
 /**
+ * Final project submission for a track (one row per leader per track).
+ * Shows team name plus verification stats (submitted / verified / pending review).
+ */
+function getProjectTrackCell(submissions, trackLabel) {
+    if (!submissions || submissions.length === 0) return '';
+    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    if (!trackNum) return '';
+    var match = submissions.find(function(s) { return s.track_number === trackNum; });
+    if (!match) {
+        return '<span style="color:#d1d5db;font-size:0.75rem;">—</span>';
+    }
+    var team = (match.team_name && String(match.team_name).trim()) ? String(match.team_name).trim() : '';
+    var teamLine = '';
+    if (team) {
+        var shortTeam = team.length > 36 ? team.slice(0, 33) + '…' : team;
+        teamLine = '<div style="font-size:0.7rem;color:#4b5563;font-weight:600;margin-bottom:4px;line-height:1.25;" title="' + escapeHtml(team) + '">' + escapeHtml(shortTeam) + '</div>';
+    }
+    var statLine = '<div style="font-size:0.68rem;color:#6b7280;margin-bottom:2px;">1 submission</div>';
+    var statusBlock = '';
+    if (!match.valid && (!match.remark || !match.remark.trim())) {
+        statusBlock = '<span style="color:#ca8a04;font-weight:600;font-size:0.75rem;"><i class="fas fa-hourglass-half"></i> Pending review</span>';
+    } else if (match.valid) {
+        statusBlock = '<span style="color:#16a34a;font-weight:600;font-size:0.75rem;"><i class="fas fa-check-circle"></i> Verified</span>';
+    } else {
+        statusBlock = '<span style="color:#dc2626;font-weight:600;font-size:0.75rem;"><i class="fas fa-times-circle"></i> Not valid</span>';
+        if (match.remark && match.remark.trim()) {
+            statusBlock += '<br><span style="color:#6b7280;font-size:0.68rem;" title="' + escapeHtml(match.remark) + '">' + escapeHtml(match.remark.length > 48 ? match.remark.slice(0, 45) + '…' : match.remark) + '</span>';
+        }
+    }
+    return teamLine + statLine + statusBlock;
+}
+
+/**
  * Webinar is auto-valid for a track if any Code Lab submission exists for that track.
  */
 function getWebinarTrackCell(codelabSubmissions, trackLabel) {
@@ -115,8 +148,26 @@ function getOptionalMcqTrackCell(scores, trackLabel) {
     var scoreDisplay = String(item.score_display);
     var score = typeof item.score === 'number' ? item.score : parseInt(scoreDisplay.split('/')[0], 10);
     var isPass = !isNaN(score) && score >= 6;
+    var label = isPass ? 'Verified' : 'Fail';
     var color = isPass ? '#16a34a' : '#dc2626';
-    return '<span style="color:' + color + ';font-weight:600;">' + escapeHtml(scoreDisplay) + '</span>';
+    return '<span style="color:' + color + ';font-weight:600;">' + escapeHtml(label) + '</span>';
+}
+
+/**
+ * Generate HTML for a Main MCQ (MCQ Verification) track cell.
+ * Shows Verified when score >= 6, Fail when submitted but < 6.
+ */
+function getMainMcqTrackCell(scores, trackLabel) {
+    if (!scores || scores.length === 0) return '';
+    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    if (!trackNum) return '';
+    var item = scores.find(function(s) { return s.track_number === trackNum; });
+    if (!item) return '';
+    var score = typeof item.score === 'number' ? item.score : parseInt(String(item.score_display || '').split('/')[0], 10);
+    var isPass = !isNaN(score) && score >= 6;
+    var label = isPass ? 'Verified' : 'Fail';
+    var color = isPass ? '#16a34a' : '#dc2626';
+    return '<span style="color:' + color + ';font-weight:600;"><i class="fas fa-check-circle"></i> ' + escapeHtml(label) + '</span>';
 }
 
 function formatDate(dateString) {
@@ -269,7 +320,9 @@ window.viewProfileDetails = function(profileId) {
         const skillboost_profiles = data.skillboost_profiles || [];
         const skilllab_submissions = data.skilllab_submissions || [];
         const codelab_submissions = data.codelab_submissions || [];
+        const project_submissions = data.project_submissions || [];
         const optional_mcq_scores = data.optional_mcq_scores || [];
+        const main_mcq_scores = data.main_mcq_scores || [];
         
         // Populate modal
         const modalNameEl = document.getElementById('modalProfileName');
@@ -441,10 +494,10 @@ window.viewProfileDetails = function(profileId) {
                         </thead>
                         <tbody>
                             <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
                         </tbody>
                     </table>
@@ -876,6 +929,7 @@ async function viewProfileDetails(profileId) {
         const skillboost_profiles = data.skillboost_profiles || [];
         const skilllab_submissions = data.skilllab_submissions || [];
         const codelab_submissions = data.codelab_submissions || [];
+        const project_submissions = data.project_submissions || [];
         const optional_mcq_scores = data.optional_mcq_scores || [];
         
         if (!profile) {
@@ -1051,10 +1105,10 @@ async function viewProfileDetails(profileId) {
                         </thead>
                         <tbody>
                             <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td></td><td></td><td></td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
                             <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
                         </tbody>
                     </table>

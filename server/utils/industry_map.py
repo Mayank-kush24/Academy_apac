@@ -57,10 +57,74 @@ INDUSTRY_DOMAIN_MAP = {
     ],
 }
 
+_EXTRA_DOMAIN_MAPPINGS = {
+    # Media & Design
+    'media & entertainment': 'Media & Design',
+    'heritage & culture': 'Media & Design',
+    # Healthcare & Life Sciences
+    'healthcare & medical services': 'Healthcare & Life Sciences',
+    'healthtech': 'Healthcare & Life Sciences',
+    'medtech': 'Healthcare & Life Sciences',
+    'biomedical engineering': 'Healthcare & Life Sciences',
+    'biotechnology and life sciences': 'Healthcare & Life Sciences',
+    'genetic engineering': 'Healthcare & Life Sciences',
+    'pharmaceuticals': 'Healthcare & Life Sciences',
+    'fitness & sports': 'Healthcare & Life Sciences',
+    # Business & Commerce
+    'financial services': 'Business & Commerce',
+    'finance & insurance': 'Business & Commerce',
+    'social media marketing': 'Business & Commerce',
+    'food & beverage': 'Business & Commerce',
+    'fashion & apparel': 'Business & Commerce',
+    'travel & tourism': 'Business & Commerce',
+    'transportation & logistics': 'Business & Commerce',
+    'hospitality': 'Business & Commerce',
+    'legal and governance': 'Business & Commerce',
+    # Technology
+    'mobile apps': 'Technology',
+    'emerging technologies': 'Technology',
+    'social networking': 'Technology',
+    'robotics': 'Technology',
+    'augmented reality (ar)': 'Technology',
+    'quantum computing': 'Technology',
+    'agritech': 'Technology',
+    'autonomous vehicles': 'Technology',
+    '3d printing': 'Technology',
+    'drones & unmanned aerial vehicles': 'Technology',
+    'clean & green technology': 'Technology',
+    'wearable technology': 'Technology',
+    'smart cities': 'Technology',
+    'smart grids': 'Technology',
+    'water technology': 'Technology',
+    'mobile payments': 'Technology',
+    'metaverse': 'Technology',
+    # Manufacturing & Engineering
+    'sustainable development': 'Manufacturing & Engineering',
+    'environmental solutions': 'Manufacturing & Engineering',
+    'construction & real estate': 'Manufacturing & Engineering',
+    'mining': 'Manufacturing & Engineering',
+    'industrial automation': 'Manufacturing & Engineering',
+    'infrastructure development': 'Manufacturing & Engineering',
+    'infrastructure & transportation': 'Manufacturing & Engineering',
+    'renewable energy': 'Manufacturing & Engineering',
+    'agriculture': 'Manufacturing & Engineering',
+    'waste management': 'Manufacturing & Engineering',
+    'industrial safety': 'Manufacturing & Engineering',
+    'electric vehicles': 'Manufacturing & Engineering',
+    'recycling': 'Manufacturing & Engineering',
+    # Education & Research
+    'research & innovation': 'Education & Research',
+    # Government & Public Sector
+    'non-profit organizations': 'Government & Public Sector',
+    'rural development': 'Government & Public Sector',
+    'vertex pulse.com': 'Other',
+}
+
 _DOMAIN_INDUSTRY_LOOKUP = {}
 for _industry, _domains in INDUSTRY_DOMAIN_MAP.items():
     for _d in _domains:
         _DOMAIN_INDUSTRY_LOOKUP[_d.strip().lower()] = _industry
+_DOMAIN_INDUSTRY_LOOKUP.update(_EXTRA_DOMAIN_MAPPINGS)
 
 # Keyword → industry for inferring from free-text designation field.
 # Order matters: first match wins. More specific keywords come first.
@@ -394,10 +458,35 @@ def _infer_from_organization(org):
     return ''
 
 
-def get_industry(domain, designation=None, organization=None):
+_PERSONA_INDUSTRY_FALLBACK = {
+    'Backend Developer': 'Technology',
+    'Frontend Developer': 'Technology',
+    'Full Stack Developer': 'Technology',
+    'Mobile Developer': 'Technology',
+    'Web Developer': 'Technology',
+    'Software Developer': 'Technology',
+    'DevOps / Cloud Engineer': 'Technology',
+    'Cyber Security': 'Technology',
+    'Architect': 'Technology',
+    'QA / Testing': 'Technology',
+    'Embedded / IoT': 'Technology',
+    'Game Developer': 'Technology',
+    'AI / ML Engineer': 'Data & AI',
+    'Data Analyst / Data Engineer': 'Data & AI',
+    'UI/UX Designer': 'Media & Design',
+    'Product / Manager': 'Business & Commerce',
+    'Sales / Marketing': 'Business & Commerce',
+    'Finance / Accounts': 'Business & Commerce',
+    'HR / Operations': 'Business & Commerce',
+    'Academic / Research': 'Education & Research',
+    'Student / Fresher': 'Education & Research',
+}
+
+
+def get_industry(domain, designation=None, organization=None, persona=None):
     """Map a raw domain string to its industry category.
     Falls back to keyword inference from designation if domain is
-    unmapped or blank, then to organization name as a last resort.
+    unmapped or blank, then to organization name, then to persona.
     Returns '' only if nothing can be inferred."""
     if domain and isinstance(domain, str) and domain.strip():
         mapped = _DOMAIN_INDUSTRY_LOOKUP.get(domain.strip().lower())
@@ -418,6 +507,11 @@ def get_industry(domain, designation=None, organization=None):
             return inferred
 
     if organization:
-        return _infer_from_organization(organization)
+        org_inferred = _infer_from_organization(organization)
+        if org_inferred:
+            return org_inferred
+
+    if persona and persona in _PERSONA_INDUSTRY_FALLBACK:
+        return _PERSONA_INDUSTRY_FALLBACK[persona]
 
     return ''

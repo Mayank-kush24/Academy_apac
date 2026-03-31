@@ -173,6 +173,23 @@ def init_database():
                     print("WARN: optional_mcq_response trigger (run schema.sql for master_logs):", str(ex))
             else:
                 print("FAIL: 'optional_mcq_response' table NOT found")
+
+            if 'main_mcq_response' in tables:
+                print("OK: 'main_mcq_response' table exists")
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text("""
+                            DROP TRIGGER IF EXISTS tr_main_mcq_response_log ON main_mcq_response;
+                            CREATE TRIGGER tr_main_mcq_response_log
+                                AFTER INSERT OR UPDATE OR DELETE ON main_mcq_response
+                                FOR EACH ROW EXECUTE PROCEDURE log_activity()
+                        """))
+                        conn.commit()
+                    print("OK: main_mcq_response audit trigger created")
+                except Exception as ex:
+                    print("WARN: main_mcq_response trigger (run schema.sql for master_logs):", str(ex))
+            else:
+                print("FAIL: 'main_mcq_response' table NOT found")
             
             # Add allowed_pages column to users if missing (dynamic page access)
             try:
@@ -264,6 +281,7 @@ def _apply_skillboost_master_logs(db):
                     RETURN COALESCE((p_row).email, '') || '|' || COALESCE((p_row).google_cloud_skills_boost_profile_link, '');
                 ELSIF p_table_name = 'optional_mcq_verification' THEN RETURN COALESCE((p_row).id::TEXT, '');
                 ELSIF p_table_name = 'optional_mcq_response' THEN RETURN COALESCE((p_row).id::TEXT, '');
+                ELSIF p_table_name = 'main_mcq_response' THEN RETURN COALESCE((p_row).id::TEXT, '');
                 ELSE RETURN COALESCE((p_row).id::TEXT, '');
                 END IF;
             EXCEPTION WHEN OTHERS THEN RETURN 'unknown';

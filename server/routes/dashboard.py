@@ -1,16 +1,34 @@
 """
 Dashboard analytics routes
 """
+from collections import defaultdict
 from flask import Blueprint, jsonify, request, current_app
 from sqlalchemy import func, desc, case, or_, and_
 from datetime import datetime, timedelta, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from server.models import db, UserPIICombined, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, OptionalMcqResponse
+from server.models import db, UserPIICombined, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqResponse, MainMcqResponse
 from server.utils.auth import get_current_user
 from server.utils.mcq_answer_key import score_submission, get_response_score
 from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
-from server.utils.state_normalize import normalize_state
+from server.utils.state_normalize import normalize_state, merge_state_count_rows
+from server.utils.country_normalize import (
+    country_column_matches_canonical,
+    country_column_matches_any_canonical,
+    merge_country_count_rows,
+    normalize_country,
+)
+
+# Canonical APAC names for filters (aliases like "Asia Pacific" roll up via "APAC" in country map)
+APAC_COUNTRIES_CANONICAL = [
+    'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
+    'Fiji', 'Hong Kong', 'Indonesia', 'Japan', 'Laos', 'Malaysia',
+    'Maldives', 'Mongolia', 'Myanmar', 'Nepal', 'New Zealand',
+    'North Korea', 'Pakistan', 'Papua New Guinea', 'Philippines',
+    'Singapore', 'South Korea', 'Sri Lanka', 'Taiwan', 'Thailand',
+    'Timor-Leste', 'Vietnam', 'APAC',
+]
+APAC_FOR_MAP_EXCL_INDIA = APAC_COUNTRIES_CANONICAL
 
 bp = Blueprint('dashboard', __name__)
 
@@ -55,13 +73,14 @@ def get_dashboard_data():
                 'top_apac_country_count': None,
                 'sea_registrations': 0, 'sea_top_country': 'N/A',
                 'anz_registrations': 0, 'anz_top_country': 'N/A',
-                'east_asia_registrations': 0, 'east_asia_top_country': 'N/A',
+                'greater_china_registrations': 0, 'greater_china_top_country': 'N/A',
+                'korea_registrations': 0, 'korea_top_country': 'N/A',
                 'india_registrations': 0
             },
             'charts': {
                 'registration_trends': [], 'gender_distribution': [],
                 'registration_source_bifurcation': [{'label': 'Google', 'value': 0}, {'label': 'Outreach', 'value': 0}, {'label': 'Marketing', 'value': 0}, {'label': 'Ads', 'value': 0}, {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}],
-                'occupation_distribution': [], 'top_domains': [], 'user_segmentation': {'industries': []}, 'top_cities': [], 'top_cities_outside_india': [], 'top_organizations': [],
+                'occupation_distribution': [], 'persona_distribution': [], 'top_domains': [], 'user_segmentation': {'industries': []}, 'top_cities': [], 'top_cities_outside_india': [], 'top_organizations': [],
                 'india_state_registrations': [], 'apac_country_registrations': []
             }
         }), 200
@@ -82,7 +101,8 @@ def get_summary():
             'top_india_city': 'N/A', 'top_apac_country': 'N/A',
             'sea_registrations': 0, 'sea_top_country': 'N/A',
             'anz_registrations': 0, 'anz_top_country': 'N/A',
-            'east_asia_registrations': 0, 'east_asia_top_country': 'N/A',
+            'greater_china_registrations': 0, 'greater_china_top_country': 'N/A',
+            'korea_registrations': 0, 'korea_top_country': 'N/A',
             'india_registrations': 0
         }), 200
 
@@ -97,10 +117,8 @@ def _get_region_breakdown_cached(region, period):
         'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
     ]
     ANZ_COUNTRIES = ['Australia', 'New Zealand']
-    EAST_ASIA_COUNTRIES = [
-        'China', 'Hong Kong', 'Japan', 'South Korea', 'North Korea',
-        'Taiwan', 'Mongolia'
-    ]
+    GREATER_CHINA_COUNTRIES = ['China', 'Hong Kong', 'Taiwan', 'Mongolia']
+    KOREA_COUNTRIES = ['South Korea', 'North Korea']
     if region == 'india':
         label = 'India'
         q = db.session.query(
@@ -109,42 +127,37 @@ def _get_region_breakdown_cached(region, period):
         ).filter(
             UserPIICombined.country.isnot(None),
             UserPIICombined.country != '',
-            UserPIICombined.country.ilike('%India%'),
+            country_column_matches_canonical(UserPIICombined.country, 'India'),
             UserPIICombined.state.isnot(None),
             UserPIICombined.state != ''
         )
         if date_cond is not None:
             q = q.filter(date_cond)
         rows = q.group_by(UserPIICombined.state).order_by(desc('count')).all()
-        from collections import defaultdict
-        merged = defaultdict(int)
-        for r in rows:
-            canonical = normalize_state(r[0]) if r[0] else 'Unknown'
-            merged[canonical] += r[1]
-        items = [{'name': k, 'count': v} for k, v in sorted(merged.items(), key=lambda x: -x[1])]
+        merged_list = merge_state_count_rows([(r[0], r[1]) for r in rows])
+        items = [{'name': k, 'count': v} for k, v in merged_list]
     else:
-        if region == 'sea':
-            label = 'SEA (Southeast Asia)'
-            countries = SEA_COUNTRIES
-        elif region == 'anz':
-            label = 'ANZ (Australia & New Zealand)'
-            countries = ANZ_COUNTRIES
-        else:
-            label = 'Greater China and Korea'
-            countries = EAST_ASIA_COUNTRIES
-        conds = [UserPIICombined.country.ilike(f'%{c}%') for c in countries]
+        region_map = {
+            'sea': ('SEA (Southeast Asia)', SEA_COUNTRIES),
+            'anz': ('ANZ (Australia & New Zealand)', ANZ_COUNTRIES),
+            'greater_china': ('Greater China', GREATER_CHINA_COUNTRIES),
+            'korea': ('Korea', KOREA_COUNTRIES),
+        }
+        label, countries = region_map[region]
+        reg_cond = country_column_matches_any_canonical(UserPIICombined.country, countries)
         q = db.session.query(
             UserPIICombined.country,
             func.count(UserPIICombined.id).label('count')
         ).filter(
             UserPIICombined.country.isnot(None),
             UserPIICombined.country != '',
-            or_(*conds)
+            reg_cond,
         )
         if date_cond is not None:
             q = q.filter(date_cond)
         rows = q.group_by(UserPIICombined.country).order_by(desc('count')).all()
-        items = [{'name': r[0] or 'Unknown', 'count': r[1]} for r in rows]
+        merged = merge_country_count_rows([(r[0], r[1]) for r in rows])
+        items = [{'name': k, 'count': v} for k, v in merged]
     total = sum(i['count'] for i in items)
     return {'region': region, 'label': label, 'items': items, 'total': total}
 
@@ -155,7 +168,7 @@ def get_region_breakdown():
     """Get per-country (or per-state for India) registration counts for a region (cached 5 min)."""
     region = (request.args.get('region') or '').strip().lower()
     period = request.args.get('period', 'all')
-    if region not in ('sea', 'anz', 'east_asia', 'india'):
+    if region not in ('sea', 'anz', 'greater_china', 'korea', 'india'):
         return jsonify({'error': 'Invalid region'}), 400
     try:
         data = _get_region_breakdown_cached(region, period)
@@ -403,6 +416,32 @@ def _fetch_summary_data(period):
                 codelab_submission_verification_rate = round(100.0 * verified_codelab_submissions / total_codelab_submissions, 1)
         except Exception:
             pass
+
+        # Project Submission Verification stats (program target 15k = 5k per track)
+        total_project_submissions = 0
+        verified_project_submissions = 0
+        project_submission_verification_rate = None
+        project_submission_program_target = 15000
+        project_submission_track_target = 5000
+        project_submission_by_track = [
+            {'track': 1, 'total': 0, 'verified': 0},
+            {'track': 2, 'total': 0, 'verified': 0},
+            {'track': 3, 'total': 0, 'verified': 0},
+        ]
+        try:
+            total_project_submissions = ProjectSubmission.query.count() or 0
+            verified_project_submissions = ProjectSubmission.query.filter(ProjectSubmission.valid == True).count() or 0
+            if total_project_submissions > 0:
+                project_submission_verification_rate = round(100.0 * verified_project_submissions / total_project_submissions, 1)
+            for i, t in enumerate((1, 2, 3)):
+                tot_t = ProjectSubmission.query.filter(ProjectSubmission.track_number == t).count() or 0
+                ver_t = ProjectSubmission.query.filter(
+                    ProjectSubmission.track_number == t,
+                    ProjectSubmission.valid == True,
+                ).count() or 0
+                project_submission_by_track[i] = {'track': t, 'total': tot_t, 'verified': ver_t}
+        except Exception:
+            pass
         
         # Top organization
         top_org = None
@@ -470,15 +509,7 @@ def _fetch_summary_data(period):
             except:
                 avg_age = None
         
-        # APAC countries list (excluding India)
-        APAC_COUNTRIES = [
-            'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
-            'Fiji', 'Hong Kong', 'Indonesia', 'Japan', 'Laos', 'Malaysia',
-            'Maldives', 'Mongolia', 'Myanmar', 'Nepal', 'New Zealand',
-            'North Korea', 'Pakistan', 'Papua New Guinea', 'Philippines',
-            'Singapore', 'South Korea', 'Sri Lanka', 'Taiwan', 'Thailand',
-            'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
-        ]
+        APAC_COUNTRIES = APAC_COUNTRIES_CANONICAL
         # SEA (Southeast Asia)
         SEA_COUNTRIES = [
             'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
@@ -486,31 +517,27 @@ def _fetch_summary_data(period):
         ]
         # ANZ (Australia & New Zealand)
         ANZ_COUNTRIES = ['Australia', 'New Zealand']
-        # East Asia
-        EAST_ASIA_COUNTRIES = [
-            'China', 'Hong Kong', 'Japan', 'South Korea', 'North Korea',
-            'Taiwan', 'Mongolia'
+        # Greater China
+        GREATER_CHINA_COUNTRIES = [
+            'China', 'Hong Kong', 'Taiwan', 'Mongolia'
         ]
+        # Korea
+        KOREA_COUNTRIES = ['South Korea', 'North Korea']
+        # East Asia (union, kept for APAC totals)
+        EAST_ASIA_COUNTRIES = GREATER_CHINA_COUNTRIES + KOREA_COUNTRIES + ['Japan']
         
         # Users from APAC except India
         apac_except_india_count = 0
         try:
-            # Filter for APAC countries (case-insensitive), excluding India
-            apac_conditions = [UserPIICombined.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
-            if apac_conditions:
-                apac_query = base_query.filter(
-                    UserPIICombined.country.isnot(None),
-                    UserPIICombined.country != '',
-                    ~UserPIICombined.country.ilike('%India%'),
-                    or_(*apac_conditions)
-                )
-            else:
-                # If no APAC countries defined, just exclude India
-                apac_query = base_query.filter(
-                    UserPIICombined.country.isnot(None),
-                    UserPIICombined.country != '',
-                    ~UserPIICombined.country.ilike('%India%')
-                )
+            apac_region_cond = country_column_matches_any_canonical(
+                UserPIICombined.country, APAC_COUNTRIES
+            )
+            apac_query = base_query.filter(
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~country_column_matches_canonical(UserPIICombined.country, 'India'),
+                apac_region_cond,
+            )
             apac_except_india_count = apac_query.count() or 0
         except Exception as e:
             print(f"Error calculating APAC users: {e}")
@@ -528,25 +555,29 @@ def _fetch_summary_data(period):
                 UserPIICombined.state,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                country_column_matches_canonical(UserPIICombined.country, 'India'),
                 UserPIICombined.state.isnot(None),
                 UserPIICombined.state != ''
             )
             if date_cond is not None:
                 india_state_query = india_state_query.filter(date_cond)
-            top_india_state_result = india_state_query.group_by(
+            india_state_rows = india_state_query.group_by(
                 UserPIICombined.state
-            ).order_by(desc('count')).first()
-            if top_india_state_result:
-                top_india_state = top_india_state_result[0]
-                top_india_state = normalize_state(top_india_state) if top_india_state else None
-                top_india_state_count = top_india_state_result[1]
+            ).order_by(desc('count')).all()
+            merged_ist = merge_state_count_rows([(r[0], r[1]) for r in india_state_rows])
+            if merged_ist:
+                top_india_state = merged_ist[0][0]
+                top_india_state_count = merged_ist[0][1]
             
             india_city_query = db.session.query(
                 UserPIICombined.city,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                country_column_matches_canonical(UserPIICombined.country, 'India'),
                 UserPIICombined.city.isnot(None),
                 UserPIICombined.city != ''
             )
@@ -569,26 +600,26 @@ def _fetch_summary_data(period):
         top_apac_country = None
         top_apac_country_count = None
         try:
-            # Filter for APAC countries (case-insensitive), excluding India
-            apac_conditions = [UserPIICombined.country.ilike(f'%{country}%') for country in APAC_COUNTRIES]
+            apac_region_cond = country_column_matches_any_canonical(
+                UserPIICombined.country, APAC_COUNTRIES
+            )
             apac_country_query = db.session.query(
                 UserPIICombined.country,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                ~UserPIICombined.country.ilike('%India%')
+                ~country_column_matches_canonical(UserPIICombined.country, 'India'),
+                apac_region_cond,
             )
-            if apac_conditions:
-                apac_country_query = apac_country_query.filter(or_(*apac_conditions))
             if date_cond is not None:
                 apac_country_query = apac_country_query.filter(date_cond)
-            top_apac_country_result = apac_country_query.group_by(
-                UserPIICombined.country
-            ).order_by(desc('count')).first()
-            if top_apac_country_result:
-                top_apac_country = top_apac_country_result[0]
-                top_apac_country_count = top_apac_country_result[1]
+            apac_rows = apac_country_query.group_by(UserPIICombined.country).all()
+            merged_top = merge_country_count_rows([(r[0], r[1]) for r in apac_rows])
+            merged_top = [(c, n) for c, n in merged_top if c != 'India']
+            if merged_top:
+                top_apac_country = merged_top[0][0]
+                top_apac_country_count = merged_top[0][1]
         except Exception as e:
             print(f"Error calculating top APAC country: {e}")
             import traceback
@@ -596,24 +627,27 @@ def _fetch_summary_data(period):
             top_apac_country = None
             top_apac_country_count = None
 
-        # SEA, ANZ, East Asia: per-region count and top country (base_query has date filter)
+        # SEA, ANZ, Greater China, Korea: per-region count and top country
         sea_registrations = 0
         sea_top_country = None
         anz_registrations = 0
         anz_top_country = None
-        east_asia_registrations = 0
-        east_asia_top_country = None
+        greater_china_registrations = 0
+        greater_china_top_country = None
+        korea_registrations = 0
+        korea_top_country = None
         try:
             for region_name, countries in [
                 ('sea', SEA_COUNTRIES),
                 ('anz', ANZ_COUNTRIES),
-                ('east_asia', EAST_ASIA_COUNTRIES)
+                ('greater_china', GREATER_CHINA_COUNTRIES),
+                ('korea', KOREA_COUNTRIES)
             ]:
-                conds = [UserPIICombined.country.ilike(f'%{c}%') for c in countries]
+                reg_match = country_column_matches_any_canonical(UserPIICombined.country, countries)
                 region_query = base_query.filter(
                     UserPIICombined.country.isnot(None),
                     UserPIICombined.country != '',
-                    or_(*conds)
+                    reg_match,
                 )
                 count = region_query.count() or 0
                 top_q = db.session.query(
@@ -622,23 +656,27 @@ def _fetch_summary_data(period):
                 ).filter(
                     UserPIICombined.country.isnot(None),
                     UserPIICombined.country != '',
-                    or_(*conds)
+                    reg_match,
                 )
                 if date_cond is not None:
                     top_q = top_q.filter(date_cond)
-                top_result = top_q.group_by(UserPIICombined.country).order_by(desc('count')).first()
-                top_country = top_result[0] if top_result else None
+                top_rows = top_q.group_by(UserPIICombined.country).all()
+                merged_reg = merge_country_count_rows([(r[0], r[1]) for r in top_rows])
+                top_country = merged_reg[0][0] if merged_reg else None
                 if region_name == 'sea':
                     sea_registrations = count
                     sea_top_country = top_country
                 elif region_name == 'anz':
                     anz_registrations = count
                     anz_top_country = top_country
+                elif region_name == 'greater_china':
+                    greater_china_registrations = count
+                    greater_china_top_country = top_country
                 else:
-                    east_asia_registrations = count
-                    east_asia_top_country = top_country
+                    korea_registrations = count
+                    korea_top_country = top_country
         except Exception as e:
-            print(f"Error calculating region stats (SEA/ANZ/East Asia): {e}")
+            print(f"Error calculating region stats: {e}")
 
         # India: count and top state (same period filter)
         india_registrations = 0
@@ -646,7 +684,7 @@ def _fetch_summary_data(period):
             india_query = base_query.filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                UserPIICombined.country.ilike('%India%')
+                country_column_matches_canonical(UserPIICombined.country, 'India'),
             )
             india_registrations = india_query.count() or 0
         except Exception as e:
@@ -664,15 +702,13 @@ def _fetch_summary_data(period):
             except Exception:
                 prev_total_users = 0
             try:
-                apac_conditions = [UserPIICombined.country.ilike(f'%{c}%') for c in APAC_COUNTRIES]
                 prev_apac_q = UserPIICombined.query.filter(
                     prev_cond,
                     UserPIICombined.country.isnot(None),
                     UserPIICombined.country != '',
-                    ~UserPIICombined.country.ilike('%India%')
+                    ~country_column_matches_canonical(UserPIICombined.country, 'India'),
+                    country_column_matches_any_canonical(UserPIICombined.country, APAC_COUNTRIES),
                 )
-                if apac_conditions:
-                    prev_apac_q = prev_apac_q.filter(or_(*apac_conditions))
                 prev_apac_users = prev_apac_q.count() or 0
             except Exception:
                 prev_apac_users = 0
@@ -700,6 +736,19 @@ def _fetch_summary_data(period):
                 optional_mcq_by_track.append({'track': track_num, 'total': total, 'passed_6': passed_6})
         except Exception:
             optional_mcq_by_track = [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)]
+
+        # Main MCQ (MCQ Verification) by track: total and passed (score >= 6)
+        main_mcq_by_track = []
+        try:
+            for track_num in (1, 2, 3):
+                total = MainMcqResponse.query.filter(MainMcqResponse.track_number == track_num).count()
+                passed_6 = MainMcqResponse.query.filter(
+                    MainMcqResponse.track_number == track_num,
+                    MainMcqResponse.score >= 6
+                ).count()
+                main_mcq_by_track.append({'track': track_num, 'total': total, 'passed_6': passed_6})
+        except Exception:
+            main_mcq_by_track = [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)]
 
         # Top 5 winners: 10/10 on all 3 tracks, ordered by completion time (max created_at) ascending
         optional_mcq_top5_winners = []
@@ -762,8 +811,10 @@ def _fetch_summary_data(period):
             'sea_top_country': sea_top_country or 'N/A',
             'anz_registrations': anz_registrations,
             'anz_top_country': anz_top_country or 'N/A',
-            'east_asia_registrations': east_asia_registrations,
-            'east_asia_top_country': east_asia_top_country or 'N/A',
+            'greater_china_registrations': greater_china_registrations,
+            'greater_china_top_country': greater_china_top_country or 'N/A',
+            'korea_registrations': korea_registrations,
+            'korea_top_country': korea_top_country or 'N/A',
             'india_registrations': india_registrations,
             'book_of_business_registrations': book_of_business_registrations,
             'total_skillboost_profiles': total_skillboost_profiles,
@@ -778,7 +829,14 @@ def _fetch_summary_data(period):
             'total_codelab_submissions': total_codelab_submissions,
             'verified_codelab_submissions': verified_codelab_submissions,
             'codelab_submission_verification_rate': codelab_submission_verification_rate,
+            'total_project_submissions': total_project_submissions,
+            'verified_project_submissions': verified_project_submissions,
+            'project_submission_verification_rate': project_submission_verification_rate,
+            'project_submission_program_target': project_submission_program_target,
+            'project_submission_track_target': project_submission_track_target,
+            'project_submission_by_track': project_submission_by_track,
             'optional_mcq_by_track': optional_mcq_by_track,
+            'main_mcq_by_track': main_mcq_by_track,
             'previous_period_total_users': prev_total_users,
             'previous_period_apac_users': prev_apac_users,
             'previous_period_average_age': prev_avg_age
@@ -803,8 +861,10 @@ def _fetch_summary_data(period):
             'sea_top_country': 'N/A',
             'anz_registrations': 0,
             'anz_top_country': 'N/A',
-            'east_asia_registrations': 0,
-            'east_asia_top_country': 'N/A',
+            'greater_china_registrations': 0,
+            'greater_china_top_country': 'N/A',
+            'korea_registrations': 0,
+            'korea_top_country': 'N/A',
             'india_registrations': 0,
             'book_of_business_registrations': 0,
             'total_skillboost_profiles': 0,
@@ -819,7 +879,18 @@ def _fetch_summary_data(period):
             'total_codelab_submissions': 0,
             'verified_codelab_submissions': 0,
             'codelab_submission_verification_rate': None,
+            'total_project_submissions': 0,
+            'verified_project_submissions': 0,
+            'project_submission_verification_rate': None,
+            'project_submission_program_target': 15000,
+            'project_submission_track_target': 5000,
+            'project_submission_by_track': [
+                {'track': 1, 'total': 0, 'verified': 0},
+                {'track': 2, 'total': 0, 'verified': 0},
+                {'track': 3, 'total': 0, 'verified': 0},
+            ],
             'optional_mcq_by_track': [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)],
+            'main_mcq_by_track': [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)],
             'optional_mcq_top5_winners': [],
             'previous_period_total_users': None,
             'previous_period_apac_users': None,
@@ -891,6 +962,7 @@ def get_charts():
             'top_organizations': [],
             'class_stream_distribution': [],
             'designation_distribution': [],
+            'persona_distribution': [],
             'occupation_distribution': [],
             'age_groups': [],
             'registration_trends': [],
@@ -994,9 +1066,8 @@ def _fetch_charts_data(period, summary=None):
                 {'label': 'Hack2skill', 'value': 0}, {'label': 'Other', 'value': 0}
             ]
         
-        # Top domains + industry→domain segmentation
+        # Top domains
         top_domains_data = []
-        user_segmentation = {'industries': []}
         try:
             domains_query = db.session.query(
                 UserPIICombined.domain,
@@ -1010,33 +1081,38 @@ def _fetch_charts_data(period, summary=None):
             all_domains = domains_query.group_by(
                 UserPIICombined.domain
             ).order_by(desc('count')).all()
-
             top_domains_data = [{'label': d[0], 'value': d[1]} for d in all_domains[:10]]
+        except:
+            top_domains_data = []
 
-            industry_buckets = {}
-            for domain_name, count in all_domains:
-                if domain_name is None or not isinstance(domain_name, str):
-                    continue
-                industry = _DOMAIN_INDUSTRY_LOOKUP.get(domain_name.strip().lower(), 'Other')
-                if industry not in industry_buckets:
-                    industry_buckets[industry] = {'total': 0, 'domains': []}
-                industry_buckets[industry]['total'] += int(count) if count else 0
-                industry_buckets[industry]['domains'].append({'label': domain_name, 'value': int(count) if count else 0})
-
+        # User segmentation by industry (from pre-computed industry column)
+        user_segmentation = {'industries': []}
+        try:
+            industry_query = db.session.query(
+                UserPIICombined.industry,
+                func.count(UserPIICombined.id).label('count')
+            ).filter(
+                UserPIICombined.industry.isnot(None),
+                UserPIICombined.industry != ''
+            )
+            if date_cond is not None:
+                industry_query = industry_query.filter(date_cond)
+            industry_rows = industry_query.group_by(
+                UserPIICombined.industry
+            ).order_by(desc('count')).all()
             industries_list = []
-            for ind, bucket in industry_buckets.items():
-                if ind == 'Other':
+            for ind_name, count in industry_rows:
+                if not ind_name or ind_name == 'Other':
                     continue
-                bucket['domains'].sort(key=lambda x: x['value'], reverse=True)
+                # User segmentation chart: display "Information Technology" for Technology
+                display_label = 'Information Technology' if ind_name == 'Technology' else ind_name
                 industries_list.append({
-                    'label': ind,
-                    'value': int(bucket['total']),
-                    'domains': bucket['domains'],
+                    'label': display_label,
+                    'value': int(count) if count else 0,
                 })
             industries_list.sort(key=lambda x: x['value'], reverse=True)
             user_segmentation = {'industries': industries_list}
         except:
-            top_domains_data = []
             user_segmentation = {'industries': []}
         
         # Top cities (top 10)
@@ -1070,17 +1146,23 @@ def _fetch_charts_data(period, summary=None):
                 UserPIICombined.city != '',
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                ~UserPIICombined.country.ilike('%India%')
+                ~country_column_matches_canonical(UserPIICombined.country, 'India'),
             )
             if date_cond is not None:
                 cities_outside_query = cities_outside_query.filter(date_cond)
             cities_outside = cities_outside_query.group_by(
                 UserPIICombined.city,
                 UserPIICombined.country
-            ).order_by(desc('count')).limit(10).all()
+            ).order_by(desc('count')).all()
+            _merged_out = defaultdict(int)
+            for c in cities_outside:
+                city, raw_cty, cnt = c[0], c[1], c[2]
+                cty = normalize_country(raw_cty) or (raw_cty or '')
+                _merged_out[(city, cty)] += int(cnt or 0)
+            _top_out = sorted(_merged_out.items(), key=lambda x: -x[1])[:10]
             top_cities_outside_india_data = [
-                {'label': f'{c[0]} ({c[1]})', 'value': c[2]}
-                for c in cities_outside
+                {'label': f'{k[0]} ({k[1]})', 'value': v}
+                for k, v in _top_out
             ]
         except Exception:
             top_cities_outside_india_data = []
@@ -1099,8 +1181,9 @@ def _fetch_charts_data(period, summary=None):
                 states_query = states_query.filter(date_cond)
             top_states = states_query.group_by(
                 UserPIICombined.state
-            ).order_by(desc('count')).limit(10).all()
-            top_states_data = [{'label': s[0], 'value': s[1]} for s in top_states]
+            ).order_by(desc('count')).all()
+            merged_ts = merge_state_count_rows([(s[0], s[1]) for s in top_states])[:10]
+            top_states_data = [{'label': lbl, 'value': val} for lbl, val in merged_ts]
         except:
             top_states_data = []
         
@@ -1118,23 +1201,20 @@ def _fetch_charts_data(period, summary=None):
                 countries_query = countries_query.filter(date_cond)
             countries = countries_query.group_by(
                 UserPIICombined.country
-            ).order_by(desc('count')).limit(10).all()
-            country_distribution = [{'label': c[0], 'value': c[1]} for c in countries]
+            ).order_by(desc('count')).all()
+            merged_cdist = merge_country_count_rows([(c[0], c[1]) for c in countries])[:10]
+            country_distribution = [{'label': lbl, 'value': val} for lbl, val in merged_cdist]
         except:
             country_distribution = []
         
-        # Top organizations (top 10) – only PROFESSIONAL, STARTUP, FREELANCE (exclude students); exclude NA/N/A
+        # Top organizations (top 20) – only PROFESSIONAL, STARTUP, FREELANCE (exclude students); normalize & merge duplicates
         top_organizations_data = []
         try:
+            from server.utils.org_normalize import merge_org_counts
             occupation_filter = or_(
                 UserPIICombined.occupation.ilike('%professional%'),
                 UserPIICombined.occupation.ilike('%startup%'),
                 UserPIICombined.occupation.ilike('%freelance%')
-            )
-            exclude_na = ~or_(
-                func.lower(func.trim(UserPIICombined.organization_name)) == 'na',
-                func.lower(func.trim(UserPIICombined.organization_name)) == 'n/a',
-                func.lower(func.trim(UserPIICombined.organization_name)) == 'freelance'
             )
             orgs_query = db.session.query(
                 UserPIICombined.organization_name,
@@ -1142,15 +1222,15 @@ def _fetch_charts_data(period, summary=None):
             ).filter(
                 UserPIICombined.organization_name.isnot(None),
                 UserPIICombined.organization_name != '',
-                occupation_filter,
-                exclude_na
+                occupation_filter
             )
             if date_cond is not None:
                 orgs_query = orgs_query.filter(date_cond)
-            top_orgs = orgs_query.group_by(
+            all_orgs = orgs_query.group_by(
                 UserPIICombined.organization_name
-            ).order_by(desc('count')).limit(10).all()
-            top_organizations_data = [{'label': o[0], 'value': o[1]} for o in top_orgs]
+            ).order_by(desc('count')).all()
+            merged = merge_org_counts([(o[0], o[1]) for o in all_orgs])
+            top_organizations_data = merged[:20]
         except Exception:
             top_organizations_data = []
         
@@ -1191,6 +1271,25 @@ def _fetch_charts_data(period, summary=None):
             designation_data = [{'label': d[0], 'value': d[1]} for d in designations]
         except:
             designation_data = []
+
+        # Persona distribution (designation-based role personas)
+        persona_data = []
+        try:
+            persona_query = db.session.query(
+                UserPIICombined.persona,
+                func.count(UserPIICombined.id).label('count')
+            ).filter(
+                UserPIICombined.persona.isnot(None),
+                UserPIICombined.persona != ''
+            )
+            if date_cond is not None:
+                persona_query = persona_query.filter(date_cond)
+            personas = persona_query.group_by(
+                UserPIICombined.persona
+            ).order_by(desc('count')).all()
+            persona_data = [{'label': p[0], 'value': p[1]} for p in personas]
+        except:
+            persona_data = []
         
         # Occupation distribution: normalize to 4 categories (Professional, Student, Startup, Freelance)
         occupation_data = []
@@ -1395,42 +1494,40 @@ def _fetch_charts_data(period, summary=None):
                 UserPIICombined.state,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
-                UserPIICombined.country.ilike('%India%'),
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                country_column_matches_canonical(UserPIICombined.country, 'India'),
                 UserPIICombined.state.isnot(None),
                 UserPIICombined.state != ''
             )
             if date_cond is not None:
                 india_state_query = india_state_query.filter(date_cond)
             india_states = india_state_query.group_by(UserPIICombined.state).order_by(desc('count')).all()
-            india_state_registrations = [{'state': s[0], 'value': s[1]} for s in india_states]
+            merged_is = merge_state_count_rows([(s[0], s[1]) for s in india_states])
+            india_state_registrations = [{'state': lbl, 'value': val} for lbl, val in merged_is]
         except Exception:
             india_state_registrations = []
 
         # APAC country-wise registration counts (for heatmap) – outside India only (“Outside Indian Registrations”)
         apac_country_registrations = []
         try:
-            APAC_FOR_MAP_EXCL_INDIA = [
-                'Australia', 'Bangladesh', 'Bhutan', 'Brunei', 'Cambodia', 'China',
-                'Fiji', 'Hong Kong', 'Indonesia', 'Japan', 'Laos', 'Malaysia', 'Maldives',
-                'Mongolia', 'Myanmar', 'Nepal', 'New Zealand', 'North Korea', 'Pakistan',
-                'Papua New Guinea', 'Philippines', 'Singapore', 'South Korea', 'Sri Lanka',
-                'Taiwan', 'Thailand', 'Timor-Leste', 'Vietnam', 'APAC', 'Asia Pacific'
-            ]
-            apac_conditions = [UserPIICombined.country.ilike(f'%{c}%') for c in APAC_FOR_MAP_EXCL_INDIA]
+            apac_map_cond = country_column_matches_any_canonical(
+                UserPIICombined.country, APAC_FOR_MAP_EXCL_INDIA
+            )
             apac_country_query = db.session.query(
                 UserPIICombined.country,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                ~UserPIICombined.country.ilike('%India%')
+                ~country_column_matches_canonical(UserPIICombined.country, 'India'),
+                apac_map_cond,
             )
-            if apac_conditions:
-                apac_country_query = apac_country_query.filter(or_(*apac_conditions))
             if date_cond is not None:
                 apac_country_query = apac_country_query.filter(date_cond)
             apac_countries = apac_country_query.group_by(UserPIICombined.country).order_by(desc('count')).all()
-            apac_country_registrations = [{'country': c[0], 'value': c[1]} for c in apac_countries]
+            merged_map = merge_country_count_rows([(c[0], c[1]) for c in apac_countries])
+            apac_country_registrations = [{'country': lbl, 'value': val} for lbl, val in merged_map]
         except Exception:
             apac_country_registrations = []
 
@@ -1446,6 +1543,7 @@ def _fetch_charts_data(period, summary=None):
             'top_organizations': top_organizations_data,
             'class_stream_distribution': class_stream_data,
             'designation_distribution': designation_data,
+            'persona_distribution': persona_data,
             'occupation_distribution': occupation_data,
             'age_groups': age_groups_data,
             'registration_trends': registration_trends,
@@ -1467,6 +1565,7 @@ def _fetch_charts_data(period, summary=None):
             'top_organizations': [],
             'class_stream_distribution': [],
             'designation_distribution': [],
+            'persona_distribution': [],
             'occupation_distribution': [],
             'age_groups': [],
             'registration_trends': [],

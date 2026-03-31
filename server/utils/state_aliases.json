@@ -1,0 +1,1595 @@
+{
+  "ACT": [
+    "ACT"
+  ],
+  "Aberdeenshire": [
+    "Aberdeenshire"
+  ],
+  "Abu Dhabi": [
+    "Abu Dhabi"
+  ],
+  "Aceh": [
+    "Aceh"
+  ],
+  "Agusan del Norte": [
+    "Agusan del Norte"
+  ],
+  "Aichi": [
+    "Aichi"
+  ],
+  "Ainaro Municipality": [
+    "Ainaro Municipality"
+  ],
+  "Alabama": [
+    "Alabama"
+  ],
+  "Albay": [
+    "Albay"
+  ],
+  "Ampara District": [
+    "Ampara District"
+  ],
+  "An Giang": [
+    "An Giang"
+  ],
+  "Andaman and Nicobar Islands": [
+    "Andaman and Nicobar Islands"
+  ],
+  "Andhra Pradesh": [
+    "Andhra Pradesh",
+    "Andhra pradhesh"
+  ],
+  "Andhrapradesh": [
+    "Andhrapradesh"
+  ],
+  "Ang Thong": [
+    "Ang Thong"
+  ],
+  "Anhui": [
+    "Anhui"
+  ],
+  "Anuradhapura District": [
+    "Anuradhapura District"
+  ],
+  "Arizona": [
+    "Arizona"
+  ],
+  "Arkansas": [
+    "Arkansas"
+  ],
+  "Arunachal Pradesh": [
+    "Arunachal Pradesh"
+  ],
+  "Assam": [
+    "Assam"
+  ],
+  "Attapeu Province": [
+    "Attapeu Province"
+  ],
+  "Auckland": [
+    "Auckland",
+    "Auckland Region"
+  ],
+  "Australian Capital Territory": [
+    "Australian Capital Territory"
+  ],
+  "Azad Kashmir": [
+    "Azad Kashmir"
+  ],
+  "Ba Ria-Vung Tau": [
+    "Ba Ria - Vung Tau",
+    "Ba Ria-Vung Tau"
+  ],
+  "Badakhshan": [
+    "Badakhshan"
+  ],
+  "Badulla District": [
+    "Badulla District"
+  ],
+  "Bagerhat District": [
+    "Bagerhat District"
+  ],
+  "Bagmati Zone": [
+    "Bagmati Zone"
+  ],
+  "Bago": [
+    "Bago"
+  ],
+  "Bali": [
+    "Bali"
+  ],
+  "Balochistan": [
+    "Balochistan"
+  ],
+  "Bandarban District": [
+    "Bandarban District"
+  ],
+  "Bangka Belitung Islands": [
+    "Bangka Belitung Islands"
+  ],
+  "Bangkok": [
+    "Bangkok"
+  ],
+  "Banten": [
+    "Banten"
+  ],
+  "Barisal District": [
+    "Barisal District"
+  ],
+  "Barisal Division": [
+    "Barisal Division"
+  ],
+  "Bataan": [
+    "Bataan"
+  ],
+  "Batangas": [
+    "Batangas"
+  ],
+  "Battambang": [
+    "Battambang"
+  ],
+  "Batticaloa District": [
+    "Batticaloa District"
+  ],
+  "Bavaria": [
+    "Bavaria"
+  ],
+  "Bay Of Plenty": [
+    "Bay Of Plenty",
+    "Bay of Plenty",
+    "Bay of Plenty Region"
+  ],
+  "Beijing": [
+    "Beijing"
+  ],
+  "Belitung": [
+    "Belitung"
+  ],
+  "Bengaluru": [
+    "Bengaluru"
+  ],
+  "Bengkulu": [
+    "Bengkulu"
+  ],
+  "Benguet": [
+    "Benguet"
+  ],
+  "Berlin": [
+    "Berlin"
+  ],
+  "Bicol": [
+    "Bicol"
+  ],
+  "Bihar": [
+    "Bihar"
+  ],
+  "Bogra District": [
+    "Bogra District"
+  ],
+  "Bougainville": [
+    "Bougainville"
+  ],
+  "Brahmanbaria District": [
+    "Brahmanbaria District"
+  ],
+  "British Columbia": [
+    "British Columbia"
+  ],
+  "Brunei-Muara District": [
+    "Brunei-Muara District"
+  ],
+  "BruneiMuara District": [
+    "BruneiMuara District"
+  ],
+  "Buenos Aires": [
+    "Buenos Aires"
+  ],
+  "Bulacan": [
+    "Bulacan"
+  ],
+  "Bumthang District": [
+    "Bumthang District"
+  ],
+  "Busan": [
+    "Busan"
+  ],
+  "Bà Rịa-Vũng Tàu": [
+    "Bà Rịa-Vũng Tàu"
+  ],
+  "Bình Dương": [
+    "Bình Dương"
+  ],
+  "Bình Định": [
+    "Bình Định"
+  ],
+  "Bắc Ninh": [
+    "Bắc Ninh"
+  ],
+  "Ca Mau": [
+    "Ca Mau"
+  ],
+  "Cagayan": [
+    "Cagayan"
+  ],
+  "Calabarzon": [
+    "Calabarzon"
+  ],
+  "California": [
+    "California"
+  ],
+  "Camarines Sur": [
+    "Camarines Sur"
+  ],
+  "Cambridgeshire": [
+    "Cambridgeshire"
+  ],
+  "Canterbury": [
+    "Canterbury",
+    "Canterbury Region"
+  ],
+  "Capital Region": [
+    "Capital Region"
+  ],
+  "Caraga": [
+    "Caraga"
+  ],
+  "Cavite": [
+    "Cavite"
+  ],
+  "Cebu": [
+    "Cebu"
+  ],
+  "Central Java": [
+    "Central Java"
+  ],
+  "Central Kalimantan": [
+    "Central Kalimantan"
+  ],
+  "Central Luzon": [
+    "Central Luzon"
+  ],
+  "Central Region": [
+    "Central",
+    "Central Province",
+    "Central Region"
+  ],
+  "Central Singapore": [
+    "Central Singapore"
+  ],
+  "Central Sulawesi": [
+    "Central Sulawesi"
+  ],
+  "Central Visayas": [
+    "Central Visayas"
+  ],
+  "Central and Western": [
+    "Central and Western"
+  ],
+  "Chachoengsao": [
+    "Chachoengsao"
+  ],
+  "Chandigarh": [
+    "Chandigarh"
+  ],
+  "Chandpur District": [
+    "Chandpur District"
+  ],
+  "Changhua": [
+    "Changhua"
+  ],
+  "Chanthaburi": [
+    "Chanthaburi"
+  ],
+  "Chapai Nawabganj District": [
+    "Chapai Nawabganj District"
+  ],
+  "Chennai": [
+    "Chennai"
+  ],
+  "Chhattisgarh": [
+    "Chhattisgarh"
+  ],
+  "Chiang Mai": [
+    "Chiang Mai"
+  ],
+  "Chiang Rai": [
+    "Chiang Rai"
+  ],
+  "Chiayi": [
+    "Chiayi"
+  ],
+  "Chisinau": [
+    "Chisinau"
+  ],
+  "Chittagong District": [
+    "Chittagong District"
+  ],
+  "Chittagong Division": [
+    "Chittagong Division"
+  ],
+  "Chon Buri": [
+    "Chon Buri"
+  ],
+  "Chonburi": [
+    "Chonburi"
+  ],
+  "Chukha District": [
+    "Chukha District"
+  ],
+  "Chumphon": [
+    "Chumphon"
+  ],
+  "Chungcheongbuk-do": [
+    "Chungcheongbuk-do"
+  ],
+  "Chungcheongnam-do": [
+    "Chungcheongnam-do"
+  ],
+  "Colombo District": [
+    "Colombo District"
+  ],
+  "Colorado": [
+    "Colorado"
+  ],
+  "Comilla District": [
+    "Comilla District"
+  ],
+  "Cotabato": [
+    "Cotabato"
+  ],
+  "Cox's Bazar District": [
+    "Cox's Bazar District"
+  ],
+  "DI Yogyakarta": [
+    "DI Yogyakarta",
+    "Di Yogyakarta"
+  ],
+  "Da Nang": [
+    "Da Nang"
+  ],
+  "Dadra and Nagar Haveli and Daman and Diu": [
+    "Dadra and Nagar Haveli and Daman and Diu"
+  ],
+  "Daegu": [
+    "Daegu"
+  ],
+  "Daejeon": [
+    "Daejeon"
+  ],
+  "Daerah Istimewa Yogyakarta": [
+    "Daerah Istimewa Yogyakarta"
+  ],
+  "Davao": [
+    "Davao"
+  ],
+  "Davao del Norte": [
+    "Davao del Norte"
+  ],
+  "Davao del Sur": [
+    "Davao del Sur"
+  ],
+  "Delhi": [
+    "Delhi"
+  ],
+  "Dhaka District": [
+    "Dhaka",
+    "Dhaka District"
+  ],
+  "Dhaka Division": [
+    "Dhaka Division"
+  ],
+  "Dhaulagiri Zone": [
+    "Dhaulagiri Zone"
+  ],
+  "Dinajpur District": [
+    "Dinajpur District"
+  ],
+  "District of Columbia": [
+    "District of Columbia"
+  ],
+  "Dong Nai": [
+    "Dong Nai"
+  ],
+  "Dubai": [
+    "Dubai"
+  ],
+  "East Java": [
+    "East Java"
+  ],
+  "East Kalimantan": [
+    "East Kalimantan"
+  ],
+  "Eastern Development Region": [
+    "Eastern Development Region"
+  ],
+  "Eastern Province": [
+    "Eastern",
+    "Eastern Province"
+  ],
+  "England": [
+    "England"
+  ],
+  "Far-Western Development Region": [
+    "Far-Western Development Region"
+  ],
+  "FarWestern Development Region": [
+    "FarWestern Development Region"
+  ],
+  "Faridpur District": [
+    "Faridpur District"
+  ],
+  "Federal Territory of Kuala Lumpur": [
+    "Federal Territory of Kuala Lumpur"
+  ],
+  "Feni District": [
+    "Feni District"
+  ],
+  "Florida": [
+    "Florida"
+  ],
+  "Fujian": [
+    "Fujian"
+  ],
+  "GA": [
+    "GA"
+  ],
+  "Gaibandha District": [
+    "Gaibandha District"
+  ],
+  "Galicia": [
+    "Galicia"
+  ],
+  "Gampaha District": [
+    "Gampaha District"
+  ],
+  "Gandaki Zone": [
+    "Gandaki Zone"
+  ],
+  "Gansu": [
+    "Gansu"
+  ],
+  "Gazipur District": [
+    "Gazipur District"
+  ],
+  "Geneva": [
+    "Geneva"
+  ],
+  "Georgia": [
+    "Georgia"
+  ],
+  "Gifu Prefecture": [
+    "Gifu Prefecture"
+  ],
+  "Gilgit-Baltistan": [
+    "Gilgit-Baltistan"
+  ],
+  "GilgitBaltistan": [
+    "GilgitBaltistan"
+  ],
+  "Gisborne": [
+    "Gisborne"
+  ],
+  "Goa": [
+    "Goa"
+  ],
+  "Gorontalo": [
+    "Gorontalo"
+  ],
+  "Guangdong": [
+    "Guangdong"
+  ],
+  "Gujarat": [
+    "Gujarat"
+  ],
+  "Gwangju": [
+    "Gwangju"
+  ],
+  "Gyeonggi Province": [
+    "Gyeonggi",
+    "Gyeonggi Province"
+  ],
+  "Gyeonggi-do": [
+    "Gyeonggi-do"
+  ],
+  "Gyeongsangbuk-do": [
+    "Gyeongsangbuk-do"
+  ],
+  "Gyeongsangnam-do": [
+    "Gyeongsangnam-do"
+  ],
+  "Hainan": [
+    "Hainan"
+  ],
+  "Hanoi": [
+    "Hanoi"
+  ],
+  "Harju County": [
+    "Harju County"
+  ],
+  "Haryana": [
+    "Haryana"
+  ],
+  "Hawke's Bay": [
+    "Hawke's Bay",
+    "Hawke's Bay Region"
+  ],
+  "Hebei": [
+    "Hebei"
+  ],
+  "Heilongjiang": [
+    "Heilongjiang"
+  ],
+  "Himachal Pradesh": [
+    "Himachal Pradesh"
+  ],
+  "Ho Chi Minh": [
+    "Ho Chi Minh",
+    "Ho Chi Minh City"
+  ],
+  "Hong Kong": [
+    "Hong Kong"
+  ],
+  "Hong Kong Island": [
+    "Hong Kong Island"
+  ],
+  "Hong Kong SAR": [
+    "Hong Kong SAR"
+  ],
+  "Hsinchu": [
+    "Hsinchu",
+    "Hsinchu City",
+    "Hsinchu County"
+  ],
+  "Hualien": [
+    "Hualien"
+  ],
+  "Hubei": [
+    "Hubei"
+  ],
+  "Hunan": [
+    "Hunan"
+  ],
+  "Hà Nội": [
+    "Hà Nội"
+  ],
+  "Hà Tĩnh": [
+    "Hà Tĩnh"
+  ],
+  "Hưng Yên": [
+    "Hưng Yên"
+  ],
+  "Hải Dương": [
+    "Hải Dương"
+  ],
+  "Hồ Chí Minh": [
+    "Hồ Chí Minh"
+  ],
+  "IN-MH": [
+    "IN-MH"
+  ],
+  "Ibaraki Prefecture": [
+    "Ibaraki Prefecture"
+  ],
+  "Ilocos Norte": [
+    "Ilocos Norte"
+  ],
+  "Iloilo": [
+    "Iloilo"
+  ],
+  "Incheon": [
+    "Incheon"
+  ],
+  "Islamabad Capital": [
+    "Islamabad Capital"
+  ],
+  "Islamabad Capital Territory": [
+    "Islamabad Capital Territory"
+  ],
+  "Islands": [
+    "Islands"
+  ],
+  "Jaffna District": [
+    "Jaffna District"
+  ],
+  "Jakarta": [
+    "DKI Jakarta",
+    "Dki Jakarta",
+    "Jakarta",
+    "Special Capital Region of Jakarta"
+  ],
+  "Jakarta Raya": [
+    "Jakarta Raya"
+  ],
+  "Jamalpur District": [
+    "Jamalpur District"
+  ],
+  "Jambi": [
+    "Jambi"
+  ],
+  "Jammu and Kashmir": [
+    "Jammu and Kashmir"
+  ],
+  "Janakpur Zone": [
+    "Janakpur Zone"
+  ],
+  "Jawa Barat": [
+    "Jawa Barat"
+  ],
+  "Jawa Tengah": [
+    "Jawa Tengah"
+  ],
+  "Jawa Timur": [
+    "Jawa Timur"
+  ],
+  "Jeju": [
+    "Jeju"
+  ],
+  "Jeju-do": [
+    "Jeju-do"
+  ],
+  "Jeollabuk-do": [
+    "Jeollabuk-do"
+  ],
+  "Jeollanam-do": [
+    "Jeollanam-do"
+  ],
+  "Jessore District": [
+    "Jessore District"
+  ],
+  "Jhalokati District": [
+    "Jhalokati District"
+  ],
+  "Jharkhand": [
+    "Jharkhand"
+  ],
+  "Jhenaidah District": [
+    "Jhenaidah District"
+  ],
+  "Jiangsu": [
+    "Jiangsu"
+  ],
+  "Jilin": [
+    "Jilin"
+  ],
+  "Johor": [
+    "Johor"
+  ],
+  "Joypurhat District": [
+    "Joypurhat District"
+  ],
+  "Kabul": [
+    "Kabul"
+  ],
+  "Kagoshima Prefecture": [
+    "Kagoshima Prefecture"
+  ],
+  "Kalimantan Barat": [
+    "Kalimantan Barat"
+  ],
+  "Kalimantan Selatan": [
+    "Kalimantan Selatan"
+  ],
+  "Kalimantan Tengah": [
+    "Kalimantan Tengah"
+  ],
+  "Kalimantan Timur": [
+    "Kalimantan Timur"
+  ],
+  "Kalimantan Utara": [
+    "Kalimantan Utara"
+  ],
+  "Kalutara District": [
+    "Kalutara District"
+  ],
+  "Kampong Cham": [
+    "Kampong Cham"
+  ],
+  "Kanagawa": [
+    "Kanagawa"
+  ],
+  "Kanchanaburi": [
+    "Kanchanaburi"
+  ],
+  "Kandahar": [
+    "Kandahar"
+  ],
+  "Kandal": [
+    "Kandal"
+  ],
+  "Kandy District": [
+    "Kandy District"
+  ],
+  "Kaohsiung": [
+    "Kaohsiung",
+    "Kaohsiung City"
+  ],
+  "Karnataka": [
+    "KARNATAKA",
+    "Karnataka",
+    "karnataka"
+  ],
+  "Kedah": [
+    "Kedah"
+  ],
+  "Keelung": [
+    "Keelung"
+  ],
+  "Kelantan": [
+    "Kelantan"
+  ],
+  "Kepulauan Bangka Belitung": [
+    "Kepulauan Bangka Belitung"
+  ],
+  "Kepulauan Riau": [
+    "Kepulauan Riau"
+  ],
+  "Kerala": [
+    "Kerala",
+    "kerala"
+  ],
+  "Khanh Hoa": [
+    "Khanh Hoa"
+  ],
+  "Khon Kaen": [
+    "Khon Kaen"
+  ],
+  "Khulna District": [
+    "Khulna District"
+  ],
+  "Khulna Division": [
+    "Khulna Division"
+  ],
+  "Khyber Pakhtunkhwa": [
+    "Khyber Pakhtunkhwa"
+  ],
+  "Kishoreganj District": [
+    "Kishoreganj District"
+  ],
+  "Kosi Zone": [
+    "Kosi Zone"
+  ],
+  "Kowloon City": [
+    "Kowloon City"
+  ],
+  "Kuala Lumpur": [
+    "Kuala Lumpur"
+  ],
+  "Kurigram District": [
+    "Kurigram District"
+  ],
+  "Kushtia District": [
+    "Kushtia District"
+  ],
+  "Kwai Tsing": [
+    "Kwai Tsing"
+  ],
+  "Kwun Tong": [
+    "Kwun Tong"
+  ],
+  "Ladakh": [
+    "Ladakh"
+  ],
+  "Laguna": [
+    "Laguna"
+  ],
+  "Lakshadweep": [
+    "Lakshadweep"
+  ],
+  "Lalmonirhat District": [
+    "Lalmonirhat District"
+  ],
+  "Lampung": [
+    "Lampung"
+  ],
+  "Liaoning": [
+    "Liaoning"
+  ],
+  "Luang Prabang Province": [
+    "Luang Prabang Province"
+  ],
+  "Lumbini Zone": [
+    "Lumbini Zone"
+  ],
+  "Lâm Đồng": [
+    "Lâm Đồng"
+  ],
+  "Lạng Sơn": [
+    "Lạng Sơn"
+  ],
+  "Macau SAR": [
+    "Macau SAR"
+  ],
+  "Madhya Pradesh": [
+    "Madhya Pradesh"
+  ],
+  "Maharashtra": [
+    "Maharashtra"
+  ],
+  "Malacca": [
+    "Malacca"
+  ],
+  "Maluku": [
+    "Maluku"
+  ],
+  "Maluku Utara": [
+    "Maluku Utara"
+  ],
+  "Manawatu-Wanganui": [
+    "Manawatu-Wanganui",
+    "Manawatu-Wanganui Region"
+  ],
+  "Manipur": [
+    "Manipur"
+  ],
+  "Marlborough": [
+    "Marlborough"
+  ],
+  "Massachusetts": [
+    "Massachusetts"
+  ],
+  "Matale District": [
+    "Matale District"
+  ],
+  "Matara District": [
+    "Matara District"
+  ],
+  "Mazovia": [
+    "Mazovia"
+  ],
+  "Mechi Zone": [
+    "Mechi Zone"
+  ],
+  "Meghalaya": [
+    "Meghalaya"
+  ],
+  "Melaka": [
+    "Melaka"
+  ],
+  "Metro Manila": [
+    "Metro Manila"
+  ],
+  "Metropolitan Manila": [
+    "Metropolitan Manila"
+  ],
+  "Miaoli County": [
+    "Miaoli",
+    "Miaoli County"
+  ],
+  "Misamis Occidental": [
+    "Misamis Occidental"
+  ],
+  "Misamis Oriental": [
+    "Misamis Oriental"
+  ],
+  "Mizoram": [
+    "Mizoram"
+  ],
+  "Moulvibazar District": [
+    "Moulvibazar District"
+  ],
+  "Mount Lebanon Governorate": [
+    "Mount Lebanon Governorate"
+  ],
+  "Mullaitivu District": [
+    "Mullaitivu District"
+  ],
+  "Munshiganj District": [
+    "Munshiganj District"
+  ],
+  "Mymensingh District": [
+    "Mymensingh District"
+  ],
+  "Mymensingh Division": [
+    "Mymensingh Division"
+  ],
+  "NSW": [
+    "NSW"
+  ],
+  "NY": [
+    "NY"
+  ],
+  "Nagaland": [
+    "Nagaland"
+  ],
+  "Nakhon Pathom": [
+    "Nakhon Pathom"
+  ],
+  "Nantou": [
+    "Nantou"
+  ],
+  "Naogaon District": [
+    "Naogaon District"
+  ],
+  "Narail District": [
+    "Narail District"
+  ],
+  "Narayani Zone": [
+    "Narayani Zone"
+  ],
+  "National Capital Region": [
+    "National Capital Region"
+  ],
+  "Natore District": [
+    "Natore District"
+  ],
+  "Negeri Sembilan": [
+    "Negeri Sembilan"
+  ],
+  "Negros Occidental": [
+    "Negros Occidental"
+  ],
+  "Nelson": [
+    "Nelson",
+    "Nelson Region"
+  ],
+  "Netrokona District": [
+    "Netrokona District"
+  ],
+  "New Jersey": [
+    "New Jersey"
+  ],
+  "New South Wales": [
+    "New South Wales"
+  ],
+  "New Taipei": [
+    "New Taipei",
+    "New Taipei City"
+  ],
+  "New Territories": [
+    "New Territories"
+  ],
+  "New York": [
+    "New York"
+  ],
+  "Nghệ An": [
+    "Nghệ An"
+  ],
+  "Ningxia Huizu": [
+    "Ningxia Huizu"
+  ],
+  "Noakhali District": [
+    "Noakhali District"
+  ],
+  "Nonthaburi": [
+    "Nonthaburi",
+    "Nonthaburi Province"
+  ],
+  "North": [
+    "North"
+  ],
+  "North Brabant": [
+    "North Brabant"
+  ],
+  "North Carolina": [
+    "North Carolina"
+  ],
+  "North Central Province": [
+    "North Central Province"
+  ],
+  "North Chungcheong Province": [
+    "North Chungcheong Province"
+  ],
+  "North East": [
+    "North East",
+    "North-East"
+  ],
+  "North Gyeongsang Province": [
+    "North Gyeongsang",
+    "North Gyeongsang Province"
+  ],
+  "North Holland": [
+    "North Holland"
+  ],
+  "North Jeolla Province": [
+    "North Jeolla Province"
+  ],
+  "North Maluku": [
+    "North Maluku"
+  ],
+  "North Sulawesi": [
+    "North Sulawesi"
+  ],
+  "North Sumatra": [
+    "North Sumatra"
+  ],
+  "North West": [
+    "North West"
+  ],
+  "North Western Province": [
+    "North Western Province"
+  ],
+  "Northern Province": [
+    "Northern Province"
+  ],
+  "Northern Territory": [
+    "Northern Territory"
+  ],
+  "Northland": [
+    "Northland",
+    "Northland Region"
+  ],
+  "Not Applicable": [
+    "Not Applicable"
+  ],
+  "Nueva Ecija": [
+    "Nueva Ecija"
+  ],
+  "Nueva Vizcaya": [
+    "Nueva Vizcaya"
+  ],
+  "Nusa Tenggara Barat": [
+    "Nusa Tenggara Barat"
+  ],
+  "Nusa Tenggara Timur": [
+    "Nusa Tenggara Timur"
+  ],
+  "Odisha": [
+    "Odisha"
+  ],
+  "Ohio": [
+    "Ohio"
+  ],
+  "Ontario": [
+    "Ontario"
+  ],
+  "Oriental Mindoro": [
+    "Oriental Mindoro"
+  ],
+  "Orissa": [
+    "Orissa"
+  ],
+  "Osaka Prefecture": [
+    "Osaka Prefecture"
+  ],
+  "Oslo": [
+    "Oslo"
+  ],
+  "Otago": [
+    "Otago",
+    "Otago Region"
+  ],
+  "Pabna District": [
+    "Pabna District"
+  ],
+  "Pahang": [
+    "Pahang"
+  ],
+  "Palawan": [
+    "Palawan"
+  ],
+  "Pampanga": [
+    "Pampanga"
+  ],
+  "Pangasinan": [
+    "Pangasinan"
+  ],
+  "Panipat": [
+    "Panipat"
+  ],
+  "Papua": [
+    "Papua"
+  ],
+  "Papua Barat": [
+    "Papua Barat"
+  ],
+  "Pathum Thani": [
+    "Pathum Thani"
+  ],
+  "Pattani": [
+    "Pattani"
+  ],
+  "Patuakhali District": [
+    "Patuakhali District"
+  ],
+  "Penang": [
+    "Penang"
+  ],
+  "Pennsylvania": [
+    "Pennsylvania"
+  ],
+  "Perak": [
+    "Perak"
+  ],
+  "Perlis": [
+    "Perlis"
+  ],
+  "Phetchaburi": [
+    "Phetchaburi"
+  ],
+  "Philippines": [
+    "Philippines"
+  ],
+  "Phitsanulok": [
+    "Phitsanulok"
+  ],
+  "Phnom Penh": [
+    "Phnom Penh"
+  ],
+  "Phra Nakhon Si Ayutthaya": [
+    "Phra Nakhon Si Ayutthaya"
+  ],
+  "Phuket": [
+    "Phuket"
+  ],
+  "Preah Sihanouk": [
+    "Preah Sihanouk"
+  ],
+  "Puducherry": [
+    "Puducherry"
+  ],
+  "Pulau Pinang": [
+    "Pulau Pinang"
+  ],
+  "Punjab": [
+    "Punjab"
+  ],
+  "Putrajaya": [
+    "Putrajaya"
+  ],
+  "Puttalam District": [
+    "Puttalam District"
+  ],
+  "QLD": [
+    "QLD"
+  ],
+  "Qinghai": [
+    "Qinghai"
+  ],
+  "Quebec": [
+    "Quebec"
+  ],
+  "Queensland": [
+    "Queensland"
+  ],
+  "Quezon": [
+    "Quezon"
+  ],
+  "Qung Ngi": [
+    "Qung Ngi"
+  ],
+  "Rajasthan": [
+    "Rajasthan"
+  ],
+  "Rajshahi District": [
+    "Rajshahi District"
+  ],
+  "Rajshahi Division": [
+    "Rajshahi Division"
+  ],
+  "Rangamati Hill District": [
+    "Rangamati Hill District"
+  ],
+  "Rangpur District": [
+    "Rangpur District"
+  ],
+  "Rangpur Division": [
+    "Rangpur Division"
+  ],
+  "Ratnapura district": [
+    "Ratnapura district"
+  ],
+  "Rayong": [
+    "Rayong"
+  ],
+  "Riau": [
+    "Riau"
+  ],
+  "Riau Islands": [
+    "Riau Islands"
+  ],
+  "Rio Grande do Sul": [
+    "Rio Grande do Sul"
+  ],
+  "Rio de Janeiro": [
+    "Rio de Janeiro"
+  ],
+  "Rizal": [
+    "Rizal"
+  ],
+  "SA": [
+    "SA"
+  ],
+  "Sabah": [
+    "Sabah"
+  ],
+  "Sabaragamuwa Province": [
+    "Sabaragamuwa Province"
+  ],
+  "Sagarmatha Zone": [
+    "Sagarmatha Zone"
+  ],
+  "Sai Kung": [
+    "Sai Kung"
+  ],
+  "Saitama Prefecture": [
+    "Saitama Prefecture"
+  ],
+  "Samut Prakan": [
+    "Samut Prakan"
+  ],
+  "Saraburi": [
+    "Saraburi"
+  ],
+  "Sarawak": [
+    "Sarawak"
+  ],
+  "Satkhira District": [
+    "Satkhira District"
+  ],
+  "Sejong City": [
+    "Sejong City"
+  ],
+  "Sejong-si": [
+    "Sejong-si"
+  ],
+  "Selangor": [
+    "Selangor"
+  ],
+  "Seoul": [
+    "Seoul"
+  ],
+  "Sha Tin": [
+    "Sha Tin"
+  ],
+  "Sham Shui Po": [
+    "Sham Shui Po"
+  ],
+  "Shan": [
+    "Shan"
+  ],
+  "Shandong": [
+    "Shandong"
+  ],
+  "Shanghai": [
+    "Shanghai"
+  ],
+  "Shivamogga": [
+    "Shivamogga"
+  ],
+  "Sichuan": [
+    "Sichuan"
+  ],
+  "Sikkim": [
+    "Sikkim"
+  ],
+  "Sindh": [
+    "Sindh"
+  ],
+  "Singapore": [
+    "Singapore"
+  ],
+  "Sirajganj District": [
+    "Sirajganj District"
+  ],
+  "Songkhla": [
+    "Songkhla"
+  ],
+  "Sorsogon": [
+    "Sorsogon"
+  ],
+  "South Australia": [
+    "South Australia"
+  ],
+  "South Chungcheong": [
+    "South Chungcheong",
+    "South Chungcheong Province"
+  ],
+  "South Cotabato": [
+    "South Cotabato"
+  ],
+  "South East": [
+    "South East"
+  ],
+  "South Gyeongsang Province": [
+    "South Gyeongsang Province"
+  ],
+  "South Holland": [
+    "South Holland"
+  ],
+  "South Jeolla Province": [
+    "South Jeolla Province"
+  ],
+  "South Kalimantan": [
+    "South Kalimantan"
+  ],
+  "South Sulawesi": [
+    "South Sulawesi"
+  ],
+  "South Sumatra": [
+    "South Sumatra"
+  ],
+  "South West": [
+    "South West"
+  ],
+  "Southern Province": [
+    "Southern",
+    "Southern Province"
+  ],
+  "Southland": [
+    "Southland",
+    "Southland Region"
+  ],
+  "Special Region of Yogyakarta": [
+    "Special Region of Yogyakarta",
+    "Yogyakarta"
+  ],
+  "Stockholm": [
+    "Stockholm",
+    "Stockholm County"
+  ],
+  "Sulawesi Barat": [
+    "Sulawesi Barat"
+  ],
+  "Sulawesi Selatan": [
+    "Sulawesi Selatan"
+  ],
+  "Sulawesi Tengah": [
+    "Sulawesi Tengah"
+  ],
+  "Sulawesi Tenggara": [
+    "Sulawesi Tenggara"
+  ],
+  "Sulawesi Utara": [
+    "Sulawesi Utara"
+  ],
+  "Sumatera Barat": [
+    "Sumatera Barat"
+  ],
+  "Sumatera Selatan": [
+    "Sumatera Selatan"
+  ],
+  "Sumatera Utara": [
+    "Sumatera Utara"
+  ],
+  "Sumatra Barat": [
+    "Sumatra Barat"
+  ],
+  "Sunamganj District": [
+    "Sunamganj District"
+  ],
+  "Surat Thani": [
+    "Surat Thani"
+  ],
+  "Surigao del Norte": [
+    "Surigao del Norte"
+  ],
+  "Sylhet District": [
+    "Sylhet District"
+  ],
+  "Sylhet Division": [
+    "Sylhet Division"
+  ],
+  "Sóc Trăng": [
+    "Sóc Trăng"
+  ],
+  "TAS": [
+    "TAS"
+  ],
+  "Tai Po": [
+    "Tai Po"
+  ],
+  "Taichung": [
+    "Taichung"
+  ],
+  "Tainan": [
+    "Tainan"
+  ],
+  "Taipei": [
+    "Taipei",
+    "Taipei City"
+  ],
+  "Taitung": [
+    "Taitung"
+  ],
+  "Taiwan": [
+    "Taiwan",
+    "Taiwan Province"
+  ],
+  "Tak": [
+    "Tak"
+  ],
+  "Tamil Nadu": [
+    "Tamil Nadu"
+  ],
+  "Tamilnadu": [
+    "Tamilnadu"
+  ],
+  "Tangail District": [
+    "Tangail District"
+  ],
+  "Tanintharyi Region": [
+    "Tanintharyi Region"
+  ],
+  "Taoyuan": [
+    "Taoyuan",
+    "Taoyuan City"
+  ],
+  "Taranaki": [
+    "Taranaki"
+  ],
+  "Tarlac": [
+    "Tarlac"
+  ],
+  "Tasman": [
+    "Tasman"
+  ],
+  "Tasmania": [
+    "Tasmania"
+  ],
+  "Tehran": [
+    "Tehran"
+  ],
+  "Tel Aviv District": [
+    "Tel Aviv",
+    "Tel Aviv District"
+  ],
+  "Telangana": [
+    "TELANGANA",
+    "Telangana"
+  ],
+  "Telengana": [
+    "Telengana"
+  ],
+  "Terengganu": [
+    "Terengganu"
+  ],
+  "Texas": [
+    "Texas"
+  ],
+  "Thailand": [
+    "Thailand"
+  ],
+  "Thimphu District": [
+    "Thimphu District"
+  ],
+  "Tianjin": [
+    "Tianjin"
+  ],
+  "Tiền Giang": [
+    "Tiền Giang"
+  ],
+  "Tokyo": [
+    "Tokyo"
+  ],
+  "Trincomalee District": [
+    "Trincomalee District"
+  ],
+  "Tripura": [
+    "Tripura"
+  ],
+  "Tsuen Wan": [
+    "Tsuen Wan"
+  ],
+  "Tuen Mun": [
+    "Tuen Mun"
+  ],
+  "Tuyên Quang": [
+    "Tuyên Quang"
+  ],
+  "Udon Thani": [
+    "Udon Thani"
+  ],
+  "Ulsan": [
+    "Ulsan"
+  ],
+  "Unknown": [
+    "Unknown"
+  ],
+  "Utah": [
+    "Utah"
+  ],
+  "Uttar Pradesh": [
+    "UTTAR PRADESH",
+    "Uttar Pradesh",
+    "Uttar Preadesh"
+  ],
+  "Uttarakhand": [
+    "Uttarakhand"
+  ],
+  "Uusimaa": [
+    "Uusimaa"
+  ],
+  "Uva Province": [
+    "Uva Province"
+  ],
+  "VIC": [
+    "VIC"
+  ],
+  "Vastra Gotaland": [
+    "Vastra Gotaland"
+  ],
+  "Vavuniya District": [
+    "Vavuniya District"
+  ],
+  "Victoria": [
+    "Victoria"
+  ],
+  "Vientiane Prefecture": [
+    "Vientiane Prefecture"
+  ],
+  "WA": [
+    "WA"
+  ],
+  "Waikato": [
+    "Waikato",
+    "Waikato Region"
+  ],
+  "Wan Chai": [
+    "Wan Chai"
+  ],
+  "Wellington": [
+    "Wellington",
+    "Wellington Region"
+  ],
+  "West Bengal": [
+    "West Bengal"
+  ],
+  "West Coast Region": [
+    "West Coast",
+    "West Coast Region"
+  ],
+  "West Java": [
+    "West Java"
+  ],
+  "West Kalimantan": [
+    "West Kalimantan"
+  ],
+  "West Nusa Tenggara": [
+    "West Nusa Tenggara"
+  ],
+  "West Sumatra": [
+    "West Sumatra"
+  ],
+  "Western Australia": [
+    "Western Australia"
+  ],
+  "Western Cape": [
+    "Western Cape"
+  ],
+  "Western Province": [
+    "Western Province",
+    "Western Region"
+  ],
+  "Western Visayas": [
+    "Western Visayas"
+  ],
+  "Wong Tai Sin": [
+    "Wong Tai Sin"
+  ],
+  "Yangon Region": [
+    "Yangon Region"
+  ],
+  "Yau Tsim Mong": [
+    "Yau Tsim Mong"
+  ],
+  "Yuen Long": [
+    "Yuen Long"
+  ],
+  "Yunlin County": [
+    "Yunlin County"
+  ],
+  "Yunnan": [
+    "Yunnan"
+  ],
+  "Zambales": [
+    "Zambales"
+  ],
+  "Zamboanga del Sur": [
+    "Zamboanga del Sur"
+  ],
+  "Zhejiang": [
+    "Zhejiang"
+  ],
+  "Đà Nẵng": [
+    "Đà Nẵng"
+  ],
+  "Đồng Nai": [
+    "Đồng Nai"
+  ],
+  "Đồng Tháp": [
+    "Đồng Tháp"
+  ],
+  "Ōsaka Prefecture": [
+    "Ōsaka Prefecture"
+  ]
+}

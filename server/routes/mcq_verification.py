@@ -8,11 +8,12 @@ import io
 from datetime import datetime
 from flask import Blueprint, request, jsonify, Response
 from sqlalchemy import or_
-from server.models import db, OptionalMcqVerification, OptionalMcqResponse, UserPII
+from server.models import db, OptionalMcqVerification, OptionalMcqResponse, MainMcqResponse, UserPII
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
 from server.utils.mcq_answer_key import score_submission, get_track_questions, get_response_score
+from server.utils.main_mcq_answer_key import get_track_questions as main_get_track_questions, score_submission as main_score_submission
 from server.utils.cache import cache_result
 
 bp = Blueprint('mcq_verification', __name__)
@@ -282,4 +283,143 @@ def create_entry():
         return jsonify({'entry': entry.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+
+# ----- Main MCQ (MCQ Verification) -----
+
+@cache_result(ttl=900)
+def _get_main_mcq_stats_cached():
+    """Main MCQ stats: total and passed (score >= 6) per track."""
+    try:
+        by_track = []
+        for track_num in (1, 2, 3):
+            total = MainMcqResponse.query.filter(MainMcqResponse.track_number == track_num).count()
+            passed = MainMcqResponse.query.filter(
+                MainMcqResponse.track_number == track_num,
+                MainMcqResponse.score >= 6
+            ).count()
+            by_track.append({'track': track_num, 'total': total, 'passed_6': passed})
+        total_all = MainMcqResponse.query.count()
+        passed_all = MainMcqResponse.query.filter(MainMcqResponse.score >= 6).count()
+        rate = round(100.0 * passed_all / total_all, 1) if total_all else None
+        return {
+            'main_mcq_by_track': by_track,
+            'total_submissions': total_all,
+            'passed_6': passed_all,
+            'auto_pass_rate': rate,
+        }
+    except Exception:
+        return {
+            'main_mcq_by_track': [{'track': t, 'total': 0, 'passed_6': 0} for t in (1, 2, 3)],
+            'total_submissions': 0,
+            'passed_6': 0,
+            'auto_pass_rate': None,
+        }
+
+
+@bp.route('/main/stats', methods=['GET'])
+@require_page_access('mcq_verification')
+def get_main_stats():
+    """Return main MCQ stats (total, passed 6+ per track, rate)."""
+    try:
+        data = _get_main_mcq_stats_cached()
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/main/responses/list', methods=['GET'])
+@require_page_access('mcq_verification')
+def list_main_responses():
+    """
+    List Main MCQ responses with pagination, search, track filter.
+    Returns score, score_display, results from main answer key.
+    """
+    try:
+        search = request.args.get('search', '').strip()
+        track_filter = request.args.get('track', '').strip()
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        per_page = min(per_page, 100)
+
+        query = MainMcqResponse.query.outerjoin(UserPII, MainMcqResponse.email == UserPII.email)
+
+        if search:
+            query = query.filter(
+                or_(
+                    MainMcqResponse.email.ilike(f'%{search}%'),
+                    MainMcqResponse.leader_name.ilike(f'%{search}%'),
+                    UserPII.name.ilike(f'%{search}%'),
+                )
+            )
+        if track_filter and track_filter in ('1', '2', '3'):
+            query = query.filter(MainMcqResponse.track_number == int(track_filter))
+
+        query = query.order_by(MainMcqResponse.track_number.asc(), MainMcqResponse.email.asc())
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        rows = []
+        for r in pagination.items:
+            d = r.to_dict()
+            d['name'] = r.participant.name if r.participant else None
+            d['score'] = r.score
+            d['score_display'] = f'{r.score}/10' if r.score is not None else '—'
+            # Recompute results for display (per-question correct/incorrect)
+            auto = main_score_submission(
+                r.track_number,
+                r.question_1, r.question_2, r.question_3, r.question_4,
+                r.question_5, r.question_6, r.question_7, r.question_8,
+                r.question_9, r.question_10,
+            )
+            d['results'] = auto.get('results', [])
+            d['passed'] = (r.score or 0) >= 6
+            d['question_labels'] = main_get_track_questions(r.track_number)
+            rows.append(d)
+
+        return jsonify({
+            'rows': rows,
+            'total': pagination.total,
+            'page': page,
+            'per_page': per_page,
+            'pages': pagination.pages,
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/main/export', methods=['GET'])
+@require_page_access('mcq_verification')
+def export_main_responses():
+    """Export Main MCQ responses as CSV: name, email, track, score. passed_only=1 for score >= 6."""
+    try:
+        passed_only = request.args.get('passed_only', '0').strip() == '1'
+        query = MainMcqResponse.query.outerjoin(UserPII, MainMcqResponse.email == UserPII.email)
+        query = query.order_by(MainMcqResponse.track_number.asc(), MainMcqResponse.email.asc())
+        rows = []
+        for r in query.all():
+            if passed_only and (r.score is None or r.score < 6):
+                continue
+            name = (r.participant.name if r.participant else None) or r.leader_name or ''
+            rows.append({
+                'name': name or '',
+                'email': r.email or '',
+                'track': r.track_number,
+                'score': f'{r.score}/10' if r.score is not None else '—',
+            })
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(['Name', 'Email', 'Track', 'Score'])
+        for r in rows:
+            score_val = r['score'] or ''
+            score_text = ('="' + str(score_val).replace('"', '""') + '"') if score_val else ''
+            writer.writerow([r['name'], r['email'], r['track'], score_text])
+        buf.seek(0)
+        filename = 'mcq-verification-passed-6plus.csv' if passed_only else 'mcq-verification-all.csv'
+        return Response(
+            buf.getvalue(),
+            mimetype='text/csv',
+            headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
         return jsonify({'error': str(e)}), 500

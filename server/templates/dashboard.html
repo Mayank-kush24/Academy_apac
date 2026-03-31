@@ -30,66 +30,82 @@
         <!-- Row 1: Hero KPI Cards -->
         <div class="hero-kpi-row">
             <div class="glass-card kpi-hero">
-                <div class="kpi-icon">
-                    <i class="fas fa-users"></i>
-                </div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Total Users</div>
-                    <div class="kpi-value" id="totalUsers">-</div>
-                    <div class="kpi-sparkline">
-                        <canvas id="totalUsersMiniChart" width="120" height="32"></canvas>
+                <div class="kpi-hero-body">
+                    <div class="kpi-icon">
+                        <i class="fas fa-users"></i>
                     </div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Total Users</div>
+                        <div class="kpi-value" id="totalUsers">-</div>
+                    </div>
+                </div>
+                <div class="kpi-hero-footer">
                     <div class="kpi-change positive" id="totalUsersChange">
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
                     </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="totalUsersMiniChart" width="100" height="28"></canvas>
+                    </div>
                 </div>
             </div>
 
             <div class="glass-card kpi-hero">
-                <div class="kpi-icon">
-                    <i class="fas fa-globe-asia"></i>
-                </div>
-                <div class="kpi-content">
-                    <div class="kpi-label">APAC (Excl. India)</div>
-                    <div class="kpi-value" id="apacUsers">-</div>
-                    <div class="kpi-sparkline">
-                        <canvas id="apacUsersMiniChart" width="120" height="32"></canvas>
+                <div class="kpi-hero-body">
+                    <div class="kpi-icon">
+                        <i class="fas fa-globe-asia"></i>
                     </div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">APAC (Excl. India)</div>
+                        <div class="kpi-value" id="apacUsers">-</div>
+                    </div>
+                </div>
+                <div class="kpi-hero-footer">
                     <div class="kpi-change positive" id="apacUsersChange">
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
                     </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="apacUsersMiniChart" width="100" height="28"></canvas>
+                    </div>
                 </div>
             </div>
 
             <div class="glass-card kpi-hero">
-                <div class="kpi-icon">
-                    <i class="fas fa-birthday-cake"></i>
-                </div>
-                <div class="kpi-content">
-                    <div class="kpi-label">Average Age</div>
-                    <div class="kpi-value" id="averageAge">-</div>
-                    <div class="kpi-sparkline">
-                        <canvas id="averageAgeMiniChart" width="120" height="32"></canvas>
+                <div class="kpi-hero-body">
+                    <div class="kpi-icon">
+                        <i class="fas fa-birthday-cake"></i>
                     </div>
+                    <div class="kpi-content">
+                        <div class="kpi-label">Average Age</div>
+                        <div class="kpi-value" id="averageAge">-</div>
+                    </div>
+                </div>
+                <div class="kpi-hero-footer">
                     <div class="kpi-change positive" id="averageAgeChange">
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
                     </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="averageAgeMiniChart" width="100" height="28"></canvas>
+                    </div>
                 </div>
             </div>
 
             <div class="glass-card kpi-hero">
-                <div class="kpi-icon">
-                    <i class="fas fa-map-marker-alt"></i>
-                </div>
-                <div class="kpi-content">
-                    <div class="kpi-label kpi-label-overline">Top Registrations — India</div>
-                    <div class="kpi-india-lines" id="topIndiaLocationLines">
-                        <div class="kpi-india-line"><span class="kpi-line-label">State</span> <span id="topIndiaStateLine">—</span></div>
-                        <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topIndiaCityLine">—</span></div>
+                <div class="kpi-hero-body">
+                    <div class="kpi-icon">
+                        <i class="fas fa-map-marker-alt"></i>
                     </div>
+                    <div class="kpi-content">
+                        <div class="kpi-label kpi-label-overline">Top Registrations — India</div>
+                        <div class="kpi-india-lines" id="topIndiaLocationLines">
+                            <div class="kpi-india-line"><span class="kpi-line-label">State</span> <span id="topIndiaStateLine">—</span></div>
+                            <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topIndiaCityLine">—</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="kpi-hero-footer">
                     <div class="kpi-change positive" id="topIndiaLocationChange">
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
@@ -98,21 +114,25 @@
             </div>
 
             <div class="glass-card kpi-hero">
-                <div class="kpi-icon">
-                    <i class="fas fa-flag"></i>
+                <div class="kpi-hero-body">
+                    <div class="kpi-icon">
+                        <i class="fas fa-flag"></i>
+                    </div>
+                    <div class="kpi-content">
+                        <div class="kpi-label kpi-label-overline">Top Registrations — Outside India</div>
+                        <div class="kpi-india-lines" id="topOutsideIndiaLines">
+                            <div class="kpi-india-line"><span class="kpi-line-label">Country</span> <span id="topOutsideIndiaCountryLine">—</span></div>
+                            <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topOutsideIndiaCityLine">—</span></div>
+                        </div>
+                    </div>
                 </div>
-                <div class="kpi-content">
-                    <div class="kpi-label kpi-label-overline">Top Registrations — Outside India</div>
-                    <div class="kpi-india-lines" id="topOutsideIndiaLines">
-                        <div class="kpi-india-line"><span class="kpi-line-label">Country</span> <span id="topOutsideIndiaCountryLine">—</span></div>
-                        <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topOutsideIndiaCityLine">—</span></div>
-                    </div>
-                    <div class="kpi-sparkline">
-                        <canvas id="topApacCountryMiniChart" width="120" height="32"></canvas>
-                    </div>
+                <div class="kpi-hero-footer">
                     <div class="kpi-change positive" id="topApacCountryChange">
                         <i class="fas fa-arrow-up"></i>
                         <span>Loading...</span>
+                    </div>
+                    <div class="kpi-sparkline">
+                        <canvas id="topApacCountryMiniChart" width="100" height="28"></canvas>
                     </div>
                 </div>
             </div>
@@ -140,14 +160,24 @@
                     <div class="region-card-meta" id="anzTopCountry">Top: —</div>
                 </div>
             </div>
-            <div class="glass-card region-card region-card-clickable" data-region="east_asia" role="button" tabindex="0" title="Click to see country-wise registrations">
+            <div class="glass-card region-card region-card-clickable" data-region="greater_china" role="button" tabindex="0" title="Click to see country-wise registrations">
                 <div class="region-card-icon">
                     <i class="fas fa-globe"></i>
                 </div>
                 <div class="region-card-content">
-                    <div class="region-card-label">Greater China and Korea</div>
-                    <div class="region-card-value" id="eastAsiaRegistrations">-</div>
-                    <div class="region-card-meta" id="eastAsiaTopCountry">Top: —</div>
+                    <div class="region-card-label">Greater China</div>
+                    <div class="region-card-value" id="greaterChinaRegistrations">-</div>
+                    <div class="region-card-meta" id="greaterChinaTopCountry">Top: —</div>
+                </div>
+            </div>
+            <div class="glass-card region-card region-card-clickable" data-region="korea" role="button" tabindex="0" title="Click to see country-wise registrations">
+                <div class="region-card-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="region-card-content">
+                    <div class="region-card-label">Korea</div>
+                    <div class="region-card-value" id="koreaRegistrations">-</div>
+                    <div class="region-card-meta" id="koreaTopCountry">Top: —</div>
                 </div>
             </div>
             <div class="glass-card region-card region-card-clickable" data-region="india" role="button" tabindex="0" title="Click to see state-wise registrations">
@@ -190,17 +220,20 @@
                     <div class="kpi-small-value" id="bookOfBusinessRegistrations">-</div>
                 </div>
             </a>
-            <div class="glass-card kpi-small">
+            <a href="/mcq-verification" class="glass-card kpi-small kpi-small-link" title="MCQ Verification by track">
                 <div class="kpi-small-icon">
-                    <i class="fas fa-chalkboard-teacher"></i>
+                    <i class="fas fa-clipboard-check"></i>
                 </div>
                 <div class="kpi-small-content">
-                    <div class="kpi-small-label">Workshops completed</div>
-                    <div class="kpi-small-value wip-placeholder">
-                        <span class="wip-badge">Work in Progress</span>
+                    <div class="kpi-small-label">MCQ Verification</div>
+                    <div class="optional-mcq-tracks" id="mainMcqTracks">
+                        <div class="optional-mcq-track-line optional-mcq-total-line"><span class="optional-mcq-track-name">Total</span><span class="optional-mcq-track-value" id="mainMcqTotal">—</span></div>
+                        <div class="optional-mcq-track-line"><span class="optional-mcq-track-name">Track 1</span><span class="optional-mcq-track-value" id="mainMcqTrack1">—</span></div>
+                        <div class="optional-mcq-track-line"><span class="optional-mcq-track-name">Track 2</span><span class="optional-mcq-track-value" id="mainMcqTrack2">—</span></div>
+                        <div class="optional-mcq-track-line"><span class="optional-mcq-track-name">Track 3</span><span class="optional-mcq-track-value" id="mainMcqTrack3">—</span></div>
                     </div>
                 </div>
-            </div>
+            </a>
             <a href="/codelab-submission" class="glass-card kpi-small kpi-small-link" title="Code Lab Submissions" style="text-decoration:none;color:inherit;">
                 <div class="kpi-small-icon">
                     <i class="fas fa-laptop-code"></i>
@@ -286,6 +319,16 @@
                         <div class="skill-lab-card-meta" id="codeLabSubmissionsMeta">Total Submissions</div>
                     </div>
                 </a>
+                <a href="/project-submission" class="glass-card skill-lab-card" title="Project submission verification" style="text-decoration: none; color: inherit;">
+                    <div class="skill-lab-card-icon">
+                        <i class="fas fa-folder-open"></i>
+                    </div>
+                    <div class="skill-lab-card-content">
+                        <div class="skill-lab-card-label">Project Submissions</div>
+                        <div class="skill-lab-card-value" id="projectSubmissionsTotal">-</div>
+                        <div class="skill-lab-card-meta" id="projectSubmissionsMeta">Total Submissions</div>
+                    </div>
+                </a>
             </div>
         </section>
 
@@ -321,6 +364,19 @@
             <div class="chart-container-large segmentation-container">
                 <div class="chart-skeleton" id="skel-domains"><div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:60%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:35%"></div><div class="skel-bar" style="height:25%"></div><div class="skel-bar" style="height:20%"></div></div>
                 <canvas id="domainsChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Persona Distribution (full width bar chart) -->
+        <div class="ranking-row ranking-row-single">
+            <div class="glass-card chart-ranking">
+                <div class="chart-header">
+                    <h3 class="chart-title">User Personas</h3>
+                    <p class="chart-subtitle">Designation-based role personas</p>
+                </div>
+                <div class="chart-container-medium">
+                    <canvas id="personaChart"></canvas>
+                </div>
             </div>
         </div>
 
@@ -365,54 +421,54 @@
             <div class="tracks-section-inner">
                 <!-- Global Target Header -->
                 <div class="tracks-global-header">
-                    <h2 class="tracks-section-title" id="tracks-section-title">Track Matrix</h2>
-                    <div class="tracks-target-badge" title="Target completions">
+                    <h2 class="tracks-section-title" id="tracks-section-title">Project Submission</h2>
+                    <div class="tracks-target-badge" title="Submission program target (all tracks)">
                         <i class="fas fa-trophy"></i>
-                        <span>Target: 15,000</span>
+                        <span>Target: <span id="tracksTrophyTarget">15,000</span></span>
                     </div>
                 </div>
                 <div class="tracks-progress-block">
                     <div class="tracks-progress-counter">
-                        Currently at <strong id="tracksCompletedCount">0</strong> / 15,000 Tracks Completed
+                        Currently at <strong id="tracksCompletedCount">0</strong> / <span id="tracksProgramTargetLabel">15,000</span> submissions (all tracks)
                     </div>
                     <div class="tracks-progress-bar-wrap">
                         <div class="tracks-progress-bar" id="tracksProgressBar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="15000" style="width: 0%;"></div>
                     </div>
                 </div>
 
-                <!-- Individual Track Cards -->
+                <!-- Individual Track Cards (stats from project_submission table) -->
                 <div class="tracks-row">
                     <div class="glass-card track-card">
-                        <h3 class="track-card-title">Track 1 selected</h3>
-                        <p class="track-card-subtitle">Track 1 enrollment</p>
-                        <span class="track-status-badge track-status-wip" title="Tracking for this path is being calibrated">Work in Progress</span>
-                        <div class="track-completion-placeholder" title="Coming Soon – tracking for this path is being calibrated">
-                            <div class="track-skeleton-bar">
-                                <div class="track-skeleton-fill"></div>
+                        <h3 class="track-card-title">Project Track 1 Submission</h3>
+                        <p class="track-card-subtitle">Submissions toward 5,000 per-track target</p>
+                        <span class="track-status-badge track-status-awaiting" id="projectTrackStatus1" title="Imported project submissions">Awaiting data</span>
+                        <div class="track-card-stat-block">
+                            <div class="track-card-stat-line"><strong id="projectTrackVerified1">0</strong> / <span class="track-card-cap">5,000</span> submissions</div>
+                            <div class="tracks-progress-bar-wrap track-card-bar-wrap">
+                                <div class="tracks-progress-bar track-card-progress-bar" id="projectTrackBar1" style="width: 0%;"></div>
                             </div>
-                            <span class="track-coming-soon"><i class="fas fa-lock"></i> Coming Soon</span>
                         </div>
                     </div>
                     <div class="glass-card track-card">
-                        <h3 class="track-card-title">Track 2 selected</h3>
-                        <p class="track-card-subtitle">Track 2 enrollment</p>
-                        <span class="track-status-badge track-status-wip" title="Tracking for this path is being calibrated">Work in Progress</span>
-                        <div class="track-completion-placeholder" title="Coming Soon – tracking for this path is being calibrated">
-                            <div class="track-skeleton-bar">
-                                <div class="track-skeleton-fill"></div>
+                        <h3 class="track-card-title">Project Track 2 Submission</h3>
+                        <p class="track-card-subtitle">Submissions toward 5,000 per-track target</p>
+                        <span class="track-status-badge track-status-awaiting" id="projectTrackStatus2" title="Imported project submissions">Awaiting data</span>
+                        <div class="track-card-stat-block">
+                            <div class="track-card-stat-line"><strong id="projectTrackVerified2">0</strong> / <span class="track-card-cap">5,000</span> submissions</div>
+                            <div class="tracks-progress-bar-wrap track-card-bar-wrap">
+                                <div class="tracks-progress-bar track-card-progress-bar" id="projectTrackBar2" style="width: 0%;"></div>
                             </div>
-                            <span class="track-coming-soon"><i class="fas fa-lock"></i> Coming Soon</span>
                         </div>
                     </div>
                     <div class="glass-card track-card">
-                        <h3 class="track-card-title">Track 3 selected</h3>
-                        <p class="track-card-subtitle">Track 3 enrollment</p>
-                        <span class="track-status-badge track-status-wip" title="Tracking for this path is being calibrated">Work in Progress</span>
-                        <div class="track-completion-placeholder" title="Coming Soon – tracking for this path is being calibrated">
-                            <div class="track-skeleton-bar">
-                                <div class="track-skeleton-fill"></div>
+                        <h3 class="track-card-title">Project Track 3 Submission</h3>
+                        <p class="track-card-subtitle">Submissions toward 5,000 per-track target</p>
+                        <span class="track-status-badge track-status-awaiting" id="projectTrackStatus3" title="Imported project submissions">Awaiting data</span>
+                        <div class="track-card-stat-block">
+                            <div class="track-card-stat-line"><strong id="projectTrackVerified3">0</strong> / <span class="track-card-cap">5,000</span> submissions</div>
+                            <div class="tracks-progress-bar-wrap track-card-bar-wrap">
+                                <div class="tracks-progress-bar track-card-progress-bar" id="projectTrackBar3" style="width: 0%;"></div>
                             </div>
-                            <span class="track-coming-soon"><i class="fas fa-lock"></i> Coming Soon</span>
                         </div>
                     </div>
                 </div>

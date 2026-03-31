@@ -1,66 +1,82 @@
 """
-State spelling normalization for UserPII.state (India and others).
-Maps common misspellings to the canonical form (the one with most registrations).
-Add new mappings here as more misspellings are found.
+State/province normalization for UserPII.state (app layer; DB unchanged).
+Aliases are loaded from state_aliases.json (canonical name -> list of raw variants).
 """
-# variant -> canonical (canonical = preferred display spelling)
-STATE_MAPPING = {
-    'Uttar Preadesh': 'Uttar Pradesh',
-    'UTTAR PRADESH': 'Uttar Pradesh',
-    'Telengana': 'Telangana',
-    'Tamilnadu': 'Tamil Nadu',
-}
+from __future__ import annotations
 
-# Reverse: canonical -> list of all variants (including canonical) for filtering
-_canonical_to_variants = None
+import json
+import os
+from collections import defaultdict
+from typing import Any, Iterable, Sequence
+
+_DATA_PATH = os.path.join(os.path.dirname(__file__), "state_aliases.json")
+
+with open(_DATA_PATH, encoding="utf-8") as _f:
+    CANONICAL_STATE_ALIASES: dict[str, list[str]] = json.load(_f)
+
+_REVERSE: dict[str, str] = {}
+for _canonical, _aliases in CANONICAL_STATE_ALIASES.items():
+    for _a in _aliases:
+        if _a and str(_a).strip():
+            _k = str(_a).strip().lower()
+            if _k not in _REVERSE:
+                _REVERSE[_k] = _canonical
+    _ck = str(_canonical).strip().lower()
+    if _ck not in _REVERSE:
+        _REVERSE[_ck] = _canonical
 
 
-def _build_reverse():
-    global _canonical_to_variants
-    if _canonical_to_variants is not None:
-        return
-    _canonical_to_variants = {}
-    for variant, canonical in STATE_MAPPING.items():
-        if canonical not in _canonical_to_variants:
-            _canonical_to_variants[canonical] = [canonical]
-        if variant not in _canonical_to_variants[canonical]:
-            _canonical_to_variants[canonical].append(variant)
-
-
-def normalize_state(state):
-    """Return canonical state name for display. If not in mapping, return state unchanged."""
-    if not state or not isinstance(state, str):
-        return state or ''
+def normalize_state(state: Any) -> str:
+    """Return canonical state/province for display; unknown values returned trimmed."""
+    if state is None:
+        return ""
+    if not isinstance(state, str):
+        return state or ""
     s = state.strip()
-    return STATE_MAPPING.get(s, s)
+    if not s:
+        return ""
+    return _REVERSE.get(s.lower(), s)
 
 
-def get_state_filter_values(canonical):
+def get_state_filter_values(canonical: Any) -> list[str]:
     """
-    Return list of state strings to match when filtering by this canonical name.
-    Includes the canonical and all variants that map to it.
-    Use with: query.filter(UserPII.state.in_(get_state_filter_values(selected)))
+    DB values to match when filtering by a canonical state (for SQL IN (...)).
+    Includes the canonical string and all listed aliases.
     """
     if not canonical or not isinstance(canonical, str):
         return []
-    _build_reverse()
     c = canonical.strip()
-    if c in _canonical_to_variants:
-        return _canonical_to_variants[c]
-    return [c]
+    aliases = CANONICAL_STATE_ALIASES.get(c)
+    if not aliases:
+        return [c]
+    out = {str(x).strip() for x in aliases if x and str(x).strip()}
+    out.add(c)
+    return list(out)
 
 
-def distinct_canonical_states(raw_states):
-    """Given list of raw state strings from DB, return sorted unique canonical names."""
+def distinct_canonical_states(raw_states: Iterable[str | None]) -> list[str]:
+    """Sorted unique canonical names for a list of raw DB values."""
     if not raw_states:
         return []
-    seen = set()
-    out = []
+    seen: set[str] = set()
+    out: list[str] = []
     for s in raw_states:
         if not s:
             continue
         c = normalize_state(s)
-        if c not in seen:
+        if c and c not in seen:
             seen.add(c)
             out.append(c)
-    return sorted(out)
+    out.sort(key=lambda x: x.lower())
+    return out
+
+
+def merge_state_count_rows(rows: Sequence[tuple[Any, int]]) -> list[tuple[str, int]]:
+    """Merge (raw_state, count) by canonical label; sort by count desc."""
+    merged: dict[str, int] = defaultdict(int)
+    for raw, cnt in rows:
+        label = normalize_state(raw) if raw else ""
+        if not label:
+            label = (str(raw).strip() if raw is not None else "") or "Unknown"
+        merged[label] += int(cnt or 0)
+    return sorted(merged.items(), key=lambda x: (-x[1], x[0].lower()))

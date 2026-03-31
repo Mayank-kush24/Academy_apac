@@ -18,12 +18,15 @@ from server.utils.excel_parser import (
     import_data,
     find_sheet_by_substring,
     get_skillboost_preview,
+    load_all_skillboost_sheets,
     _find_email_column,
     _find_profile_link_column,
     import_skillboost_profile,
     import_skilllab_submission,
     import_codelab_submission,
+    import_project_submission,
     import_lab_completion_sheet,
+    import_main_mcq_response,
     SKILLBOOST_SHEET_SUBSTRING,
     SKILLLAB_SUBMISSION_SHEET_SUBSTRING,
     CODELAB_SUBMISSION_SHEET_SUBSTRING,
@@ -329,6 +332,7 @@ def import_skillboost_profiles():
     Maps Email -> email, and a column containing profile/link/skills -> google_cloud_skills_boost_profile_link.
     Uses skillboost_profile table; does not overwrite rows where valid = TRUE.
     """
+    file_path = None
     try:
         if 'file' not in request.files and 'skillboost_file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -343,39 +347,25 @@ def import_skillboost_profiles():
         file_path = os.path.join(upload_folder, secure_filename(file.filename))
         file.save(file_path)
 
-        sheet_name = find_sheet_by_substring(file_path, SKILLBOOST_SHEET_SUBSTRING)
-        if not sheet_name:
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+        # Open workbook once and load all sheets needed for import (avoids many file reads)
+        sheets = load_all_skillboost_sheets(file_path)
+        if not sheets.get('profile_sheet_name') or sheets.get('profile_df') is None:
             return jsonify({
                 'error': f'No worksheet found whose name contains "{SKILLBOOST_SHEET_SUBSTRING}". '
                          'Please use an XLSX file that has a sheet with that name (e.g. from Google Skills Boost / Skill Lab export).'
             }), 400
 
-        df = parse_excel_sheet(file_path, sheet_name)
-        if df is None or len(df) == 0:
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+        df = sheets['profile_df']
+        if len(df) == 0:
             return jsonify({'error': 'The selected sheet is empty'}), 400
 
+        sheet_name = sheets['profile_sheet_name']
         columns = list(df.columns)
         email_col = _find_email_column(columns)
         profile_link_col = _find_profile_link_column(columns)
         if not email_col:
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
             return jsonify({'error': 'Could not find an Email column in the sheet. Please ensure the sheet has a column named "Email".'}), 400
         if not profile_link_col:
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
             return jsonify({
                 'error': 'Could not find a profile link column (column containing "profile", "link", or "skills"). '
                          'Please ensure the sheet has a column for the Google Skills Boost public profile link.'
@@ -389,63 +379,79 @@ def import_skillboost_profiles():
 
         result = import_skillboost_profile(df, email_col, profile_link_col)
 
-        # Also detect and import Skill Lab Submission sheet (if present in same XLSX)
+        # Skill Lab Submission (already loaded)
         submission_result = None
-        try:
-            submission_sheet = find_sheet_by_substring(file_path, SKILLLAB_SUBMISSION_SHEET_SUBSTRING)
-            if submission_sheet:
-                sub_df = parse_excel_sheet(file_path, submission_sheet)
-                if sub_df is not None and len(sub_df) > 0:
-                    try:
-                        from server.utils.audit import set_audit_extra
-                        set_audit_extra({"source": "skilllab_submission_import", "filename": file.filename, "sheet": submission_sheet})
-                    except Exception:
-                        pass
-                    submission_result = import_skilllab_submission(sub_df)
-        except Exception as sub_err:
-            submission_result = {'error': str(sub_err)}
-
-        # Also detect and import Code Lab Submission sheet (if present in same XLSX)
-        codelab_result = None
-        try:
-            codelab_sheet = find_sheet_by_substring(file_path, CODELAB_SUBMISSION_SHEET_SUBSTRING)
-            if codelab_sheet:
-                codelab_df = parse_excel_sheet(file_path, codelab_sheet)
-                if codelab_df is not None and len(codelab_df) > 0:
-                    try:
-                        from server.utils.audit import set_audit_extra
-                        set_audit_extra({"source": "codelab_submission_import", "filename": file.filename, "sheet": codelab_sheet})
-                    except Exception:
-                        pass
-                    codelab_result = import_codelab_submission(codelab_df)
-        except Exception as codelab_err:
-            codelab_result = {'error': str(codelab_err)}
-
-        # Detect and import Lab Completion sheets (Lab 1/2 x Track 1/2/3) into codelab_submission
-        lab_completion_results = []
-        for lc_info in LAB_COMPLETION_SHEET_SUBSTRINGS:
+        submission_sheet = sheets.get('submission_sheet_name')
+        sub_df = sheets.get('submission_df')
+        if submission_sheet and sub_df is not None and len(sub_df) > 0:
             try:
-                lc_sheet = find_sheet_by_substring(file_path, lc_info['substring'])
-                if lc_sheet:
-                    lc_df = parse_excel_sheet(file_path, lc_sheet)
-                    if lc_df is not None and len(lc_df) > 0:
-                        try:
-                            from server.utils.audit import set_audit_extra
-                            set_audit_extra({"source": "lab_completion_import", "filename": file.filename, "sheet": lc_sheet})
-                        except Exception:
-                            pass
-                        lc_result = import_lab_completion_sheet(lc_df, track_number=lc_info['track'], lab_number=lc_info['lab'])
-                        lc_result['sheet_name'] = lc_sheet
-                        lc_result['lab'] = lc_info['lab']
-                        lc_result['track'] = lc_info['track']
-                        lab_completion_results.append(lc_result)
+                from server.utils.audit import set_audit_extra
+                set_audit_extra({"source": "skilllab_submission_import", "filename": file.filename, "sheet": submission_sheet})
+            except Exception:
+                pass
+            try:
+                submission_result = import_skilllab_submission(sub_df)
+            except Exception as sub_err:
+                submission_result = {'error': str(sub_err)}
+
+        # Code Lab Submission (already loaded)
+        codelab_result = None
+        codelab_sheet = sheets.get('codelab_sheet_name')
+        codelab_df = sheets.get('codelab_df')
+        if codelab_sheet and codelab_df is not None and len(codelab_df) > 0:
+            try:
+                from server.utils.audit import set_audit_extra
+                set_audit_extra({"source": "codelab_submission_import", "filename": file.filename, "sheet": codelab_sheet})
+            except Exception:
+                pass
+            try:
+                codelab_result = import_codelab_submission(codelab_df)
+            except Exception as codelab_err:
+                codelab_result = {'error': str(codelab_err)}
+
+        # Lab Completion sheets (already loaded)
+        lab_completion_results = []
+        for lc in sheets.get('lab_completion_sheets', []):
+            try:
+                lc_df = lc.get('df')
+                if lc_df is not None and len(lc_df) > 0:
+                    try:
+                        from server.utils.audit import set_audit_extra
+                        set_audit_extra({"source": "lab_completion_import", "filename": file.filename, "sheet": lc['sheet_name']})
+                    except Exception:
+                        pass
+                    lc_result = import_lab_completion_sheet(lc_df, track_number=lc['track'], lab_number=lc['lab'])
+                    lc_result['sheet_name'] = lc['sheet_name']
+                    lc_result['lab'] = lc['lab']
+                    lc_result['track'] = lc['track']
+                    lab_completion_results.append(lc_result)
             except Exception as lc_err:
                 lab_completion_results.append({
                     'error': str(lc_err),
-                    'sheet_name': lc_info['substring'],
-                    'lab': lc_info['lab'],
-                    'track': lc_info['track'],
+                    'sheet_name': lc.get('sheet_name', ''),
+                    'lab': lc.get('lab'),
+                    'track': lc.get('track'),
                 })
+
+        # Main MCQ sheets (already loaded)
+        main_mcq_results = []
+        main_mcq_errors = []
+        for sheet_info in sheets.get('main_mcq_sheets', []):
+            track = sheet_info.get('track')
+            main_sheet_name = sheet_info.get('sheet_name')
+            main_df = sheet_info.get('df')
+            try:
+                if main_df is not None and len(main_df) > 0:
+                    from server.utils.audit import set_audit_extra
+                    set_audit_extra({"source": "main_mcq_import", "filename": file.filename, "sheet": main_sheet_name})
+                    mcr = import_main_mcq_response(main_df, track)
+                    mcr['track'] = track
+                    mcr['sheet_name'] = main_sheet_name
+                    main_mcq_results.append(mcr)
+                else:
+                    main_mcq_errors.append({'track': track, 'sheet_name': main_sheet_name, 'error': 'Sheet empty'})
+            except Exception as main_err:
+                main_mcq_errors.append({'track': track, 'sheet_name': main_sheet_name, 'error': str(main_err)})
 
         try:
             clear_cache('_get_dashboard_data_cached')
@@ -461,15 +467,45 @@ def import_skillboost_profiles():
                 clear_cache('_get_codelab_submission_stats_cached')
             except Exception:
                 pass
+
+        project_submission_results = []
+        for ps in sheets.get('project_submission_sheets', []):
+            ps_df = ps.get('df')
+            if ps_df is None or len(ps_df) == 0:
+                continue
+            try:
+                from server.utils.audit import set_audit_extra
+                set_audit_extra({
+                    "source": "project_submission_import",
+                    "filename": file.filename,
+                    "sheet": ps.get('sheet_name'),
+                    "track": ps.get('track'),
+                })
+            except Exception:
+                pass
+            try:
+                ps_result = import_project_submission(ps_df, track_number=ps['track'])
+                ps_result['sheet_name'] = ps.get('sheet_name')
+                ps_result['track'] = ps.get('track')
+                project_submission_results.append(ps_result)
+            except Exception as ps_err:
+                project_submission_results.append({
+                    'error': str(ps_err),
+                    'sheet_name': ps.get('sheet_name', ''),
+                    'track': ps.get('track'),
+                })
+
+        if project_submission_results:
+            try:
+                clear_cache('_get_project_submission_stats_cached')
+            except Exception:
+                pass
+
         if lab_completion_results:
             try:
                 clear_cache('_get_codelab_submission_stats_cached')
             except Exception:
                 pass
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
 
         response = {
             'total_rows': result['total_rows'],
@@ -514,6 +550,32 @@ def import_skillboost_profiles():
                     f"{codelab_result['updated']} updated, {codelab_result['skipped']} skipped."
                 )
 
+        if project_submission_results:
+            response['project_submissions'] = []
+            for psr in project_submission_results:
+                if 'error' in psr:
+                    response['project_submissions'].append({
+                        'sheet_name': psr.get('sheet_name', ''),
+                        'track': psr.get('track'),
+                        'error': psr['error'],
+                    })
+                    err_snip = str(psr.get('error', ''))[:120]
+                    response['message'] += f" | Project Track {psr.get('track', '?')} error: {err_snip}"
+                else:
+                    response['project_submissions'].append({
+                        'sheet_name': psr.get('sheet_name', ''),
+                        'track': psr.get('track'),
+                        'total_rows': psr['total_rows'],
+                        'created': psr['created'],
+                        'updated': psr['updated'],
+                        'skipped': psr['skipped'],
+                        'errors': psr.get('errors', []),
+                    })
+                    response['message'] += (
+                        f" | Project Track {psr.get('track')}: {psr['created']} created, "
+                        f"{psr['updated']} updated, {psr['skipped']} skipped."
+                    )
+
         if lab_completion_results:
             response['lab_completions'] = []
             for lcr in lab_completion_results:
@@ -540,9 +602,35 @@ def import_skillboost_profiles():
                         f"{lcr['updated']} updated, {lcr['skipped']} skipped."
                     )
 
+        if main_mcq_results:
+            response['main_mcq'] = []
+            for mcr in main_mcq_results:
+                response['main_mcq'].append({
+                    'track': mcr['track'],
+                    'sheet_name': mcr.get('sheet_name', ''),
+                    'total_rows': mcr['total_rows'],
+                    'created': mcr['created'],
+                    'updated': mcr['updated'],
+                    'skipped': mcr['skipped'],
+                    'errors': mcr.get('errors', []),
+                })
+                response['message'] += (
+                    f" | Main MCQ Track {mcr['track']}: {mcr['created']} created, "
+                    f"{mcr['updated']} updated, {mcr['skipped']} skipped."
+                )
+        if main_mcq_errors:
+            response['main_mcq_errors'] = main_mcq_errors
+
         return jsonify(response), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if file_path:
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+            except Exception:
+                pass
 
 
 def _verify_one(email, link):

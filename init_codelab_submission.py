@@ -87,6 +87,7 @@ def init_codelab_submission():
                         ELSIF p_table_name = 'codelab_submission' THEN RETURN COALESCE((p_row).id::TEXT, '');
                         ELSIF p_table_name = 'optional_mcq_verification' THEN RETURN COALESCE((p_row).id::TEXT, '');
                         ELSIF p_table_name = 'optional_mcq_response' THEN RETURN COALESCE((p_row).id::TEXT, '');
+                        ELSIF p_table_name = 'main_mcq_response' THEN RETURN COALESCE((p_row).id::TEXT, '');
                         ELSE RETURN COALESCE((p_row).id::TEXT, '');
                         END IF;
                     EXCEPTION WHEN OTHERS THEN RETURN 'unknown';

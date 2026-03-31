@@ -4,6 +4,8 @@ Database models for Gen AI Academy APAC Edition
 from datetime import datetime
 from uuid import uuid4
 from flask_sqlalchemy import SQLAlchemy
+from server.utils.country_normalize import normalize_country
+from server.utils.state_normalize import normalize_state
 from sqlalchemy import MetaData, Table, Column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -37,6 +39,8 @@ class UserPII(db.Model):
     linkedin_url = db.Column(db.String(500), nullable=True)
     utm_medium = db.Column(db.String(255), nullable=True)
     bob_match = db.Column(db.Boolean, default=False, nullable=False)
+    industry = db.Column(db.String(255), nullable=True)
+    persona = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -52,8 +56,8 @@ class UserPII(db.Model):
             'name': self.name,
             'email': self.email,
             'mobile_number': self.mobile_number,
-            'country': self.country,
-            'state': self.state,
+            'country': normalize_country(self.country) or self.country,
+            'state': normalize_state(self.state),
             'city': self.city,
             'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
             'gender': self.gender,
@@ -62,6 +66,8 @@ class UserPII(db.Model):
             'linkedin_url': self.linkedin_url,
             'utm_medium': self.utm_medium,
             'bob_match': bool(self.bob_match),
+            'industry': self.industry,
+            'persona': self.persona,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -90,6 +96,8 @@ class UserPIIInjected(db.Model):
     linkedin_url = db.Column(db.String(500), nullable=True)
     utm_medium = db.Column(db.String(255), nullable=True)
     bob_match = db.Column(db.Boolean, default=False, nullable=False)
+    industry = db.Column(db.String(255), nullable=True)
+    persona = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -105,8 +113,8 @@ class UserPIIInjected(db.Model):
             'name': self.name,
             'email': self.email,
             'mobile_number': self.mobile_number,
-            'country': self.country,
-            'state': self.state,
+            'country': normalize_country(self.country) or self.country,
+            'state': normalize_state(self.state),
             'city': self.city,
             'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
             'gender': self.gender,
@@ -115,6 +123,8 @@ class UserPIIInjected(db.Model):
             'linkedin_url': self.linkedin_url,
             'utm_medium': self.utm_medium,
             'bob_match': bool(self.bob_match),
+            'industry': self.industry,
+            'persona': self.persona,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -143,6 +153,8 @@ _user_pii_combined_table = Table(
     Column('linkedin_url', db.String(500), nullable=True),
     Column('utm_medium', db.String(255), nullable=True),
     Column('bob_match', db.Boolean, default=False, nullable=False),
+    Column('industry', db.String(255), nullable=True),
+    Column('persona', db.String(100), nullable=True),
     Column('created_at', db.DateTime, nullable=False),
     Column('updated_at', db.DateTime, nullable=False),
     Column('source', db.String(32), nullable=True),
@@ -167,8 +179,8 @@ class UserPIICombined(db.Model):
             'name': self.name,
             'email': self.email,
             'mobile_number': self.mobile_number,
-            'country': self.country,
-            'state': self.state,
+            'country': normalize_country(self.country) or self.country,
+            'state': normalize_state(self.state),
             'city': self.city,
             'date_of_birth': self.date_of_birth.isoformat() if self.date_of_birth else None,
             'gender': self.gender,
@@ -177,6 +189,8 @@ class UserPIICombined(db.Model):
             'linkedin_url': self.linkedin_url,
             'utm_medium': self.utm_medium,
             'bob_match': bool(self.bob_match),
+            'industry': self.industry,
+            'persona': self.persona,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'source': self.source,
@@ -375,6 +389,65 @@ class CodeLabSubmission(db.Model):
         }
 
 
+class ProjectSubmission(db.Model):
+    """
+    Final project submission verification (per track).
+    leader_email is FK to user_pii.email.
+    Unique on (leader_email, track_number) — one row per leader per track (sheets: Project Submission Track 1–3).
+    """
+    __tablename__ = 'project_submission'
+    __table_args__ = (
+        db.UniqueConstraint('leader_email', 'track_number', name='uq_project_submission_email_track'),
+    )
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    track_number = db.Column(db.Integer, nullable=False)
+    team_name = db.Column(db.String(255), nullable=True)
+    leader_name = db.Column(db.String(255), nullable=True)
+    leader_email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)
+    leader_phone = db.Column(db.String(50), nullable=True)
+    team_size = db.Column(db.Integer, nullable=True)
+    problem_statement = db.Column(db.Text, nullable=True)
+    cloud_run_deployment_link = db.Column(db.String(1024), nullable=True)
+    github_repository_link = db.Column(db.String(1024), nullable=True)
+    demo_video_link = db.Column(db.String(1024), nullable=True)
+    final_project_ppt = db.Column(db.String(1024), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    created_by_name = db.Column(db.String(255), nullable=True)
+    created_by_email = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    updated_by_name = db.Column(db.String(255), nullable=True)
+    updated_by_email = db.Column(db.String(255), nullable=True)
+    valid = db.Column(db.Boolean, default=False, nullable=False)
+    remark = db.Column(db.Text, nullable=True)
+
+    leader = db.relationship('UserPII', foreign_keys=[leader_email], primaryjoin='ProjectSubmission.leader_email == UserPII.email', lazy='joined')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'track_number': self.track_number,
+            'team_name': self.team_name,
+            'leader_name': self.leader_name,
+            'leader_email': self.leader_email,
+            'leader_phone': self.leader_phone,
+            'team_size': self.team_size,
+            'problem_statement': self.problem_statement,
+            'cloud_run_deployment_link': self.cloud_run_deployment_link,
+            'github_repository_link': self.github_repository_link,
+            'demo_video_link': self.demo_video_link,
+            'final_project_ppt': self.final_project_ppt,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by_name': self.created_by_name,
+            'created_by_email': self.created_by_email,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by_name': self.updated_by_name,
+            'updated_by_email': self.updated_by_email,
+            'valid': bool(self.valid),
+            'remark': self.remark,
+        }
+
+
 class OptionalMcqVerification(db.Model):
     """
     Optional MCQ verification table.
@@ -447,6 +520,71 @@ class OptionalMcqResponse(db.Model):
     updated_by_email = db.Column(db.String(255), nullable=True)
 
     participant = db.relationship('UserPII', foreign_keys=[email], primaryjoin='OptionalMcqResponse.email == UserPII.email', lazy='joined')
+
+    def to_dict(self):
+        return {
+            'id': str(self.id),
+            'track_number': self.track_number,
+            'leader_name': self.leader_name,
+            'email': self.email,
+            'leader_phone': self.leader_phone,
+            'team_size': self.team_size,
+            'problem_statement': self.problem_statement,
+            'question_1': self.question_1,
+            'question_2': self.question_2,
+            'question_3': self.question_3,
+            'question_4': self.question_4,
+            'question_5': self.question_5,
+            'question_6': self.question_6,
+            'question_7': self.question_7,
+            'question_8': self.question_8,
+            'question_9': self.question_9,
+            'question_10': self.question_10,
+            'score': self.score,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'created_by_name': self.created_by_name,
+            'created_by_email': self.created_by_email,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by_name': self.updated_by_name,
+            'updated_by_email': self.updated_by_email,
+        }
+
+
+class MainMcqResponse(db.Model):
+    """
+    Main MCQ (MCQ Verification) response table. One row per (track_number, email).
+    Imported from sheets 16.MCQ Track 1, 17.MCQ Track 2, 18.MCQ Track 3.
+    question_1..question_10 hold free-text responses; score (0-10) from main_mcq_answer_key.
+    """
+    __tablename__ = 'main_mcq_response'
+    __table_args__ = (db.UniqueConstraint('track_number', 'email', name='uq_main_mcq_response_track_email'),)
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
+    track_number = db.Column(db.Integer, nullable=False)  # 1, 2, or 3
+    leader_name = db.Column(db.String(255), nullable=True)
+    email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)
+    leader_phone = db.Column(db.String(50), nullable=True)
+    team_size = db.Column(db.Integer, nullable=True)
+    problem_statement = db.Column(db.Text, nullable=True)
+    question_1 = db.Column(db.Text, nullable=True)
+    question_2 = db.Column(db.Text, nullable=True)
+    question_3 = db.Column(db.Text, nullable=True)
+    question_4 = db.Column(db.Text, nullable=True)
+    question_5 = db.Column(db.Text, nullable=True)
+    question_6 = db.Column(db.Text, nullable=True)
+    question_7 = db.Column(db.Text, nullable=True)
+    question_8 = db.Column(db.Text, nullable=True)
+    question_9 = db.Column(db.Text, nullable=True)
+    question_10 = db.Column(db.Text, nullable=True)
+    score = db.Column(db.Integer, nullable=True)  # 0-10
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=True)
+    created_by_name = db.Column(db.String(255), nullable=True)
+    created_by_email = db.Column(db.String(255), nullable=True)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=True)
+    updated_by_name = db.Column(db.String(255), nullable=True)
+    updated_by_email = db.Column(db.String(255), nullable=True)
+
+    participant = db.relationship('UserPII', foreign_keys=[email], primaryjoin='MainMcqResponse.email == UserPII.email', lazy='joined')
 
     def to_dict(self):
         return {

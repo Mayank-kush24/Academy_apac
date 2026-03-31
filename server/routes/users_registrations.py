@@ -10,11 +10,19 @@ from flask import Blueprint, request, jsonify, Response
 from sqlalchemy import or_, func, desc
 from server.models import db, UserPIICombined
 from server.utils.permissions import require_page_access
-from server.utils.industry_map import get_industry, INDUSTRY_DOMAIN_MAP
+from server.utils.industry_map import get_industry
 from server.utils.state_normalize import (
     normalize_state,
     get_state_filter_values,
     distinct_canonical_states,
+    merge_state_count_rows,
+)
+from server.utils.country_normalize import (
+    country_filter_or_conditions,
+    distinct_canonical_countries,
+    country_column_matches_canonical,
+    merge_country_count_rows,
+    normalize_country,
 )
 
 bp = Blueprint('users_registrations', __name__)
@@ -48,7 +56,9 @@ def _filter_conditions(search=None, countries=None, states=None, cities=None, or
             )
         )
     if countries:
-        conditions.append(or_(*[UserPIICombined.country.ilike(f'%{c}%') for c in countries]))
+        cf = country_filter_or_conditions(UserPIICombined.country, countries)
+        if cf is not None:
+            conditions.append(cf)
     if states:
         all_state_values = []
         for state in states:
@@ -62,18 +72,14 @@ def _filter_conditions(search=None, countries=None, states=None, cities=None, or
     if cities:
         conditions.append(or_(*[UserPIICombined.city.ilike(f'%{c}%') for c in cities]))
     if organizations:
-        conditions.append(or_(*[UserPIICombined.organization_name.ilike(f'%{o}%') for o in organizations]))
+        from server.utils.org_normalize import get_org_filter_conditions
+        org_cond = get_org_filter_conditions(UserPIICombined.organization_name, organizations)
+        if org_cond is not None:
+            conditions.append(org_cond)
     if designations:
         conditions.append(or_(*[UserPIICombined.designation.ilike(f'%{d}%') for d in designations]))
     if industries:
-        domain_values = set()
-        for ind in industries:
-            for dom in INDUSTRY_DOMAIN_MAP.get(ind, []):
-                domain_values.add(dom.strip().lower())
-        domain_clauses = [func.lower(UserPIICombined.domain).in_(domain_values)] if domain_values else []
-        for ind in industries:
-            domain_clauses.append(UserPIICombined.domain.ilike(f'%{ind}%'))
-        conditions.append(or_(*domain_clauses))
+        conditions.append(or_(*[UserPIICombined.industry.ilike(f'%{i}%') for i in industries]))
     return conditions
 
 
@@ -119,22 +125,23 @@ def get_stats():
             ).filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                UserPIICombined.country.ilike('%India%'),
+                country_column_matches_canonical(UserPIICombined.country, 'India'),
                 UserPIICombined.state.isnot(None),
                 UserPIICombined.state != ''
             )
             india_state_q = _apply_filters(india_state_q)
-            state_row = india_state_q.group_by(UserPIICombined.state).order_by(desc('count')).first()
-            if state_row:
-                top_india_state = state_row[0]
-                top_india_state_count = state_row[1]
+            ist_rows = india_state_q.group_by(UserPIICombined.state).order_by(desc('count')).all()
+            merged_ist = merge_state_count_rows([(r[0], r[1]) for r in ist_rows])
+            if merged_ist:
+                top_india_state = merged_ist[0][0]
+                top_india_state_count = merged_ist[0][1]
             india_city_q = db.session.query(
                 UserPIICombined.city,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                UserPIICombined.country.ilike('%India%'),
+                country_column_matches_canonical(UserPIICombined.country, 'India'),
                 UserPIICombined.city.isnot(None),
                 UserPIICombined.city != ''
             )
@@ -157,20 +164,21 @@ def get_stats():
             ).filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                ~UserPIICombined.country.ilike('%India%')
+                ~country_column_matches_canonical(UserPIICombined.country, 'India'),
             )
             apac_country_q = _apply_filters(apac_country_q)
-            country_row = apac_country_q.group_by(UserPIICombined.country).order_by(desc('count')).first()
-            if country_row:
-                top_apac_country = country_row[0]
-                top_apac_country_count = country_row[1]
+            apac_rows = apac_country_q.group_by(UserPIICombined.country).all()
+            merged_c = merge_country_count_rows([(r[0], r[1]) for r in apac_rows])
+            merged_c = [(c, n) for c, n in merged_c if c != 'India']
+            if merged_c:
+                top_apac_country, top_apac_country_count = merged_c[0][0], merged_c[0][1]
             apac_city_q = db.session.query(
                 UserPIICombined.city,
                 func.count(UserPIICombined.id).label('count')
             ).filter(
                 UserPIICombined.country.isnot(None),
                 UserPIICombined.country != '',
-                ~UserPIICombined.country.ilike('%India%'),
+                ~country_column_matches_canonical(UserPIICombined.country, 'India'),
                 UserPIICombined.city.isnot(None),
                 UserPIICombined.city != ''
             )
@@ -254,12 +262,12 @@ def list_registrations():
             'rows': [
                 {
                     'name': r.name or '',
-                    'country': r.country or '',
+                    'country': normalize_country(r.country) or r.country or '',
                     'state': normalize_state(r.state) if r.state else '',
                     'city': r.city or '',
                     'organization': r.organization_name or '',
                     'designation': _clean_designation(r.designation, r.occupation),
-                    'industry': get_industry(r.domain, r.designation, r.organization_name),
+                    'industry': r.industry or '',
                     'occupation': r.occupation or '',
                 }
                 for r in rows
@@ -301,11 +309,11 @@ def download_csv():
         writer.writerow(['Name', 'Country', 'State', 'City', 'Organization', 'Designation', 'Industry'])
         for r in query.all():
             writer.writerow([
-                r.name or '', r.country or '',
+                r.name or '', normalize_country(r.country) or r.country or '',
                 normalize_state(r.state) if r.state else '',
                 r.city or '', r.organization_name or '',
                 _clean_designation(r.designation, r.occupation),
-                get_industry(r.domain, r.designation, r.organization_name) or '',
+                r.industry or '',
             ])
 
         output = si.getvalue()
@@ -324,9 +332,10 @@ def get_filter_options():
     """Return distinct country, state, city, organization for all user_pii (for filter dropdowns)."""
     try:
         base = _users_base()
-        countries = [r[0] for r in base.with_entities(UserPIICombined.country).distinct().filter(
+        raw_cty = [r[0] for r in base.with_entities(UserPIICombined.country).distinct().filter(
             UserPIICombined.country.isnot(None), UserPIICombined.country != ''
         ).order_by(UserPIICombined.country).all() if r[0]]
+        countries = distinct_canonical_countries(raw_cty)
         raw_states = [r[0] for r in base.with_entities(UserPIICombined.state).distinct().filter(
             UserPIICombined.state.isnot(None), UserPIICombined.state != ''
         ).order_by(UserPIICombined.state).all() if r[0]]
@@ -334,9 +343,11 @@ def get_filter_options():
         cities = [r[0] for r in base.with_entities(UserPIICombined.city).distinct().filter(
             UserPIICombined.city.isnot(None), UserPIICombined.city != ''
         ).order_by(UserPIICombined.city).all() if r[0]]
-        organizations = [r[0] for r in base.with_entities(UserPIICombined.organization_name).distinct().filter(
+        from server.utils.org_normalize import normalize_org_list
+        raw_orgs = [r[0] for r in base.with_entities(UserPIICombined.organization_name).distinct().filter(
             UserPIICombined.organization_name.isnot(None), UserPIICombined.organization_name != ''
         ).order_by(UserPIICombined.organization_name).all() if r[0]]
+        organizations = normalize_org_list(raw_orgs)
         raw_designations = [r[0] for r in base.with_entities(UserPIICombined.designation).distinct().filter(
             UserPIICombined.designation.isnot(None), UserPIICombined.designation != ''
         ).order_by(UserPIICombined.designation).all() if r[0]]
@@ -347,15 +358,9 @@ def get_filter_options():
             if cleaned and cleaned.lower() not in seen_desig:
                 seen_desig[cleaned.lower()] = cleaned
         designations = sorted(seen_desig.values(), key=str.lower)
-        raw_domains = [r[0] for r in base.with_entities(UserPIICombined.domain).distinct().filter(
-            UserPIICombined.domain.isnot(None), UserPIICombined.domain != ''
-        ).order_by(UserPIICombined.domain).all() if r[0]]
-        industry_set = set()
-        for dom in raw_domains:
-            ind = get_industry(dom)
-            if ind:
-                industry_set.add(ind)
-        industries = sorted(industry_set, key=str.lower)
+        industries = [r[0] for r in base.with_entities(UserPIICombined.industry).distinct().filter(
+            UserPIICombined.industry.isnot(None), UserPIICombined.industry != ''
+        ).order_by(UserPIICombined.industry).all() if r[0]]
         return jsonify({
             'countries': countries,
             'states': states,

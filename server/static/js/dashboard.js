@@ -208,18 +208,28 @@ async function loadDashboardData() {
                 average_age: null, apac_except_india_users: 0, top_india_state: 'N/A',
                 top_india_city: 'N/A', top_apac_country: 'N/A',
                 sea_registrations: 0, sea_top_country: 'N/A', anz_registrations: 0, anz_top_country: 'N/A',
-                east_asia_registrations: 0, east_asia_top_country: 'N/A', india_registrations: 0,
+                greater_china_registrations: 0, greater_china_top_country: 'N/A',
+                korea_registrations: 0, korea_top_country: 'N/A', india_registrations: 0,
                 total_skillboost_profiles: 0, verified_skillboost_profiles: 0, skillboost_verification_rate: null,
                 skillboost_credits_allocated: 0, skillboost_credits_not_sent: 0, skillboost_credits_sent: 0,
                 total_skilllab_submissions: 0, verified_skilllab_submissions: 0, skilllab_submission_verification_rate: null,
                 total_codelab_submissions: 0, verified_codelab_submissions: 0, codelab_submission_verification_rate: null,
+                total_project_submissions: 0, verified_project_submissions: 0, project_submission_verification_rate: null,
+                project_submission_program_target: 15000,
+                project_submission_track_target: 5000,
+                project_submission_by_track: [
+                    { track: 1, total: 0, verified: 0 },
+                    { track: 2, total: 0, verified: 0 },
+                    { track: 3, total: 0, verified: 0 },
+                ],
                 optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
+                main_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
                 optional_mcq_top5_winners: [],
                 previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
             };
         }
         if (!chartsData) {
-            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], top_domains: [], user_segmentation: { industries: [] }, top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
+            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], persona_distribution: [], top_domains: [], user_segmentation: { industries: [] }, top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
@@ -243,8 +253,10 @@ async function loadDashboardData() {
             sea_top_country: 'N/A',
             anz_registrations: 0,
             anz_top_country: 'N/A',
-            east_asia_registrations: 0,
-            east_asia_top_country: 'N/A',
+            greater_china_registrations: 0,
+            greater_china_top_country: 'N/A',
+            korea_registrations: 0,
+            korea_top_country: 'N/A',
             india_registrations: 0,
             total_skillboost_profiles: 0,
             verified_skillboost_profiles: 0,
@@ -258,7 +270,18 @@ async function loadDashboardData() {
             total_codelab_submissions: 0,
             verified_codelab_submissions: 0,
             codelab_submission_verification_rate: null,
+            total_project_submissions: 0,
+            verified_project_submissions: 0,
+            project_submission_verification_rate: null,
+            project_submission_program_target: 15000,
+            project_submission_track_target: 5000,
+            project_submission_by_track: [
+                { track: 1, total: 0, verified: 0 },
+                { track: 2, total: 0, verified: 0 },
+                { track: 3, total: 0, verified: 0 },
+            ],
             optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
+            main_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
             optional_mcq_top5_winners: []
         });
         renderCharts({
@@ -266,6 +289,7 @@ async function loadDashboardData() {
             gender_distribution: [],
             registration_source_bifurcation: [],
             occupation_distribution: [],
+            persona_distribution: [],
             top_domains: [],
             top_cities: [],
             top_cities_outside_india: [],
@@ -288,6 +312,69 @@ async function loadDashboardData() {
  * @param {Object} summary - summary from API (includes previous_period_* for WoW)
  * @param {Object} [chartsData] - optional charts data for real sparklines (registration_trends)
  */
+/**
+ * Project Submission section: submission row counts vs 15k program total and 5k per track.
+ */
+function updateProjectSubmissionTracksSection(summary) {
+    function fmt(n) {
+        if (typeof n !== 'number' || isNaN(n)) return '0';
+        return n.toLocaleString();
+    }
+    const progTarget = summary.project_submission_program_target != null ? summary.project_submission_program_target : 15000;
+    const trackTarget = summary.project_submission_track_target != null ? summary.project_submission_track_target : 5000;
+    const byTrack = Array.isArray(summary.project_submission_by_track) ? summary.project_submission_by_track : [];
+    var submissionTotal = summary.total_project_submissions != null ? summary.total_project_submissions : 0;
+    if (submissionTotal === 0 && byTrack.length > 0) {
+        submissionTotal = byTrack.reduce(function (acc, r) {
+            return acc + (r.total != null ? r.total : 0);
+        }, 0);
+    }
+
+    const countEl = document.getElementById('tracksCompletedCount');
+    if (countEl) countEl.textContent = fmt(submissionTotal);
+
+    const labelEl = document.getElementById('tracksProgramTargetLabel');
+    if (labelEl) labelEl.textContent = fmt(progTarget);
+
+    const trophyEl = document.getElementById('tracksTrophyTarget');
+    if (trophyEl) trophyEl.textContent = fmt(progTarget);
+
+    const globalBar = document.getElementById('tracksProgressBar');
+    const pctGlobal = progTarget > 0 ? Math.min(100, (submissionTotal / progTarget) * 100) : 0;
+    if (globalBar) {
+        globalBar.style.width = pctGlobal + '%';
+        globalBar.setAttribute('aria-valuenow', String(Math.min(submissionTotal, progTarget)));
+        globalBar.setAttribute('aria-valuemax', String(progTarget));
+    }
+
+    [1, 2, 3].forEach(function (t) {
+        const row = byTrack.find(function (r) { return r.track === t; }) || { total: 0, verified: 0 };
+        const total = row.total != null ? row.total : 0;
+
+        const vEl = document.getElementById('projectTrackVerified' + t);
+        if (vEl) vEl.textContent = fmt(total);
+
+        const bar = document.getElementById('projectTrackBar' + t);
+        const pct = trackTarget > 0 ? Math.min(100, (total / trackTarget) * 100) : 0;
+        if (bar) bar.style.width = pct + '%';
+
+        const badge = document.getElementById('projectTrackStatus' + t);
+        if (badge) {
+            badge.classList.remove('track-status-awaiting', 'track-status-live', 'track-status-met', 'track-status-wip');
+            if (total >= trackTarget) {
+                badge.textContent = 'Goal reached';
+                badge.classList.add('track-status-met');
+            } else if (total > 0) {
+                badge.textContent = 'In progress';
+                badge.classList.add('track-status-live');
+            } else {
+                badge.textContent = 'Awaiting data';
+                badge.classList.add('track-status-awaiting');
+            }
+        }
+    });
+}
+
 function updateKPICards(summary, chartsData) {
     const formatNumber = (num) => {
         if (typeof num !== 'number') return num;
@@ -410,6 +497,13 @@ function updateKPICards(summary, chartsData) {
     if (clVerified) clVerified.textContent = (verifiedCl != null) ? formatNumber(verifiedCl) : '—';
     if (clPending) clPending.textContent = (totalCl != null && verifiedCl != null) ? formatNumber(Math.max(0, totalCl - verifiedCl)) : '—';
 
+    const prSubTotalEl = document.getElementById('projectSubmissionsTotal');
+    if (prSubTotalEl) prSubTotalEl.textContent = (summary.total_project_submissions !== undefined && summary.total_project_submissions !== null) ? formatNumber(summary.total_project_submissions) : '-';
+    const prSubMetaEl = document.getElementById('projectSubmissionsMeta');
+    if (prSubMetaEl) prSubMetaEl.textContent = 'Total Submissions';
+
+    updateProjectSubmissionTracksSection(summary);
+
     // Optional MCQ completion by track
     const byTrack = summary.optional_mcq_by_track;
     if (Array.isArray(byTrack)) {
@@ -431,6 +525,35 @@ function updateKPICards(summary, chartsData) {
         });
     }
 
+    // Main MCQ (MCQ Verification) by track + total
+    const mainMcqByTrack = summary.main_mcq_by_track;
+    const mainMcqTotalEl = document.getElementById('mainMcqTotal');
+    if (Array.isArray(mainMcqByTrack)) {
+        var totalSub = 0, totalPass = 0;
+        mainMcqByTrack.forEach(function (r) {
+            totalSub += (r.total != null ? r.total : 0);
+            totalPass += (r.passed_6 != null ? r.passed_6 : 0);
+        });
+        if (mainMcqTotalEl) mainMcqTotalEl.textContent = formatNumber(totalSub) + ' (' + formatNumber(totalPass) + ' passed 6+)';
+        [1, 2, 3].forEach(function (t) {
+            const row = mainMcqByTrack.find(function (r) { return r.track === t; });
+            const el = document.getElementById('mainMcqTrack' + t);
+            if (el) {
+                if (row && (row.total !== undefined || row.passed_6 !== undefined)) {
+                    el.textContent = formatNumber(row.total) + ' (' + formatNumber(row.passed_6 || 0) + ' passed 6+)';
+                } else {
+                    el.textContent = '—';
+                }
+            }
+        });
+    } else {
+        if (mainMcqTotalEl) mainMcqTotalEl.textContent = '—';
+        [1, 2, 3].forEach(function (t) {
+            const el = document.getElementById('mainMcqTrack' + t);
+            if (el) el.textContent = '—';
+        });
+    }
+
     // Region cards: SEA, ANZ, East Asia
     const seaRegEl = document.getElementById('seaRegistrations');
     if (seaRegEl) seaRegEl.textContent = (summary.sea_registrations !== undefined && summary.sea_registrations !== null) ? formatNumber(summary.sea_registrations) : '-';
@@ -442,10 +565,15 @@ function updateKPICards(summary, chartsData) {
     const anzTopEl = document.getElementById('anzTopCountry');
     if (anzTopEl) anzTopEl.textContent = 'Top: ' + (summary.anz_top_country || '—');
 
-    const eastAsiaRegEl = document.getElementById('eastAsiaRegistrations');
-    if (eastAsiaRegEl) eastAsiaRegEl.textContent = (summary.east_asia_registrations !== undefined && summary.east_asia_registrations !== null) ? formatNumber(summary.east_asia_registrations) : '-';
-    const eastAsiaTopEl = document.getElementById('eastAsiaTopCountry');
-    if (eastAsiaTopEl) eastAsiaTopEl.textContent = 'Top: ' + (summary.east_asia_top_country || '—');
+    const gcRegEl = document.getElementById('greaterChinaRegistrations');
+    if (gcRegEl) gcRegEl.textContent = (summary.greater_china_registrations !== undefined && summary.greater_china_registrations !== null) ? formatNumber(summary.greater_china_registrations) : '-';
+    const gcTopEl = document.getElementById('greaterChinaTopCountry');
+    if (gcTopEl) gcTopEl.textContent = 'Top: ' + (summary.greater_china_top_country || '—');
+
+    const koreaRegEl = document.getElementById('koreaRegistrations');
+    if (koreaRegEl) koreaRegEl.textContent = (summary.korea_registrations !== undefined && summary.korea_registrations !== null) ? formatNumber(summary.korea_registrations) : '-';
+    const koreaTopEl = document.getElementById('koreaTopCountry');
+    if (koreaTopEl) koreaTopEl.textContent = 'Top: ' + (summary.korea_top_country || '—');
 
     const indiaRegEl = document.getElementById('indiaRegistrations');
     if (indiaRegEl) indiaRegEl.textContent = (summary.india_registrations !== undefined && summary.india_registrations !== null) ? formatNumber(summary.india_registrations) : '-';
@@ -602,6 +730,21 @@ function renderCharts(data, summary = null) {
         renderDonutChart('occupationChart', 'Occupation Distribution', data.occupation_distribution, { palette: 'occupation' });
     } else {
         showEmptyChart('occupationChart', 'No occupation data available');
+    }
+
+    // Persona Distribution (Vertical Bar Chart, horizontally scrollable)
+    if (data.persona_distribution && data.persona_distribution.length > 0) {
+        var personaFiltered = data.persona_distribution.filter(function (d) {
+            var l = (d.label || '').toLowerCase();
+            return l !== 'other';
+        });
+        if (personaFiltered.length > 0) {
+            renderPersonaBarChart('personaChart', personaFiltered);
+        } else {
+            showEmptyChart('personaChart', 'No persona data available');
+        }
+    } else {
+        showEmptyChart('personaChart', 'No persona data available');
     }
     
     // User Segmentation (drill-down bar chart)
@@ -1318,8 +1461,10 @@ window.exportData = async function exportData(event) {
             csvContent += `SEA Top Country,${summary.sea_top_country || 'N/A'}\n`;
             csvContent += `ANZ Registrations,${summary.anz_registrations ?? ''}\n`;
             csvContent += `ANZ Top Country,${summary.anz_top_country || 'N/A'}\n`;
-            csvContent += `Greater China and Korea Registrations,${summary.east_asia_registrations ?? ''}\n`;
-            csvContent += `Greater China and Korea Top Country,${summary.east_asia_top_country || 'N/A'}\n`;
+            csvContent += `Greater China Registrations,${summary.greater_china_registrations ?? ''}\n`;
+            csvContent += `Greater China Top Country,${summary.greater_china_top_country || 'N/A'}\n`;
+            csvContent += `Korea Registrations,${summary.korea_registrations ?? ''}\n`;
+            csvContent += `Korea Top Country,${summary.korea_top_country || 'N/A'}\n`;
             csvContent += `India Registrations,${summary.india_registrations ?? ''}\n`;
             csvContent += `India Top State,${summary.top_india_state || 'N/A'}\n`;
             csvContent += `Unique Organizations,${summary.unique_organizations}\n`;
@@ -2141,6 +2286,133 @@ function renderLineChart(canvasId, title, data) {
                 }
             }
         }
+    });
+}
+
+/**
+ * Vertical bar chart for persona distribution with horizontal scroll
+ * so every bar gets enough width to be readable.
+ */
+function renderPersonaBarChart(canvasId, data) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const sorted = data.slice().sort(function (a, b) { return b.value - a.value; });
+    const labels = sorted.map(function (d) { return d.label; });
+    const values = sorted.map(function (d) { return d.value; });
+
+    const brandAccent = '#ff7a18';
+    const grays = [
+        'rgba(229,231,235,0.7)', 'rgba(209,213,219,0.7)',
+        'rgba(156,163,175,0.7)', 'rgba(107,114,128,0.7)',
+        'rgba(75,85,99,0.7)', 'rgba(55,65,81,0.7)'
+    ];
+    const bgColors = values.map(function (_, i) {
+        return i === 0 ? brandAccent : grays[(i - 1) % grays.length];
+    });
+
+    if (charts[canvasId]) charts[canvasId].destroy();
+
+    const chartContainer = canvas.parentElement;
+    const msgEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
+    if (msgEl) msgEl.remove();
+
+    var minBarWidth = 90;
+    var containerWidth = chartContainer ? chartContainer.clientWidth : 600;
+    var neededWidth = sorted.length * minBarWidth;
+    var canvasWidth = Math.max(containerWidth, neededWidth);
+
+    if (chartContainer) {
+        chartContainer.style.overflowX = 'auto';
+        chartContainer.style.overflowY = 'hidden';
+        chartContainer.style.height = '380px';
+        chartContainer.style.minHeight = '380px';
+        chartContainer.style.maxHeight = '380px';
+    }
+    canvas.style.display = 'block';
+    canvas.style.width = canvasWidth + 'px';
+    canvas.style.minWidth = canvasWidth + 'px';
+    canvas.style.height = '100%';
+
+    var dataLabelsPlugin = {
+        id: 'personaVertLabels',
+        afterDatasetsDraw: function (chart) {
+            var ctx = chart.ctx;
+            var meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data) return;
+            ctx.save();
+            ctx.font = "500 11px 'Inter', sans-serif";
+            ctx.fillStyle = '#6B7280';
+            ctx.textAlign = 'center';
+            meta.data.forEach(function (bar, i) {
+                var val = chart.data.datasets[0].data[i];
+                if (val == null) return;
+                var text = typeof val === 'number' ? val.toLocaleString() : String(val);
+                ctx.fillText(text, bar.x, bar.y - 8);
+            });
+            ctx.restore();
+        }
+    };
+
+    charts[canvasId] = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'User Personas',
+                data: values,
+                backgroundColor: bgColors,
+                borderRadius: 8,
+                borderSkipped: false,
+                maxBarThickness: 60,
+                minBarLength: 4,
+                borderWidth: 0,
+                categoryPercentage: 0.8,
+                barPercentage: 0.85
+            }]
+        },
+        options: {
+            responsive: false,
+            maintainAspectRatio: false,
+            layout: { padding: { top: 24, right: 16, bottom: 8, left: 8 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(255,255,255,0.98)',
+                    padding: 10,
+                    titleFont: { family: 'Inter', size: 12, weight: '600' },
+                    bodyFont: { family: 'Inter', size: 11, weight: '500' },
+                    borderColor: '#E5E7EB', borderWidth: 1, cornerRadius: 4,
+                    titleColor: '#1F2937', bodyColor: '#6B7280',
+                    displayColors: true,
+                    callbacks: {
+                        label: function (ctx) { return ctx.parsed.y.toLocaleString() + ' users'; }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false, drawBorder: false },
+                    ticks: {
+                        font: { family: 'Inter', size: 10, weight: '500' },
+                        color: '#6B7280',
+                        maxRotation: 30, minRotation: 30,
+                        padding: 4, autoSkip: false
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false, drawTicks: false },
+                    ticks: {
+                        font: { family: 'Inter', size: 11, weight: '500' },
+                        color: '#6B7280', padding: 8, maxTicksLimit: 6,
+                        callback: function (v) { return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v; }
+                    }
+                }
+            }
+        },
+        plugins: [dataLabelsPlugin]
     });
 }
 

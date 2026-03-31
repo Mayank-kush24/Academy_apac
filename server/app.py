@@ -16,7 +16,7 @@ if __name__ == '__main__':
 
 from server.config import Config
 from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
-from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, users_registrations, skilllab_submission, codelab_submission, mcq_verification, import_pii_injected, track_progress
+from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, users_registrations, skilllab_submission, codelab_submission, project_submission, mcq_verification, import_pii_injected, track_progress
 
 def create_app():
     """Create and configure Flask application"""
@@ -84,13 +84,13 @@ def create_app():
                         CREATE VIEW user_pii_combined AS
                         SELECT id, registered_at, organization_name, class_stream, domain, designation, name, email,
                                mobile_number, country, state, city, date_of_birth, gender, occupation,
-                               github_url, linkedin_url, utm_medium, bob_match, created_at, updated_at,
+                               github_url, linkedin_url, utm_medium, bob_match, industry, persona, created_at, updated_at,
                                'user_pii' AS source
                         FROM user_pii
                         UNION ALL
                         SELECT id, registered_at, organization_name, class_stream, domain, designation, name, email,
                                mobile_number, country, state, city, date_of_birth, gender, occupation,
-                               github_url, linkedin_url, utm_medium, bob_match, created_at, updated_at,
+                               github_url, linkedin_url, utm_medium, bob_match, industry, persona, created_at, updated_at,
                                'user_pii_injected' AS source
                         FROM user_pii_injected i
                         WHERE NOT EXISTS (SELECT 1 FROM user_pii u WHERE u.email = i.email)
@@ -129,6 +129,7 @@ def create_app():
     app.register_blueprint(users_registrations.bp, url_prefix='/api/users-registrations')
     app.register_blueprint(skilllab_submission.bp, url_prefix='/api/skilllab-submission')
     app.register_blueprint(codelab_submission.bp, url_prefix='/api/codelab-submission')
+    app.register_blueprint(project_submission.bp, url_prefix='/api/project-submission')
     app.register_blueprint(mcq_verification.bp, url_prefix='/api/mcq-verification')
     app.register_blueprint(import_pii_injected.bp, url_prefix='/api/import-user-pii-injected')
     app.register_blueprint(track_progress.bp, url_prefix='/api/track-progress')
@@ -250,11 +251,23 @@ def create_app():
         """Code Lab Submission Verification (manual intern verification)"""
         return render_template('codelab_submission.html')
 
+    # Project Submission Verification page
+    @app.route('/project-submission')
+    def project_submission_page():
+        """Project Submission Verification (final project per track)"""
+        return render_template('project_submission.html')
+
     # Optional MCQ Verification page
     @app.route('/optional-mcq-verification')
     def optional_mcq_verification_page():
         """Optional MCQ Verification (manual verification of participant MCQ)"""
         return render_template('optional_mcq_verification.html')
+
+    # MCQ Verification (main MCQ) page
+    @app.route('/mcq-verification')
+    def mcq_verification_page():
+        """MCQ Verification — main MCQ completion by track (auto-scored, no manual verification)"""
+        return render_template('mcq_verification.html')
 
     # Track Progress Query page
     @app.route('/track-progress-query')
