@@ -35,6 +35,13 @@ class Config:
     # File upload configuration (None = no limit)
     MAX_CONTENT_LENGTH = None
     UPLOAD_FOLDER = 'uploads'
+
+    # Gemini (dashboard AI insights; optional)
+    GEMINI_API_KEY = (os.getenv('GEMINI_API_KEY') or '').strip()
+    GEMINI_DASHBOARD_MODEL = os.getenv('GEMINI_DASHBOARD_MODEL', 'gemini-2.0-flash').strip() or 'gemini-2.0-flash'
+
+    # Byte-identical copies of every import upload (see server.utils.import_file_archive)
+    # Set IMPORT_FILE_ARCHIVE_DIR to an absolute path to override the default under the repo root.
     
     @staticmethod
     def init_app(app):
@@ -43,6 +50,12 @@ class Config:
         upload_folder = os.path.join(os.path.dirname(os.path.dirname(__file__)), Config.UPLOAD_FOLDER)
         if not os.path.exists(upload_folder):
             os.makedirs(upload_folder)
+
+        from server.utils.import_file_archive import get_default_archive_root
+
+        archive_root = os.path.abspath(get_default_archive_root())
+        app.config['IMPORT_FILE_ARCHIVE_DIR'] = archive_root
+        os.makedirs(archive_root, exist_ok=True)
         
         # Apply SQLAlchemy engine options
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = Config.SQLALCHEMY_ENGINE_OPTIONS

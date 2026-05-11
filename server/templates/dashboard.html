@@ -3,6 +3,8 @@
 {% block title %}Dashboard - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
+{% set _cp = cohort_path_prefix if cohort_path_prefix else cohort_base_cohort1 %}
+{% set _hide = cohort_disabled_pages %}
 <div class="dashboard-premium" id="dashboardPremium">
     <div class="dashboard-container">
         <!-- Header Section -->
@@ -27,15 +29,15 @@
             </div>
         </div>
 
-        <!-- Row 1: Hero KPI Cards -->
-        <div class="hero-kpi-row">
+        <!-- Row 1: Hero KPI Cards (auto-fits 4-6 columns; wraps when narrow) -->
+        <div class="hero-kpi-row{% if cohort_id == 2 %} hero-kpi-row--six{% endif %}">
             <div class="glass-card kpi-hero">
                 <div class="kpi-hero-body">
-                    <div class="kpi-icon">
-                        <i class="fas fa-users"></i>
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-users"></i></div>
+                        <div class="kpi-label">Total Users</div>
                     </div>
                     <div class="kpi-content">
-                        <div class="kpi-label">Total Users</div>
                         <div class="kpi-value" id="totalUsers">-</div>
                     </div>
                 </div>
@@ -50,13 +52,34 @@
                 </div>
             </div>
 
-            <div class="glass-card kpi-hero">
+            {% if cohort_id == 2 %}
+            <div class="glass-card kpi-hero kpi-hero-net-new" title="Total registrations in this view minus distinct users that also appear in Cohort 1">
                 <div class="kpi-hero-body">
-                    <div class="kpi-icon">
-                        <i class="fas fa-globe-asia"></i>
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-user-plus"></i></div>
+                        <div class="kpi-label">Net new registrations</div>
                     </div>
                     <div class="kpi-content">
+                        <div class="kpi-value" id="netNewRegistrationsHero">-</div>
+                        <p class="kpi-hero-sublabel">Excludes users already in Cohort 1</p>
+                    </div>
+                </div>
+                <div class="kpi-hero-footer">
+                    <div class="kpi-footer-stat" id="netNewRegistrationsFooterStat" aria-live="polite"></div>
+                    <div class="kpi-sparkline">
+                        <canvas id="netNewRegistrationsMiniChart" width="100" height="28"></canvas>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="glass-card kpi-hero">
+                <div class="kpi-hero-body">
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-globe-asia"></i></div>
                         <div class="kpi-label">APAC (Excl. India)</div>
+                    </div>
+                    <div class="kpi-content">
                         <div class="kpi-value" id="apacUsers">-</div>
                     </div>
                 </div>
@@ -73,11 +96,11 @@
 
             <div class="glass-card kpi-hero">
                 <div class="kpi-hero-body">
-                    <div class="kpi-icon">
-                        <i class="fas fa-birthday-cake"></i>
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-birthday-cake"></i></div>
+                        <div class="kpi-label">Average Age</div>
                     </div>
                     <div class="kpi-content">
-                        <div class="kpi-label">Average Age</div>
                         <div class="kpi-value" id="averageAge">-</div>
                     </div>
                 </div>
@@ -92,45 +115,54 @@
                 </div>
             </div>
 
-            <div class="glass-card kpi-hero">
+            <div class="glass-card kpi-hero kpi-hero--locations">
                 <div class="kpi-hero-body">
-                    <div class="kpi-icon">
-                        <i class="fas fa-map-marker-alt"></i>
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-map-marker-alt"></i></div>
+                        <div class="kpi-label kpi-label-overline">Top in India</div>
                     </div>
                     <div class="kpi-content">
-                        <div class="kpi-label kpi-label-overline">Top Registrations — India</div>
-                        <div class="kpi-india-lines" id="topIndiaLocationLines">
-                            <div class="kpi-india-line"><span class="kpi-line-label">State</span> <span id="topIndiaStateLine">—</span></div>
-                            <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topIndiaCityLine">—</span></div>
+                        <div class="kpi-hero-stats" id="topIndiaLocationLines">
+                            <div class="kpi-hero-stat">
+                                <span class="kpi-hero-stat-key">State</span>
+                                <div class="kpi-hero-stat-val" id="topIndiaStateLine">—</div>
+                            </div>
+                            <div class="kpi-hero-stat">
+                                <span class="kpi-hero-stat-key">City</span>
+                                <div class="kpi-hero-stat-val" id="topIndiaCityLine">—</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="kpi-hero-footer">
-                    <div class="kpi-change positive" id="topIndiaLocationChange">
-                        <i class="fas fa-arrow-up"></i>
-                        <span>Loading...</span>
+                    <div class="kpi-footer-note-wrap" id="topIndiaLocationFooterNote">Daily registrations</div>
+                    <div class="kpi-sparkline">
+                        <canvas id="topIndiaLocationMiniChart" width="100" height="28"></canvas>
                     </div>
                 </div>
             </div>
 
-            <div class="glass-card kpi-hero">
+            <div class="glass-card kpi-hero kpi-hero--locations">
                 <div class="kpi-hero-body">
-                    <div class="kpi-icon">
-                        <i class="fas fa-flag"></i>
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-flag"></i></div>
+                        <div class="kpi-label kpi-label-overline">Top outside India</div>
                     </div>
                     <div class="kpi-content">
-                        <div class="kpi-label kpi-label-overline">Top Registrations — Outside India</div>
-                        <div class="kpi-india-lines" id="topOutsideIndiaLines">
-                            <div class="kpi-india-line"><span class="kpi-line-label">Country</span> <span id="topOutsideIndiaCountryLine">—</span></div>
-                            <div class="kpi-india-line"><span class="kpi-line-label">City</span> <span id="topOutsideIndiaCityLine">—</span></div>
+                        <div class="kpi-hero-stats" id="topOutsideIndiaLines">
+                            <div class="kpi-hero-stat">
+                                <span class="kpi-hero-stat-key">Country</span>
+                                <div class="kpi-hero-stat-val" id="topOutsideIndiaCountryLine">—</div>
+                            </div>
+                            <div class="kpi-hero-stat">
+                                <span class="kpi-hero-stat-key">City</span>
+                                <div class="kpi-hero-stat-val" id="topOutsideIndiaCityLine">—</div>
+                            </div>
                         </div>
                     </div>
                 </div>
                 <div class="kpi-hero-footer">
-                    <div class="kpi-change positive" id="topApacCountryChange">
-                        <i class="fas fa-arrow-up"></i>
-                        <span>Loading...</span>
-                    </div>
+                    <div class="kpi-footer-note-wrap" id="topOutsideIndiaFooterNote">Daily registrations</div>
                     <div class="kpi-sparkline">
                         <canvas id="topApacCountryMiniChart" width="100" height="28"></canvas>
                     </div>
@@ -211,7 +243,19 @@
 
         <!-- Row 1b: Small KPI cards (Book of Business, Workshops, Code labs, MCQ Test) -->
         <div class="kpi-small-row">
-            <a href="/book-of-business" class="glass-card kpi-small kpi-small-link" title="View Book of Business Registrations">
+            {% if cohort_id == 2 %}
+            <div class="glass-card kpi-small cohort-c1-c2-overlap-card" title="Distinct Cohort 2 users whose email also appears in Cohort 1 registrations (matches selected time range for Cohort 2)">
+                <div class="kpi-small-icon">
+                    <i class="fas fa-link"></i>
+                </div>
+                <div class="kpi-small-content">
+                    <div class="kpi-small-label">Cohort 1 → Cohort 2</div>
+                    <div class="kpi-small-value" id="cohort1Cohort2OverlapUsers">—</div>
+                    <div class="cohort-c1-c2-overlap-meta">Users who registered in Cohort 1 and again in Cohort 2</div>
+                </div>
+            </div>
+            {% endif %}
+            <a href="{{ _cp }}/book-of-business" class="glass-card kpi-small kpi-small-link" title="View Book of Business Registrations">
                 <div class="kpi-small-icon">
                     <i class="fas fa-book-open"></i>
                 </div>
@@ -220,7 +264,8 @@
                     <div class="kpi-small-value" id="bookOfBusinessRegistrations">-</div>
                 </div>
             </a>
-            <a href="/mcq-verification" class="glass-card kpi-small kpi-small-link" title="MCQ Verification by track">
+            {% if 'mcq-verification' not in _hide %}
+            <a href="{{ _cp }}/mcq-verification" class="glass-card kpi-small kpi-small-link" title="MCQ Verification by track">
                 <div class="kpi-small-icon">
                     <i class="fas fa-clipboard-check"></i>
                 </div>
@@ -234,7 +279,9 @@
                     </div>
                 </div>
             </a>
-            <a href="/codelab-submission" class="glass-card kpi-small kpi-small-link" title="Code Lab Submissions" style="text-decoration:none;color:inherit;">
+            {% endif %}
+            {% if 'codelab-submission-dashboard' not in _hide %}
+            <a href="{{ _cp }}/codelab-submission" class="glass-card kpi-small kpi-small-link" title="Code Lab Submissions" style="text-decoration:none;color:inherit;">
                 <div class="kpi-small-icon">
                     <i class="fas fa-laptop-code"></i>
                 </div>
@@ -256,23 +303,46 @@
                     </div>
                 </div>
             </a>
-            <a href="/optional-mcq-verification" class="glass-card kpi-small kpi-small-link optional-mcq-card" title="Optional MCQ completion by track">
+            {% endif %}
+            {% if 'optional-mcq-verification' not in _hide %}
+            <a href="{{ _cp }}/optional-mcq-verification" class="glass-card kpi-small kpi-small-link optional-mcq-card{% if cohort_id == 2 %} optional-mcq-card--cohort2{% endif %}" title="Optional MCQ completion by track">
                 <div class="kpi-small-icon">
                     <i class="fas fa-clipboard-check"></i>
                 </div>
                 <div class="kpi-small-content">
                     <div class="kpi-small-label">Optional MCQ completion</div>
+                    {% if cohort_id == 2 %}
+                    <div class="optional-mcq-tracks optional-mcq-tracks--cohort2" id="optionalMcqTracks">
+                        <div class="optional-mcq-stat-row">
+                            <span class="optional-mcq-stat-heading">All submissions</span>
+                            <div class="optional-mcq-stat-values">
+                                <span class="optional-mcq-stat-primary" id="optionalMcqTrack4Primary">—</span>
+                                <span class="optional-mcq-stat-secondary" id="optionalMcqTrack4Secondary" aria-label="Passed count"></span>
+                            </div>
+                        </div>
+                        <div class="optional-mcq-stat-row">
+                            <span class="optional-mcq-stat-heading">Unique users</span>
+                            <div class="optional-mcq-stat-values">
+                                <span class="optional-mcq-stat-primary" id="optionalMcqUniquePrimary">—</span>
+                                <span class="optional-mcq-stat-secondary" id="optionalMcqUniqueSecondary" aria-label="Unique users with pass"></span>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
                     <div class="optional-mcq-tracks" id="optionalMcqTracks">
                         <div class="optional-mcq-track-line"><span class="optional-mcq-track-name">Track 1</span><span class="optional-mcq-track-value" id="optionalMcqTrack1">—</span></div>
                         <div class="optional-mcq-track-line"><span class="optional-mcq-track-name">Track 2</span><span class="optional-mcq-track-value" id="optionalMcqTrack2">—</span></div>
                         <div class="optional-mcq-track-line"><span class="optional-mcq-track-name">Track 3</span><span class="optional-mcq-track-value" id="optionalMcqTrack3">—</span></div>
                     </div>
+                    {% endif %}
                     <span class="optional-mcq-card-link">View all &raquo;</span>
                 </div>
             </a>
+            {% endif %}
         </div>
 
-        <!-- Skill Lab section: Profiles + Credits -->
+        <!-- Skill Lab section: Profiles + Credits (+ Code Lab / Project cards when enabled) -->
+        {% if 'skill-lab-section' not in _hide %}
         <section class="skill-lab-section" aria-labelledby="skill-lab-section-title">
             <h2 class="skill-lab-section-title" id="skill-lab-section-title">Skill Lab</h2>
             <div class="skill-lab-cards">
@@ -286,6 +356,7 @@
                         <div class="skill-lab-card-meta" id="skillboostVerificationMeta">Verified: — / —%</div>
                     </div>
                 </div>
+                {% if 'skill-lab-credits' not in _hide %}
                 <div class="glass-card skill-lab-card" title="Skill Lab credit allocation and Sendy dispatch">
                     <div class="skill-lab-card-icon">
                         <i class="fas fa-award"></i>
@@ -299,7 +370,9 @@
                         </div>
                     </div>
                 </div>
-                <a href="/skilllab-submission" class="glass-card skill-lab-card" title="Skill Lab submission verification" style="text-decoration: none; color: inherit;">
+                {% endif %}
+                {% if 'skilllab-submission' not in _hide %}
+                <a href="{{ _cp }}/skilllab-submission" class="glass-card skill-lab-card" title="Skill Lab submission verification" style="text-decoration: none; color: inherit;">
                     <div class="skill-lab-card-icon">
                         <i class="fas fa-clipboard-check"></i>
                     </div>
@@ -307,9 +380,11 @@
                         <div class="skill-lab-card-label">Skill Lab Submissions</div>
                         <div class="skill-lab-card-value" id="skillLabSubmissionsTotal">-</div>
                         <div class="skill-lab-card-meta" id="skillLabSubmissionsMeta">Total Submissions</div>
+                        <div class="skill-lab-card-meta skill-lab-card-meta-secondary" id="skillLabSubmissionsVerificationMeta">Verified: — / —%</div>
                     </div>
                 </a>
-                <a href="/codelab-submission" class="glass-card skill-lab-card" title="Code Lab submission verification" style="text-decoration: none; color: inherit;">
+                {% endif %}
+                <a href="{{ _cp }}/codelab-submission" class="glass-card skill-lab-card" title="Code Lab submission verification" style="text-decoration: none; color: inherit;">
                     <div class="skill-lab-card-icon">
                         <i class="fas fa-code"></i>
                     </div>
@@ -319,7 +394,8 @@
                         <div class="skill-lab-card-meta" id="codeLabSubmissionsMeta">Total Submissions</div>
                     </div>
                 </a>
-                <a href="/project-submission" class="glass-card skill-lab-card" title="Project submission verification" style="text-decoration: none; color: inherit;">
+                {% if 'project-submission' not in _hide %}
+                <a href="{{ _cp }}/project-submission" class="glass-card skill-lab-card" title="Project submission verification" style="text-decoration: none; color: inherit;">
                     <div class="skill-lab-card-icon">
                         <i class="fas fa-folder-open"></i>
                     </div>
@@ -329,8 +405,10 @@
                         <div class="skill-lab-card-meta" id="projectSubmissionsMeta">Total Submissions</div>
                     </div>
                 </a>
+                {% endif %}
             </div>
         </section>
+        {% endif %}
 
         <!-- Row 2: Primary Analytics Section (70/30 split) -->
         <div class="primary-analytics-row">
@@ -380,8 +458,8 @@
             </div>
         </div>
 
-        <!-- Registration source + Gender + Occupation (3 equal doughnut charts) -->
-        <div class="bifurcation-row">
+        <!-- Registration source + Gender (+ Occupation when enabled) -->
+        <div class="bifurcation-row{% if 'occupation-distribution-dashboard' in _hide %} bifurcation-row--two{% endif %}">
             <div class="glass-card chart-donut bifurcation-donut">
                 <div class="chart-header">
                     <div>
@@ -404,6 +482,7 @@
                     <canvas id="genderChart"></canvas>
                 </div>
             </div>
+            {% if 'occupation-distribution-dashboard' not in _hide %}
             <div class="glass-card chart-donut bifurcation-donut">
                 <div class="chart-header">
                     <h3 class="chart-title">Occupation Distribution</h3>
@@ -414,9 +493,11 @@
                     <canvas id="occupationChart"></canvas>
                 </div>
             </div>
+            {% endif %}
         </div>
 
         <!-- Tracks section: Track Matrix + Track cards -->
+        {% if 'project-submission' not in _hide %}
         <section class="tracks-section" aria-labelledby="tracks-section-title">
             <div class="tracks-section-inner">
                 <!-- Global Target Header -->
@@ -474,6 +555,7 @@
                 </div>
             </div>
         </section>
+        {% endif %}
 
         <!-- State-wise (India) + APAC Region Registrations – side by side -->
         <div class="maps-row">
@@ -568,5 +650,5 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
-<script src="/static/js/dashboard.js?v={{ v }}"></script>
+<script src="{{ url_for('static_files', filename='js/dashboard.js') }}?v={{ v }}"></script>
 {% endblock %}

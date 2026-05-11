@@ -251,6 +251,14 @@ Currently, the application uses `db.create_all()` to create tables. For producti
 3. JavaScript: Add new JS files in `server/static/js/`
 4. Styling: Update `server/static/css/styles.css`
 
+## Testing
+
+Run unit tests (including badge verification with mocked HTTP):
+
+```bash
+pytest tests/
+```
+
 ## Troubleshooting
 
 ### Database Connection Issues

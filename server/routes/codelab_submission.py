@@ -4,9 +4,10 @@ Interns access this page to manually verify team submissions,
 toggling the 'valid' checkbox and adding remarks.
 """
 from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from sqlalchemy import or_, and_
 from server.models import db, CodeLabSubmission
+from server.utils.cohort_participant_models import participant_model
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
@@ -15,17 +16,23 @@ from server.utils.cache import cache_result
 bp = Blueprint('codelab_submission', __name__)
 
 
+def _CL():
+    """Return CodeLabSubmission model for the current cohort."""
+    return participant_model(CodeLabSubmission)
+
+
 @cache_result(ttl=900)
-def _get_codelab_submission_stats_cached():
-    """Cached stats (15 min). Cleared on import."""
-    total = CodeLabSubmission.query.count() or 0
-    verified = CodeLabSubmission.query.filter(CodeLabSubmission.valid == True).count() or 0
-    reviewed = CodeLabSubmission.query.filter(
+def _get_codelab_submission_stats_cached(table_prefix=''):
+    """Cached stats (15 min) keyed by cohort table_prefix."""
+    CL = participant_model(CodeLabSubmission)
+    total = CL.query.count() or 0
+    verified = CL.query.filter(CL.valid == True).count() or 0
+    reviewed = CL.query.filter(
         or_(
-            CodeLabSubmission.valid == True,
+            CL.valid == True,
             and_(
-                CodeLabSubmission.remark.isnot(None),
-                CodeLabSubmission.remark != '',
+                CL.remark.isnot(None),
+                CL.remark != '',
             ),
         )
     ).count() or 0
@@ -44,7 +51,7 @@ def _get_codelab_submission_stats_cached():
 def get_stats():
     """Return aggregate stats for Code Lab submissions (cached 2 min)."""
     try:
-        data = _get_codelab_submission_stats_cached()
+        data = _get_codelab_submission_stats_cached(table_prefix=getattr(g, 'table_prefix', ''))
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -66,35 +73,36 @@ def list_submissions():
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
-        query = CodeLabSubmission.query
+        CL = _CL()
+        query = CL.query
 
         if search:
             query = query.filter(
                 or_(
-                    CodeLabSubmission.team_name.ilike(f'%{search}%'),
-                    CodeLabSubmission.leader_name.ilike(f'%{search}%'),
-                    CodeLabSubmission.leader_email.ilike(f'%{search}%'),
+                    CL.team_name.ilike(f'%{search}%'),
+                    CL.leader_name.ilike(f'%{search}%'),
+                    CL.leader_email.ilike(f'%{search}%'),
                 )
             )
 
         if valid_filter == 'true':
-            query = query.filter(CodeLabSubmission.valid == True)
+            query = query.filter(CL.valid == True)
         elif valid_filter == 'false':
             query = query.filter(
-                CodeLabSubmission.valid == False,
+                CL.valid == False,
                 or_(
-                    CodeLabSubmission.remark.is_(None),
-                    CodeLabSubmission.remark == '',
+                    CL.remark.is_(None),
+                    CL.remark == '',
                 ),
             )
 
         if problem_filter:
-            query = query.filter(CodeLabSubmission.problem_statement.ilike(f'%{problem_filter}%'))
+            query = query.filter(CL.problem_statement.ilike(f'%{problem_filter}%'))
 
         if track_param in ('1', '2', '3'):
-            query = query.filter(CodeLabSubmission.track_number == int(track_param))
+            query = query.filter(CL.track_number == int(track_param))
 
-        query = query.order_by(CodeLabSubmission.created_at.desc())
+        query = query.order_by(CL.created_at.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
         rows = [row.to_dict() for row in pagination.items]
@@ -124,7 +132,8 @@ def verify_submission(submission_id):
     Once reviewed, only admin users can edit.
     """
     try:
-        submission = CodeLabSubmission.query.filter_by(id=submission_id).first()
+        CL = _CL()
+        submission = CL.query.filter_by(id=submission_id).first()
         if not submission:
             return jsonify({'error': 'Submission not found'}), 404
 
@@ -159,14 +168,15 @@ def verify_submission(submission_id):
 def get_filter_options():
     """Return distinct problem statements for filter dropdown."""
     try:
+        CL = _CL()
         problem_statements = [
-            r[0] for r in db.session.query(CodeLabSubmission.problem_statement)
+            r[0] for r in db.session.query(CL.problem_statement)
             .filter(
-                CodeLabSubmission.problem_statement.isnot(None),
-                CodeLabSubmission.problem_statement != ''
+                CL.problem_statement.isnot(None),
+                CL.problem_statement != ''
             )
             .distinct()
-            .order_by(CodeLabSubmission.problem_statement)
+            .order_by(CL.problem_statement)
             .all()
             if r[0]
         ]

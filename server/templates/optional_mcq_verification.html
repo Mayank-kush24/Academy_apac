@@ -37,7 +37,7 @@
             <div class="header-content">
                 <div>
                     <h1 class="page-title">Optional MCQ Verification</h1>
-                    <p class="page-subtitle">Verify participant MCQ completion — check valid and add remarks as needed</p>
+                    <p class="page-subtitle">Verify participant MCQ completion — check valid and add remarks as needed{% if cohort_id == 2 %} (Cohort 2 optional MCQ: 60%+ / 6+ out of 10 is pass){% endif %}</p>
                 </div>
             </div>
         </div>
@@ -61,7 +61,7 @@
                         <i class="fas fa-check-circle" style="font-size: 1.25rem;"></i>
                     </div>
                     <div>
-                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Passed (auto 8+/10)</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Passed (auto {% if cohort_id == 2 %}6+{% else %}8+{% endif %}/10)</div>
                         <div id="statPassed" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
                     </div>
                 </div>
@@ -72,7 +72,7 @@
                         <i class="fas fa-times-circle" style="font-size: 1.25rem;"></i>
                     </div>
                     <div>
-                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Pending (&lt;8/10)</div>
+                        <div style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); font-weight: 500;">Pending (&lt;{% if cohort_id == 2 %}6{% else %}8{% endif %}/10)</div>
                         <div id="statPending" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #111);">—</div>
                     </div>
                 </div>
@@ -102,9 +102,13 @@
                         <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Track</label>
                         <select id="trackFilter" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); background: #fff; font-size: 0.9375rem;">
                             <option value="">All</option>
+                            {% if cohort_id == 2 %}
+                            <option value="4">Optional MCQ (Cohort 2)</option>
+                            {% else %}
                             <option value="1">Track 1</option>
                             <option value="2">Track 2</option>
                             <option value="3">Track 3</option>
+                            {% endif %}
                         </select>
                     </div>
                     <button type="button" class="btn btn-primary" onclick="applyFilters()">
@@ -113,8 +117,8 @@
                     <button type="button" class="btn btn-secondary" onclick="clearFilters()">
                         <i class="fas fa-times"></i> Clear
                     </button>
-                    <button type="button" class="btn btn-secondary" onclick="downloadOptionalMcqCsv(true)" title="CSV: Name, Email, Track, Score (6/10 or above)">
-                        <i class="fas fa-download"></i> Download passed (6+/10)
+                    <button type="button" class="btn btn-secondary" onclick="downloadOptionalMcqCsv(true)" title="CSV: Name, Email, Track, Score (passing threshold)">
+                        <i class="fas fa-download"></i> Download passed ({% if cohort_id == 2 %}6+{% else %}8+{% endif %}/10)
                     </button>
                     <button type="button" class="btn btn-secondary" onclick="downloadOptionalMcqCsv(false)" title="CSV: Name, Email, Track, Score (all)">
                         <i class="fas fa-download"></i> Download all
@@ -178,7 +182,7 @@
     }
 
     function loadStats() {
-        fetch('/api/mcq-verification/stats', { headers: headers })
+        fetch(cohortApiUrl('/api/mcq-verification/stats'), { headers: headers })
             .then(function(res) {
                 if (!res.ok) return null;
                 return res.json();
@@ -209,7 +213,7 @@
         tbody.innerHTML = rows.map(function(r, idx) {
             var nameCell = (r.leader_name && r.leader_name.trim()) ? escapeHtml(r.leader_name) : (r.name && r.name.trim()) ? escapeHtml(r.name) : (r.email ? '<span class="text-muted">' + escapeHtml(r.email) + '</span>' : '<span class="text-muted">—</span>');
             var emailCell = (r.email && r.email.trim()) ? escapeHtml(r.email) : '<span class="text-muted">—</span>';
-            var trackCell = 'Track ' + (r.track_number != null ? r.track_number : '—');
+            var trackCell = (r.track_number === 4) ? 'Optional MCQ' : ('Track ' + (r.track_number != null ? r.track_number : '—'));
             var scoreCell = (r.score_display != null) ? escapeHtml(r.score_display) : (r.score != null ? (r.score + '/10') : '—');
             var statusCell = (r.passed === true) ? '<span class="mcq-status-pass">Pass</span>' : '<span class="mcq-status-fail">Fail</span>';
             var btn = '<button type="button" class="btn btn-sm btn-primary" onclick="openSubmissionModal(' + idx + ')" title="View full submission"><i class="fas fa-eye"></i> View submission</button>';
@@ -223,11 +227,12 @@
         var titleEl = document.getElementById('submissionModalTitle');
         var bodyEl = document.getElementById('submissionModalBody');
         var name = (row.leader_name && row.leader_name.trim()) ? row.leader_name : (row.name && row.name.trim()) ? row.name : row.email || 'Submission';
-        if (titleEl) titleEl.textContent = name + ' — Track ' + (row.track_number != null ? row.track_number : '—') + ' · Score ' + (row.score_display || row.score + '/10');
+        if (titleEl) titleEl.textContent = name + ' — ' + (row.track_number === 4 ? 'Optional MCQ' : ('Track ' + (row.track_number != null ? row.track_number : '—'))) + ' · Score ' + (row.score_display || row.score + '/10');
         var html = '';
+        if (row.team_name != null && String(row.team_name).trim()) html += '<div class="mcq-submission-detail"><label>Team name</label><div class="value">' + escapeHtml(String(row.team_name).trim()) + '</div></div>';
         html += '<div class="mcq-submission-detail"><label>Name</label><div class="value">' + escapeHtml((row.leader_name || row.name || '—').trim() || '—') + '</div></div>';
         html += '<div class="mcq-submission-detail"><label>Email</label><div class="value">' + escapeHtml((row.email || '—').trim()) + '</div></div>';
-        html += '<div class="mcq-submission-detail"><label>Track</label><div class="value">Track ' + (row.track_number != null ? row.track_number : '—') + '</div></div>';
+        html += '<div class="mcq-submission-detail"><label>Track</label><div class="value">' + (row.track_number === 4 ? 'Optional MCQ (Cohort 2)' : ('Track ' + (row.track_number != null ? row.track_number : '—'))) + '</div></div>';
         html += '<div class="mcq-submission-detail"><label>Score (auto)</label><div class="value">' + escapeHtml(row.score_display || row.score + '/10') + (row.passed ? ' <span class="mcq-status-pass">Pass</span>' : ' <span class="mcq-status-fail">Fail</span>') + '</div></div>';
         if (row.leader_phone != null && String(row.leader_phone).trim()) html += '<div class="mcq-submission-detail"><label>Leader Phone</label><div class="value">' + escapeHtml(String(row.leader_phone).trim()) + '</div></div>';
         if (row.team_size != null) html += '<div class="mcq-submission-detail"><label>Team size</label><div class="value">' + escapeHtml(String(row.team_size)) + '</div></div>';
@@ -288,8 +293,8 @@
         params.set('per_page', '20');
         if (search) params.set('search', search);
         if (trackF) params.set('track', trackF);
-        if (!token) { window.location.href = '/login'; return; }
-        fetch('/api/mcq-verification/responses/list?' + params.toString(), { headers: headers })
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
+        fetch(cohortApiUrl('/api/mcq-verification/responses/list?' + params.toString()), { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
@@ -318,8 +323,8 @@
     };
 
     window.downloadOptionalMcqCsv = function(passedOnly) {
-        if (!token) { window.location.href = '/login'; return; }
-        var url = '/api/mcq-verification/responses/export?' + (passedOnly ? 'passed_only=1' : '');
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
+        var url = cohortApiUrl('/api/mcq-verification/responses/export?' + (passedOnly ? 'passed_only=1' : ''));
         fetch(url, { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed.'); return null; }

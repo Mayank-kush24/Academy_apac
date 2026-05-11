@@ -1,33 +1,30 @@
 {% extends "base.html" %}
 
-{% block title %}Project Submission Verification - Gen AI Academy APAC{% endblock %}
+{% block title %}Project submissions - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
 <style>
-.verify-checkbox {
-    width: 18px; height: 18px; cursor: pointer; accent-color: #22c55e;
+.project-sub-table { font-size: 0.875rem; }
+.project-sub-table th {
+    font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.02em;
+    color: var(--text-muted, #6b7280); white-space: nowrap; border-bottom: 1px solid rgba(0,0,0,0.08);
 }
-.remark-input {
-    width: 100%; min-width: 120px; padding: 4px 8px; border-radius: 6px;
-    border: 1px solid rgba(0,0,0,0.1); font-size: 0.8125rem; background: #fff;
-    color: #374151; box-sizing: border-box;
+.project-sub-table td {
+    vertical-align: top; padding: 0.65rem 0.75rem; border-bottom: 1px solid rgba(0,0,0,0.06);
 }
-.remark-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
-.save-row-btn {
-    padding: 4px 10px; font-size: 0.75rem; border-radius: 6px; border: none;
-    background: #3b82f6; color: #fff; cursor: pointer; white-space: nowrap;
+.project-sub-table .cell-name { font-weight: 600; color: var(--text-primary, #111); }
+.project-sub-table .cell-email { font-size: 0.8125rem; color: var(--text-muted, #6b7280); word-break: break-all; }
+.project-sub-table .cell-score { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.project-sub-table .cell-track { white-space: nowrap; color: #374151; }
+.project-sub-table .cell-problem {
+    font-size: 0.8125rem; color: #374151; line-height: 1.45; max-width: 28rem;
+    max-height: 5.5rem; overflow-y: auto;
 }
-.save-row-btn:hover { background: #2563eb; }
-.save-row-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.save-row-btn.saved { background: #22c55e; }
+.submission-links-cell { display: flex; flex-direction: column; gap: 0.35rem; align-items: flex-start; min-width: 7rem; }
 .submission-links-cell a {
-    color: #3b82f6; text-decoration: none; font-size: 0.75rem; display: inline-block; margin-right: 8px; margin-bottom: 4px;
-}
-.submission-links-cell a:hover { text-decoration: underline; }
-a.project-col-link {
     color: #3b82f6; text-decoration: none; font-size: 0.8125rem; white-space: nowrap;
 }
-a.project-col-link:hover { text-decoration: underline; }
+.submission-links-cell a:hover { text-decoration: underline; }
 .track-filter-bar {
     display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(0,0,0,0.08);
 }
@@ -53,8 +50,8 @@ a.project-col-link:hover { text-decoration: underline; }
         <div class="dashboard-header">
             <div class="header-content">
                 <div>
-                    <h1 class="page-title">Project Submission Verification</h1>
-                    <p class="page-subtitle">Verify final project submissions per track (imported from the action-center XLSX)</p>
+                    <h1 class="page-title">Project submissions</h1>
+                    <p class="page-subtitle">Read-only view: leader, score, track, problem statement, and artifact links per submission.</p>
                 </div>
             </div>
         </div>
@@ -141,27 +138,48 @@ a.project-col-link:hover { text-decoration: underline; }
                     <button type="button" class="track-btn" id="trackBtn2" data-track="2">Track 2</button>
                     <button type="button" class="track-btn" id="trackBtn3" data-track="3">Track 3</button>
                 </div>
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed rgba(0,0,0,0.12);">
+                    <div style="font-size: 0.875rem; font-weight: 600; margin-bottom: 6px;">Import project scores</div>
+                    <p style="font-size: 0.8125rem; color: var(--text-muted, #6b7280); margin: 0 0 12px 0; max-width: 720px;">
+                        Upload one CSV or Excel per track. Required columns: <strong>Leader Email</strong> (or <code>leader_email</code>) and a score column named <strong>Score</strong>, <strong>Project Score</strong>, or similar. Only rows that already exist for the chosen track are updated.
+                    </p>
+                    <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+                        <div style="min-width: 160px;">
+                            <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Track for this file</label>
+                            <select id="scoreImportTrack" style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); background: #fff; font-size: 0.9375rem;">
+                                <option value="1">Track 1</option>
+                                <option value="2">Track 2</option>
+                                <option value="3">Track 3</option>
+                            </select>
+                        </div>
+                        <div style="min-width: 220px;">
+                            <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">File (.csv, .xlsx)</label>
+                            <input type="file" id="scoreImportFile" accept=".csv,.xlsx,.xls" style="font-size: 0.875rem;">
+                        </div>
+                        <button type="button" class="btn btn-primary" id="scoreImportBtn">
+                            <i class="fas fa-upload"></i> Import scores
+                        </button>
+                    </div>
+                    <div id="scoreImportResult" style="margin-top: 10px; font-size: 0.8125rem;"></div>
+                </div>
             </div>
         </div>
 
         <div class="glass-card">
             <div class="table-responsive">
-                <table class="data-table">
+                <table class="data-table project-sub-table">
                     <thead>
                         <tr>
-                            <th>Team / Leader</th>
+                            <th>Name</th>
+                            <th>Email</th>
+                            <th>Score</th>
                             <th>Track</th>
-                            <th>Problem</th>
-                            <th>Cloud Run Deployment Link</th>
-                            <th>Final Project PPT</th>
-                            <th>GitHub / Demo</th>
-                            <th style="text-align: center;">Valid</th>
-                            <th>Remark</th>
-                            <th>Action</th>
+                            <th>Problem statement</th>
+                            <th>Links</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody">
-                        <tr><td colspan="9" class="text-center">Loading...</td></tr>
+                        <tr><td colspan="6" class="text-center">Loading...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -176,8 +194,6 @@ a.project-col-link:hover { text-decoration: underline; }
 (function() {
     var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
     var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
-    var currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
-    var isAdmin = currentUser && currentUser.role === 'admin';
 
     function escapeHtml(s) {
         if (s == null || s === undefined) return '';
@@ -202,14 +218,22 @@ a.project-col-link:hover { text-decoration: underline; }
         return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener">' + escapeHtml(label) + '</a>';
     }
 
-    function linkCell(url) {
-        if (!url || !String(url).trim()) return '<span class="text-muted">—</span>';
-        var u = String(url).trim();
-        return '<a href="' + escapeHtml(u) + '" target="_blank" rel="noopener" class="project-col-link" title="' + escapeHtml(u) + '"><i class="fas fa-external-link-alt"></i> Open link</a>';
+    function linksColumn(r) {
+        var parts = [];
+        var a = linkLine('Cloud Run', r.cloud_run_deployment_link);
+        if (a) parts.push(a);
+        a = linkLine('Final PPT', r.final_project_ppt);
+        if (a) parts.push(a);
+        a = linkLine('GitHub', r.github_repository_link);
+        if (a) parts.push(a);
+        a = linkLine('Demo video', r.demo_video_link);
+        if (a) parts.push(a);
+        if (!parts.length) return '<span class="text-muted">—</span>';
+        return '<div class="submission-links-cell">' + parts.join('') + '</div>';
     }
 
     function loadStats() {
-        fetch('/api/project-submission/stats', { headers: headers })
+        fetch(cohortApiUrl('/api/project-submission/stats'), { headers: headers })
             .then(function(res) { return res.ok ? res.json() : null; })
             .then(function(data) {
                 if (!data) return;
@@ -227,7 +251,7 @@ a.project-col-link:hover { text-decoration: underline; }
     }
 
     function loadFilterOptions() {
-        fetch('/api/project-submission/filters', { headers: headers })
+        fetch(cohortApiUrl('/api/project-submission/filters'), { headers: headers })
             .then(function(res) { return res.ok ? res.json() : null; })
             .then(function(data) {
                 if (!data) return;
@@ -247,45 +271,42 @@ a.project-col-link:hover { text-decoration: underline; }
     function renderTable(rows) {
         var tbody = document.getElementById('tableBody');
         if (!rows || rows.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center">No submissions found.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center">No submissions found.</td></tr>';
             return;
         }
         tbody.innerHTML = rows.map(function(r) {
-            var id = r.id;
-            var nameParts = [];
-            if (r.team_name && r.team_name.trim()) nameParts.push('<strong>' + escapeHtml(r.team_name) + '</strong>');
-            if (r.leader_name && r.leader_name.trim()) nameParts.push('<span class="text-muted" style="font-size: 0.8125rem;">' + escapeHtml(r.leader_name) + '</span>');
-            if (r.leader_email) nameParts.push('<span class="text-muted" style="font-size: 0.75rem;">' + escapeHtml(r.leader_email) + '</span>');
-            var nameCell = nameParts.length > 0 ? nameParts.join('<br>') : '<span class="text-muted">—</span>';
-            var trackCell = r.track_number ? 'Track ' + r.track_number : '<span class="text-muted">—</span>';
-            var probCell = r.problem_statement ? escapeHtml(truncate(r.problem_statement, 120)) : '<span class="text-muted">—</span>';
-            var cloudRunCell = linkCell(r.cloud_run_deployment_link);
-            var pptCell = linkCell(r.final_project_ppt);
-            var links = [];
-            var L = linkLine('GitHub', r.github_repository_link);
-            if (L) links.push(L);
-            L = linkLine('Demo', r.demo_video_link);
-            if (L) links.push(L);
-            var linksCell = links.length ? '<div class="submission-links-cell">' + links.join(' ') + '</div>' : '<span class="text-muted">—</span>';
-            var validChecked = r.valid ? 'checked' : '';
-            var remarkVal = r.remark ? escapeHtml(r.remark) : '';
-            var isReviewed = r.valid || (r.remark && r.remark.trim());
-            var locked = isReviewed && !isAdmin;
-            var checkboxDisabled = locked ? 'disabled' : '';
-            var remarkDisabled = (locked || r.valid) ? 'disabled' : '';
-            var btnHtml = locked
-                ? '<span class="text-muted" style="font-size: 0.75rem;"><i class="fas fa-lock"></i> Locked</span>'
-                : '<button class="save-row-btn" data-id="' + escapeHtml(id) + '" onclick="saveRow(this)">Save</button>';
-            return '<tr data-id="' + escapeHtml(id) + '"' + (locked ? ' style="opacity: 0.7;"' : '') + '>' +
+            var displayName = (r.leader_name && r.leader_name.trim()) ? r.leader_name.trim() : '';
+            if (!displayName && r.team_name && r.team_name.trim()) displayName = r.team_name.trim();
+            var nameExtra = '';
+            if (displayName && r.team_name && r.team_name.trim() && r.leader_name && r.leader_name.trim() &&
+                r.team_name.trim() !== r.leader_name.trim()) {
+                nameExtra = '<div class="text-muted" style="font-size: 0.75rem; font-weight: 400; margin-top: 2px;">' +
+                    escapeHtml(truncate(r.team_name.trim(), 48)) + '</div>';
+            }
+            var nameCell = displayName
+                ? '<div class="cell-name">' + escapeHtml(displayName) + '</div>' + nameExtra
+                : '<span class="text-muted">—</span>';
+            var emailCell = r.leader_email
+                ? '<span class="cell-email">' + escapeHtml(r.leader_email) + '</span>'
+                : '<span class="text-muted">—</span>';
+            var scoreCell = (r.score != null && r.score !== '')
+                ? '<span class="cell-score">' + escapeHtml(String(r.score)) + '</span>'
+                : '<span class="text-muted">—</span>';
+            var trackCell = r.track_number
+                ? '<span class="cell-track">Track ' + r.track_number + '</span>'
+                : '<span class="text-muted">—</span>';
+            var prob = r.problem_statement ? String(r.problem_statement) : '';
+            var probCell = prob
+                ? '<div class="cell-problem" title="' + escapeHtml(prob) + '">' + escapeHtml(prob) + '</div>'
+                : '<span class="text-muted">—</span>';
+            var linksCell = linksColumn(r);
+            return '<tr>' +
                 '<td>' + nameCell + '</td>' +
+                '<td>' + emailCell + '</td>' +
+                '<td>' + scoreCell + '</td>' +
                 '<td>' + trackCell + '</td>' +
                 '<td>' + probCell + '</td>' +
-                '<td>' + cloudRunCell + '</td>' +
-                '<td>' + pptCell + '</td>' +
                 '<td>' + linksCell + '</td>' +
-                '<td style="text-align: center;"><input type="checkbox" class="verify-checkbox" data-id="' + escapeHtml(id) + '" ' + validChecked + ' ' + checkboxDisabled + ' onchange="onValidToggle(this)"></td>' +
-                '<td><input type="text" class="remark-input" data-id="' + escapeHtml(id) + '" value="' + remarkVal + '" placeholder="Add remark..." ' + remarkDisabled + '></td>' +
-                '<td>' + btnHtml + '</td>' +
                 '</tr>';
         }).join('');
     }
@@ -321,8 +342,8 @@ a.project-col-link:hover { text-decoration: underline; }
         if (validF) params.set('valid', validF);
         if (problemF) params.set('problem_statement', problemF);
         if (track) params.set('track', track);
-        if (!token) { window.location.href = '/login'; return; }
-        fetch('/api/project-submission/list?' + params.toString(), { headers: headers })
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
+        fetch(cohortApiUrl('/api/project-submission/list?' + params.toString()), { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
@@ -334,56 +355,7 @@ a.project-col-link:hover { text-decoration: underline; }
                 renderPagination({ total: data.total, page: data.page, per_page: data.per_page, pages: data.pages });
             })
             .catch(function(err) {
-                document.getElementById('tableBody').innerHTML = '<tr><td colspan="9" class="text-center text-danger">' + escapeHtml(err.message || 'Failed to load') + '</td></tr>';
-            });
-    };
-
-    window.onValidToggle = function(checkbox) {
-        var row = checkbox.closest('tr');
-        var remarkInput = row.querySelector('.remark-input');
-        if (checkbox.checked) {
-            if (remarkInput) { remarkInput.value = ''; remarkInput.disabled = true; }
-        } else {
-            if (remarkInput) { remarkInput.disabled = false; }
-        }
-    };
-
-    window.saveRow = function(btn) {
-        var id = btn.getAttribute('data-id');
-        var row = btn.closest('tr');
-        var checkbox = row.querySelector('.verify-checkbox');
-        var remarkInput = row.querySelector('.remark-input');
-        var valid = checkbox ? checkbox.checked : false;
-        var remark = remarkInput ? remarkInput.value.trim() : '';
-        if (!valid && !remark) {
-            alert('Please either check the Valid box or enter a remark.');
-            return;
-        }
-        btn.disabled = true;
-        btn.textContent = 'Saving...';
-        fetch('/api/project-submission/' + id + '/verify', {
-            method: 'PUT',
-            headers: Object.assign({}, headers, { 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ valid: valid, remark: remark })
-        })
-            .then(function(res) {
-                if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Save failed'); });
-                return res.json();
-            })
-            .then(function() {
-                btn.textContent = 'Saved!';
-                btn.classList.add('saved');
-                setTimeout(function() {
-                    btn.textContent = 'Save';
-                    btn.classList.remove('saved');
-                    btn.disabled = false;
-                }, 1500);
-                loadStats();
-            })
-            .catch(function(err) {
-                alert(err.message || 'Save failed');
-                btn.textContent = 'Save';
-                btn.disabled = false;
+                document.getElementById('tableBody').innerHTML = '<tr><td colspan="6" class="text-center text-danger">' + escapeHtml(err.message || 'Failed to load') + '</td></tr>';
             });
     };
 
@@ -417,6 +389,55 @@ a.project-col-link:hover { text-decoration: underline; }
     document.getElementById('searchInput').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') applyFilters();
     });
+
+    var scoreImportBtn = document.getElementById('scoreImportBtn');
+    if (scoreImportBtn) {
+        scoreImportBtn.addEventListener('click', function() {
+            var f = document.getElementById('scoreImportFile');
+            var track = document.getElementById('scoreImportTrack');
+            var out = document.getElementById('scoreImportResult');
+            if (!f || !f.files || !f.files[0]) {
+                if (out) out.innerHTML = '<span class="text-danger">Choose a file first.</span>';
+                return;
+            }
+            var fd = new FormData();
+            fd.append('file', f.files[0]);
+            fd.append('track_number', track.value);
+            var authHeaders = token ? { 'Authorization': 'Bearer ' + token } : {};
+            scoreImportBtn.disabled = true;
+            if (out) out.textContent = 'Uploading…';
+            fetch(cohortApiUrl('/api/project-submission/import-scores'), {
+                method: 'POST',
+                headers: authHeaders,
+                body: fd
+            })
+                .then(function(res) {
+                    return res.json().then(function(body) {
+                        return { ok: res.ok, body: body };
+                    });
+                })
+                .then(function(r) {
+                    scoreImportBtn.disabled = false;
+                    if (!r.ok) {
+                        if (out) out.innerHTML = '<span class="text-danger">' + escapeHtml(r.body.error || 'Import failed') + '</span>';
+                        return;
+                    }
+                    var b = r.body;
+                    var msg = 'Updated <strong>' + (b.updated || 0) + '</strong> rows; skipped <strong>' + (b.skipped || 0) + '</strong>.';
+                    if (b.errors && b.errors.length) {
+                        msg += '<br><span class="text-muted">' + escapeHtml(b.errors.slice(0, 10).join('; ')) + '</span>';
+                    }
+                    if (out) out.innerHTML = msg;
+                    f.value = '';
+                    loadPage(1);
+                    loadStats();
+                })
+                .catch(function(e) {
+                    scoreImportBtn.disabled = false;
+                    if (out) out.innerHTML = '<span class="text-danger">' + escapeHtml(e.message || 'Import failed') + '</span>';
+                });
+        });
+    }
 
     loadStats();
     loadFilterOptions();

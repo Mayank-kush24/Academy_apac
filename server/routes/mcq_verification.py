@@ -6,28 +6,47 @@ Once reviewed, only admin can edit.
 import csv
 import io
 from datetime import datetime
-from flask import Blueprint, request, jsonify, Response
-from sqlalchemy import or_
+from flask import Blueprint, request, jsonify, Response, g
+from sqlalchemy import or_, desc
 from server.models import db, OptionalMcqVerification, OptionalMcqResponse, MainMcqResponse, UserPII
+from server.utils.cohort_participant_models import participant_model
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
-from server.utils.mcq_answer_key import score_submission, get_track_questions, get_response_score
+from server.utils.mcq_answer_key import (
+    get_track_questions,
+    get_response_score,
+    optional_mcq_row_passes,
+    optional_mcq_pass_threshold,
+)
 from server.utils.main_mcq_answer_key import get_track_questions as main_get_track_questions, score_submission as main_score_submission
 from server.utils.cache import cache_result
 
 bp = Blueprint('mcq_verification', __name__)
 
 
+def _OMR():
+    return participant_model(OptionalMcqResponse)
+
+def _OMV():
+    return participant_model(OptionalMcqVerification)
+
+def _MMR():
+    return participant_model(MainMcqResponse)
+
+def _UPII():
+    return participant_model(UserPII)
+
+
 @cache_result(ttl=900)
-def _get_mcq_stats_cached():
-    """Compute MCQ stats (expensive); cached 15 min. Clear on MCQ import."""
-    total = OptionalMcqResponse.query.count() or 0
+def _get_mcq_stats_cached(table_prefix=''):
+    """Compute MCQ stats (expensive); cached 15 min keyed by cohort."""
+    OMR = participant_model(OptionalMcqResponse)
+    total = OMR.query.count() or 0
     auto_passed = 0
     if total > 0:
-        for r in OptionalMcqResponse.query.all():
-            auto = get_response_score(r)
-            if auto['correct_count'] >= 8:
+        for r in OMR.query.all():
+            if optional_mcq_row_passes(r):
                 auto_passed += 1
     pending = max(0, total - auto_passed)
     auto_pass_rate = round(100.0 * auto_passed / total, 1) if total > 0 else None
@@ -42,9 +61,9 @@ def _get_mcq_stats_cached():
 @bp.route('/stats', methods=['GET'])
 @require_page_access('optional_mcq_verification')
 def get_stats():
-    """Return aggregate stats: total, auto-passed (8+/10), rates (cached 5 min)."""
+    """Return aggregate stats: total, auto-passed (8+/10 for tracks 1–3, 6+/10 for track 4), rates."""
     try:
-        data = _get_mcq_stats_cached()
+        data = _get_mcq_stats_cached(table_prefix=getattr(g, 'table_prefix', ''))
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -64,30 +83,42 @@ def list_responses():
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
-        query = OptionalMcqResponse.query.outerjoin(UserPII, OptionalMcqResponse.email == UserPII.email)
+        OMR = _OMR()
+        UPII = _UPII()
+        query = OMR.query.outerjoin(UPII, OMR.email == UPII.email)
 
         if search:
-            query = query.filter(
-                or_(
-                    OptionalMcqResponse.email.ilike(f'%{search}%'),
-                    OptionalMcqResponse.leader_name.ilike(f'%{search}%'),
-                    UserPII.name.ilike(f'%{search}%'),
-                )
-            )
-        if track_filter and track_filter in ('1', '2', '3'):
-            query = query.filter(OptionalMcqResponse.track_number == int(track_filter))
+            parts = [
+                OMR.email.ilike(f'%{search}%'),
+                OMR.leader_name.ilike(f'%{search}%'),
+                UPII.name.ilike(f'%{search}%'),
+            ]
+            if hasattr(OMR, 'team_name'):
+                parts.append(OMR.team_name.ilike(f'%{search}%'))
+            query = query.filter(or_(*parts))
+        if track_filter and track_filter in ('1', '2', '3', '4'):
+            query = query.filter(OMR.track_number == int(track_filter))
 
-        query = query.order_by(OptionalMcqResponse.track_number.asc(), OptionalMcqResponse.email.asc())
+        # Newest first when the same email has multiple submissions (Cohort 2 track 4).
+        query = query.order_by(
+            OMR.track_number.asc(),
+            OMR.email.asc(),
+            desc(OMR.created_at),
+            desc(OMR.id),
+        )
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         rows = []
         for r in pagination.items:
             d = r.to_dict()
-            d['name'] = r.participant.name if r.participant else None
+            try:
+                d['name'] = r.participant.name if r.participant else None
+            except Exception:
+                d['name'] = None
             auto = get_response_score(r)
             d['score'] = auto['correct_count']
             d['score_display'] = auto['score_display']
             d['verification_results'] = auto['results']
-            d['passed'] = auto['correct_count'] >= 8
+            d['passed'] = optional_mcq_row_passes(r)
             d['question_labels'] = get_track_questions(r.track_number)
             rows.append(d)
 
@@ -102,14 +133,24 @@ def list_responses():
         return jsonify({'error': str(e)}), 500
 
 
-def _build_export_rows(query, passed_only=False):
+def _build_export_rows(query, OMR, passed_only=False):
     """Build list of dicts with name, email, track_number, score_display for CSV export."""
     rows = []
-    for r in query.order_by(OptionalMcqResponse.track_number.asc(), OptionalMcqResponse.email.asc()).all():
+    for r in query.order_by(
+        OMR.track_number.asc(),
+        OMR.email.asc(),
+        desc(OMR.created_at),
+        desc(OMR.id),
+    ).all():
         auto = get_response_score(r)
-        if passed_only and auto['correct_count'] < 6:
-            continue
-        name = (r.participant.name if r.participant else None) or r.leader_name or ''
+        if passed_only:
+            thr = optional_mcq_pass_threshold(getattr(r, 'track_number', 1) or 1)
+            if auto['correct_count'] < thr:
+                continue
+        try:
+            name = (r.participant.name if r.participant else None) or r.leader_name or ''
+        except Exception:
+            name = r.leader_name or ''
         rows.append({
             'name': name or '',
             'email': r.email or '',
@@ -128,10 +169,10 @@ def export_responses():
     """
     try:
         passed_only = request.args.get('passed_only', '0').strip() == '1'
-        query = OptionalMcqResponse.query.outerjoin(
-            UserPII, OptionalMcqResponse.email == UserPII.email
-        )
-        rows = _build_export_rows(query, passed_only=passed_only)
+        OMR = _OMR()
+        UPII = _UPII()
+        query = OMR.query.outerjoin(UPII, OMR.email == UPII.email)
+        rows = _build_export_rows(query, OMR, passed_only=passed_only)
 
         buf = io.StringIO()
         writer = csv.writer(buf)
@@ -171,22 +212,23 @@ def list_entries():
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
-        query = OptionalMcqVerification.query
+        OMV = _OMV()
+        query = OMV.query
 
         if search:
             query = query.filter(
                 or_(
-                    OptionalMcqVerification.name.ilike(f'%{search}%'),
-                    OptionalMcqVerification.email.ilike(f'%{search}%'),
+                    OMV.name.ilike(f'%{search}%'),
+                    OMV.email.ilike(f'%{search}%'),
                 )
             )
 
         if valid_filter == 'true':
-            query = query.filter(OptionalMcqVerification.valid == True)
+            query = query.filter(OMV.valid == True)
         elif valid_filter == 'false':
-            query = query.filter(OptionalMcqVerification.valid == False)
+            query = query.filter(OMV.valid == False)
 
-        query = query.order_by(OptionalMcqVerification.created_at.desc())
+        query = query.order_by(OMV.created_at.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
         rows = [row.to_dict() for row in pagination.items]
@@ -216,7 +258,8 @@ def verify_entry(entry_id):
     Once reviewed, only admin can edit.
     """
     try:
-        entry = OptionalMcqVerification.query.filter_by(id=entry_id).first()
+        OMV = _OMV()
+        entry = OMV.query.filter_by(id=entry_id).first()
         if not entry:
             return jsonify({'error': 'Entry not found'}), 404
 
@@ -259,13 +302,15 @@ def create_entry():
         if not email:
             return jsonify({'error': 'Email is required'}), 400
 
-        existing = OptionalMcqVerification.query.filter_by(email=email).first()
+        OMV = _OMV()
+        existing = OMV.query.filter_by(email=email).first()
         if existing:
             return jsonify({'error': 'An entry for this email already exists', 'entry': existing.to_dict()}), 409
 
         name = (data.get('name') or '').strip() or None
         if not name:
-            profile = UserPII.query.filter_by(email=email).first()
+            UPII = _UPII()
+            profile = UPII.query.filter_by(email=email).first()
             if profile and profile.name:
                 name = profile.name
 
@@ -289,19 +334,20 @@ def create_entry():
 # ----- Main MCQ (MCQ Verification) -----
 
 @cache_result(ttl=900)
-def _get_main_mcq_stats_cached():
-    """Main MCQ stats: total and passed (score >= 6) per track."""
+def _get_main_mcq_stats_cached(table_prefix=''):
+    """Main MCQ stats: total and passed (score >= 6) per track, keyed by cohort."""
     try:
+        MMR = participant_model(MainMcqResponse)
         by_track = []
         for track_num in (1, 2, 3):
-            total = MainMcqResponse.query.filter(MainMcqResponse.track_number == track_num).count()
-            passed = MainMcqResponse.query.filter(
-                MainMcqResponse.track_number == track_num,
-                MainMcqResponse.score >= 6
+            total = MMR.query.filter(MMR.track_number == track_num).count()
+            passed = MMR.query.filter(
+                MMR.track_number == track_num,
+                MMR.score >= 6
             ).count()
             by_track.append({'track': track_num, 'total': total, 'passed_6': passed})
-        total_all = MainMcqResponse.query.count()
-        passed_all = MainMcqResponse.query.filter(MainMcqResponse.score >= 6).count()
+        total_all = MMR.query.count()
+        passed_all = MMR.query.filter(MMR.score >= 6).count()
         rate = round(100.0 * passed_all / total_all, 1) if total_all else None
         return {
             'main_mcq_by_track': by_track,
@@ -323,7 +369,7 @@ def _get_main_mcq_stats_cached():
 def get_main_stats():
     """Return main MCQ stats (total, passed 6+ per track, rate)."""
     try:
-        data = _get_main_mcq_stats_cached()
+        data = _get_main_mcq_stats_cached(table_prefix=getattr(g, 'table_prefix', ''))
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -343,28 +389,32 @@ def list_main_responses():
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
-        query = MainMcqResponse.query.outerjoin(UserPII, MainMcqResponse.email == UserPII.email)
+        MMR = _MMR()
+        UPII = _UPII()
+        query = MMR.query.outerjoin(UPII, MMR.email == UPII.email)
 
         if search:
             query = query.filter(
                 or_(
-                    MainMcqResponse.email.ilike(f'%{search}%'),
-                    MainMcqResponse.leader_name.ilike(f'%{search}%'),
-                    UserPII.name.ilike(f'%{search}%'),
+                    MMR.email.ilike(f'%{search}%'),
+                    MMR.leader_name.ilike(f'%{search}%'),
+                    UPII.name.ilike(f'%{search}%'),
                 )
             )
         if track_filter and track_filter in ('1', '2', '3'):
-            query = query.filter(MainMcqResponse.track_number == int(track_filter))
+            query = query.filter(MMR.track_number == int(track_filter))
 
-        query = query.order_by(MainMcqResponse.track_number.asc(), MainMcqResponse.email.asc())
+        query = query.order_by(MMR.track_number.asc(), MMR.email.asc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
         rows = []
         for r in pagination.items:
             d = r.to_dict()
-            d['name'] = r.participant.name if r.participant else None
+            try:
+                d['name'] = r.participant.name if r.participant else None
+            except Exception:
+                d['name'] = None
             d['score'] = r.score
             d['score_display'] = f'{r.score}/10' if r.score is not None else '—'
-            # Recompute results for display (per-question correct/incorrect)
             auto = main_score_submission(
                 r.track_number,
                 r.question_1, r.question_2, r.question_3, r.question_4,
@@ -393,13 +443,18 @@ def export_main_responses():
     """Export Main MCQ responses as CSV: name, email, track, score. passed_only=1 for score >= 6."""
     try:
         passed_only = request.args.get('passed_only', '0').strip() == '1'
-        query = MainMcqResponse.query.outerjoin(UserPII, MainMcqResponse.email == UserPII.email)
-        query = query.order_by(MainMcqResponse.track_number.asc(), MainMcqResponse.email.asc())
+        MMR = _MMR()
+        UPII = _UPII()
+        query = MMR.query.outerjoin(UPII, MMR.email == UPII.email)
+        query = query.order_by(MMR.track_number.asc(), MMR.email.asc())
         rows = []
         for r in query.all():
             if passed_only and (r.score is None or r.score < 6):
                 continue
-            name = (r.participant.name if r.participant else None) or r.leader_name or ''
+            try:
+                name = (r.participant.name if r.participant else None) or r.leader_name or ''
+            except Exception:
+                name = r.leader_name or ''
             rows.append({
                 'name': name or '',
                 'email': r.email or '',

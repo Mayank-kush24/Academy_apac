@@ -1,51 +1,110 @@
 """
 Book of Business (BOB) match utility.
-Recalculates UserPII.bob_match by comparing organization_name (normalized) to bob_companies.
-"""
-from server.models import db, UserPII, BobCompany
+Sets user_pii / user_pii_injected.bob_match by comparing normalized organization_name
+to cohort-prefixed bob_companies (e.g. cohort_2_bob_companies).
 
-BATCH_SIZE = 2000
+Recalculation uses PostgreSQL UPDATE + EXISTS so it does not depend on reflected ORM
+models and matches trim+lower semantics consistently for BOB rows and user orgs.
+"""
+import re
+
+from flask import g, has_app_context
+from sqlalchemy import text
+
+from server.models import db
+
+_PREFIX_RE = re.compile(r"^$|^cohort_[0-9]+_$")
 
 
 def _normalize(s):
-    """Trim and lower for matching."""
+    """Trim and lower for matching (same semantics as SQL btrim + lower)."""
     if s is None or not isinstance(s, str):
         return ""
     return s.strip().lower()
 
 
-def get_bob_normalized_set():
-    """Load all normalized company names from bob_companies into a set."""
-    names = set()
-    for row in BobCompany.query.with_entities(
-        BobCompany.normalized_name,
-        BobCompany.company_name
-    ).all():
-        n = row[0] if row[0] else _normalize(row[1])
-        if n:
-            names.add(n)
-    return names
+# Prefer non-empty normalized_name, else company_name — same as legacy Python import path.
+# IS DISTINCT FROM avoids rewriting rows that already have the correct bob_match.
+_BOB_MATCH_UPDATE_SQL = """
+WITH computed AS (
+    SELECT u.id AS uid,
+        (
+            btrim(COALESCE(u.organization_name, '')) <> ''
+            AND EXISTS (
+                SELECT 1 FROM {bob_tbl} AS b
+                WHERE lower(btrim(COALESCE(u.organization_name, ''))) = lower(btrim(
+                    CASE
+                        WHEN b.normalized_name IS NOT NULL AND btrim(b.normalized_name) <> ''
+                            THEN b.normalized_name
+                        ELSE COALESCE(b.company_name, '')
+                    END
+                ))
+            )
+        ) AS new_bm
+    FROM {pii_tbl} AS u
+)
+UPDATE {pii_tbl} AS u
+SET bob_match = c.new_bm
+FROM computed AS c
+WHERE u.id = c.uid AND u.bob_match IS DISTINCT FROM c.new_bm
+"""
+
+
+def recalculate_bob_match_with_prefix(prefix: str) -> int:
+    """
+    Recompute bob_match for user_pii and user_pii_injected using raw SQL.
+    prefix: '' (cohort 1) or 'cohort_2_', etc.
+    Returns total rowcount from both UPDATEs (may be -1 on some drivers; summed as 0).
+    """
+    prefix = prefix or ""
+    if not _PREFIX_RE.match(prefix):
+        raise ValueError(f"Invalid table prefix: {prefix!r}")
+
+    pii = f"{prefix}user_pii"
+    inj = f"{prefix}user_pii_injected"
+    bob = f"{prefix}bob_companies"
+
+    total = 0
+    for pii_tbl in (pii, inj):
+        stmt = text(_BOB_MATCH_UPDATE_SQL.format(pii_tbl=pii_tbl, bob_tbl=bob))
+        result = db.session.execute(stmt)
+        rc = result.rowcount
+        if rc is not None and rc >= 0:
+            total += rc
+    db.session.commit()
+    return total
 
 
 def recalculate_bob_match():
     """
-    Recalculate bob_match for all UserPII rows.
-    bob_match = True iff normalized organization_name is in the BOB companies set.
-    Commits in batches.
+    Recompute bob_match for the current request cohort (g.table_prefix).
+    Requires Flask app context and cohort-scoped request (or worker that set g.table_prefix).
     """
-    bob_set = get_bob_normalized_set()
-    updated = 0
-    offset = 0
-    while True:
-        batch = UserPII.query.order_by(UserPII.id).limit(BATCH_SIZE).offset(offset).all()
-        if not batch:
-            break
-        for user in batch:
-            org = user.organization_name
-            match = bool(org and _normalize(org) in bob_set)
-            if user.bob_match != match:
-                user.bob_match = match
-                updated += 1
-        db.session.commit()
-        offset += BATCH_SIZE
-    return updated
+    if not has_app_context():
+        raise RuntimeError("recalculate_bob_match requires Flask app context")
+    prefix = getattr(g, "table_prefix", None) or ""
+    return recalculate_bob_match_with_prefix(prefix)
+
+
+def get_bob_normalized_set():
+    """
+    Load normalized BOB keys (for diagnostics/tests). Uses ORM + participant_model;
+    prefers cohort-prefixed bob_companies when g.table_prefix is set.
+    """
+    from server.models import BobCompany
+    from server.utils.cohort_participant_models import participant_model
+
+    Bob = participant_model(BobCompany)
+    names = set()
+    for row in Bob.query.with_entities(Bob.normalized_name, Bob.company_name).all():
+        nn, cn = row[0], row[1]
+        if nn is not None and str(nn).strip() != "":
+            base = nn
+        else:
+            base = cn
+        if base is None:
+            continue
+        n = _normalize(str(base))
+        if n:
+            names.add(n)
+    return names

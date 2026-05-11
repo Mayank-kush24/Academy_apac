@@ -209,6 +209,7 @@ class BobCompany(db.Model):
 class User(db.Model):
     """Table for storing application users (admin, editor, viewer)"""
     __tablename__ = 'users'
+    __table_args__ = {'schema': 'public'}
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     name = db.Column(db.String(255), nullable=False)
@@ -217,6 +218,7 @@ class User(db.Model):
     role = db.Column(db.String(50), nullable=False, default='viewer')  # admin, editor, viewer
     status = db.Column(db.String(50), nullable=False, default='active')  # active, inactive
     allowed_pages = db.Column(db.JSON, nullable=True)  # list of page ids user can see, e.g. ['home','dashboard','profiles']; null = use role defaults
+    allowed_cohort_ids = db.Column(db.JSON, nullable=True)  # e.g. [1, 2]; null = all enabled cohorts (admins always see all)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):
@@ -228,6 +230,7 @@ class User(db.Model):
             'role': self.role,
             'status': self.status,
             'allowed_pages': self.allowed_pages,
+            'allowed_cohort_ids': self.allowed_cohort_ids,
             'created_at': self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -261,6 +264,9 @@ class SkillboostProfile(db.Model):
     Do not overwrite rows where valid = TRUE when importing.
     Email is not FK to user_pii so we can import all XLSX rows; profile page shows
     skillboost_profiles for a user by email when that user exists in user_pii.
+
+    Credits: server.utils.skillboost_profile_reconcile enforces at most one canonical
+    row per email after dispatch and trims >2 valid rows without a dispatch.
     """
     __tablename__ = 'skillboost_profile'
 
@@ -310,6 +316,8 @@ class SkillLabSubmission(db.Model):
     updated_by_email = db.Column(db.String(255), nullable=True)
     valid = db.Column(db.Boolean, default=False, nullable=False)
     remark = db.Column(db.Text, nullable=True)
+    completion_date = db.Column(db.DateTime, nullable=True)
+    last_verified_at = db.Column(db.DateTime, nullable=True)
 
     # Relationship to UserPII
     leader = db.relationship('UserPII', foreign_keys=[leader_email], primaryjoin='SkillLabSubmission.leader_email == UserPII.email', lazy='joined')
@@ -332,6 +340,8 @@ class SkillLabSubmission(db.Model):
             'updated_by_email': self.updated_by_email,
             'valid': bool(self.valid),
             'remark': self.remark,
+            'completion_date': self.completion_date.isoformat() if self.completion_date else None,
+            'last_verified_at': self.last_verified_at.isoformat() if self.last_verified_at else None,
         }
 
 
@@ -364,6 +374,8 @@ class CodeLabSubmission(db.Model):
     updated_by_email = db.Column(db.String(255), nullable=True)
     valid = db.Column(db.Boolean, default=False, nullable=False)
     remark = db.Column(db.Text, nullable=True)
+    completion_date = db.Column(db.DateTime, nullable=True)
+    last_verified_at = db.Column(db.DateTime, nullable=True)
 
     leader = db.relationship('UserPII', foreign_keys=[leader_email], primaryjoin='CodeLabSubmission.leader_email == UserPII.email', lazy='joined')
 
@@ -386,6 +398,8 @@ class CodeLabSubmission(db.Model):
             'updated_by_email': self.updated_by_email,
             'valid': bool(self.valid),
             'remark': self.remark,
+            'completion_date': self.completion_date.isoformat() if self.completion_date else None,
+            'last_verified_at': self.last_verified_at.isoformat() if self.last_verified_at else None,
         }
 
 
@@ -420,10 +434,13 @@ class ProjectSubmission(db.Model):
     updated_by_email = db.Column(db.String(255), nullable=True)
     valid = db.Column(db.Boolean, default=False, nullable=False)
     remark = db.Column(db.Text, nullable=True)
+    score = db.Column(db.Numeric(10, 2), nullable=True)
 
     leader = db.relationship('UserPII', foreign_keys=[leader_email], primaryjoin='ProjectSubmission.leader_email == UserPII.email', lazy='joined')
 
     def to_dict(self):
+        sc = getattr(self, 'score', None)
+        score_out = float(sc) if sc is not None else None
         return {
             'id': str(self.id),
             'track_number': self.track_number,
@@ -445,6 +462,7 @@ class ProjectSubmission(db.Model):
             'updated_by_email': self.updated_by_email,
             'valid': bool(self.valid),
             'remark': self.remark,
+            'score': score_out,
         }
 
 
@@ -487,15 +505,17 @@ class OptionalMcqVerification(db.Model):
 
 class OptionalMcqResponse(db.Model):
     """
-    Optional MCQ response table. One row per (track_number, email).
-    Columns match XLSX: Leader Name, Leader Email (FK to user_pii), Leader Phone, Team size,
-    Problem Statements, Q1.–Q10., plus created/updated audit fields. Team Name is skipped.
+    Optional MCQ response table. Cohort 1: one row per (track_number, email), upsert on import.
+    Cohort 2 (track 4): multiple rows per email allowed (repeat submissions); each import row is inserted.
+    Columns match XLSX: Team Name (optional), Leader Name, Leader Email (FK to user_pii), Leader Phone,
+    Team size, Problem Statements (optional), Q1.–Q10., plus created/updated audit fields.
     """
     __tablename__ = 'optional_mcq_response'
     __table_args__ = (db.UniqueConstraint('track_number', 'email', name='uq_optional_mcq_response_track_email'),)
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    track_number = db.Column(db.Integer, nullable=False)  # 1, 2, or 3
+    track_number = db.Column(db.Integer, nullable=False)  # 1–3 (Cohort 1 tracks) or 4 (Cohort 2 optional)
+    team_name = db.Column(db.String(512), nullable=True)
     leader_name = db.Column(db.String(255), nullable=True)
     email = db.Column(db.String(255), db.ForeignKey('user_pii.email'), nullable=False)  # Leader Email
     leader_phone = db.Column(db.String(50), nullable=True)
@@ -525,6 +545,7 @@ class OptionalMcqResponse(db.Model):
         return {
             'id': str(self.id),
             'track_number': self.track_number,
+            'team_name': self.team_name,
             'leader_name': self.leader_name,
             'email': self.email,
             'leader_phone': self.leader_phone,
@@ -618,6 +639,7 @@ class MainMcqResponse(db.Model):
 class ActivityLog(db.Model):
     """Table for storing activity logs (create/update/delete on any tracked table)"""
     __tablename__ = 'activity_logs'
+    __table_args__ = {'schema': 'public'}
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)

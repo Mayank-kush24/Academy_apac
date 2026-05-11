@@ -1,61 +1,58 @@
 """
-Authentication routes
+Authentication routes (CDI only — no password login).
 """
-from flask import Blueprint, request, jsonify
-import bcrypt
-from server.models import db, User
-from server.utils.auth import generate_token, get_current_user
-from server.utils.permissions import require_role
+from flask import Blueprint, jsonify
 
-bp = Blueprint('auth', __name__)
+from server.h2s_cdi_auth import get_session_payload_from_request
+from server.utils.auth import get_current_user
+
+bp = Blueprint("auth", __name__)
 
 
-@bp.route('/login', methods=['POST'])
+def _user_from_cdi_payload(payload: dict) -> dict:
+    """Synthesize a User-like dict from the CDI JWT when no local User row exists."""
+    is_admin = bool(payload.get("isAdmin"))
+    email = (payload.get("email") or payload.get("sub") or "").strip()
+    name = (payload.get("name") or "").strip() or (email or "Portal user")
+    return {
+        "id": str(payload.get("sub") or payload.get("user_id") or email or ""),
+        "name": name,
+        "email": email,
+        "role": "admin" if is_admin else "viewer",
+        "status": "active",
+        "allowed_pages": None,
+        "allowed_cohort_ids": None,
+        "created_at": None,
+        "_source": "cdi_jwt",
+    }
+
+
+@bp.route("/login", methods=["POST"])
 def login():
-    """User login endpoint"""
-    try:
-        data = request.get_json(silent=True) or {}
-        email = (data.get('email') or '').strip()
-        password = data.get('password') or ''
-        
-        if not email or not password:
-            return jsonify({'error': 'Email and password are required'}), 400
-        
-        # Find user
-        user = User.query.filter_by(email=email).first()
-        if not user:
-            return jsonify({'error': 'Invalid credentials'}), 401
-        
-        # Check status
-        if user.status != 'active':
-            return jsonify({'error': 'User account is inactive'}), 403
-        
-        # Normalize password_hash to bytes for bcrypt (column may be str or bytes)
-        pw_hash = user.password_hash
-        if isinstance(pw_hash, str):
-            pw_hash = pw_hash.encode('utf-8')
-        if not bcrypt.checkpw(password.encode('utf-8'), pw_hash):
-            return jsonify({'error': 'Invalid credentials'}), 401
-        
-        # Generate token
-        token = generate_token(user)
-        
-        return jsonify({
-            'token': token,
-            'user': user.to_dict()
-        }), 200
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    """Password login removed; use the CDI portal."""
+    return (
+        jsonify(
+            {
+                "error": "Password login is disabled. Open this app from the CDI dashboard "
+                "or sign in at the portal."
+            }
+        ),
+        410,
+    )
 
 
-@bp.route('/me', methods=['GET'])
+@bp.route("/me", methods=["GET"])
 def get_current_user_info():
-    """Get current authenticated user info"""
+    """
+    Current user from h2s_cdi_session.
+    Prefers a matching DB User; falls back to JWT info so the UI does not bounce to /login.
+    """
     user = get_current_user()
-    if not user:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    return jsonify({
-        'user': user.to_dict()
-    }), 200
+    if user:
+        return jsonify({"user": user.to_dict()}), 200
+
+    payload = get_session_payload_from_request()
+    if payload:
+        return jsonify({"user": _user_from_cdi_payload(payload)}), 200
+
+    return jsonify({"error": "Authentication required"}), 401

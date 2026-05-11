@@ -1,22 +1,177 @@
 """
 Excel parsing and field mapping utilities
 """
+from collections import Counter
+from types import SimpleNamespace
+import re
+
 import pandas as pd
 from datetime import datetime
 from sqlalchemy.exc import DataError, IntegrityError
-from server.models import UserPII, UserPIIInjected, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqResponse, MainMcqResponse
 
 
-# Substring to auto-detect Skill Lab / Google Skills Boost sheet (case-insensitive)
-SKILLBOOST_SHEET_SUBSTRING = "Share your Google Skills Pu"
+def _import_models():
+    """Participant ORM classes for the current cohort (g.table_prefix)."""
+    from server import models as m
+    from server.utils.cohort_participant_models import participant_model
 
-# Substring to auto-detect Skill Lab Submission sheet (case-insensitive)
+    return SimpleNamespace(
+        UserPII=participant_model(m.UserPII),
+        UserPIIInjected=participant_model(m.UserPIIInjected),
+        SkillboostProfile=participant_model(m.SkillboostProfile),
+        SkillLabSubmission=participant_model(m.SkillLabSubmission),
+        CodeLabSubmission=participant_model(m.CodeLabSubmission),
+        ProjectSubmission=participant_model(m.ProjectSubmission),
+        OptionalMcqResponse=participant_model(m.OptionalMcqResponse),
+        MainMcqResponse=participant_model(m.MainMcqResponse),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Sheet-detection registry (single source of truth)
+#
+# Detection is regex-based and prefix-agnostic so Action Center can renumber
+# tabs (e.g. "16.MCQ Track 1" -> "15.MCQ Track 1") without breaking imports.
+# Each detector classifies any workbook tab whose name contains the pattern.
+# Main MCQ uses a negative lookahead so "MCQ Optional Track 1" is NEVER
+# misclassified as Main MCQ.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class SheetDetector:
+    """One sheet-classification rule.
+
+    module           — short stable key the rest of the code groups by
+                       (e.g. "main_mcq", "optional_mcq", "skillboost_profile")
+    label            — human-readable name shown in the UI
+    patterns         — list of regex strings (case-insensitive); first hit wins
+    track / lab      — optional track/lab number when the module is per-track
+    critical         — bool: when True (for the active cohort), absence of this
+                       sheet from a workbook is surfaced as a missing-critical
+                       warning the user must explicitly acknowledge.
+    cohorts          — optional iterable of cohort_ids this detector applies to
+                       (None = applies to all cohorts).
+    """
+
+    __slots__ = ("module", "label", "patterns", "track", "lab",
+                 "critical", "cohorts", "_compiled")
+
+    def __init__(self, module, label, patterns, track=None, lab=None,
+                 critical=False, cohorts=None):
+        self.module = module
+        self.label = label
+        self.patterns = list(patterns)
+        self.track = track
+        self.lab = lab
+        self.critical = bool(critical)
+        self.cohorts = tuple(cohorts) if cohorts is not None else None
+        self._compiled = [re.compile(p, re.IGNORECASE) for p in self.patterns]
+
+    def applies_to_cohort(self, cohort_id):
+        """True if this detector is active for the given cohort_id (None = any)."""
+        if self.cohorts is None:
+            return True
+        return cohort_id in self.cohorts
+
+    def matches(self, sheet_name):
+        """True if sheet_name (whitespace-collapsed) matches any compiled pattern."""
+        if sheet_name is None:
+            return False
+        norm = re.sub(r"\s+", " ", str(sheet_name).replace("\u00a0", " ")).strip()
+        return any(rx.search(norm) for rx in self._compiled)
+
+    def is_critical_for_cohort(self, cohort_id):
+        return self.critical and self.applies_to_cohort(cohort_id)
+
+
+# Order matters: more specific detectors first so they "win" over fall-throughs.
+# Main MCQ uses negative lookahead "(?!optional\s)" so a tab named
+# "MCQ Optional Track 1" is matched by optional_mcq, never main_mcq.
+SHEET_DETECTORS = [
+    # Skills Boost profile (any of three accepted phrasings)
+    SheetDetector(
+        "skillboost_profile", "Skills Boost Profile",
+        [r"share\s+your\s+google\s+skills\s+(?:pub|boost|pu)\b"],
+        critical=False,
+    ),
+
+    # Skill Lab Submission
+    SheetDetector(
+        "skilllab_submission", "Skill Lab Submission",
+        [r"google\s+skills\s+lab\s+submissio"],
+        critical=True,
+    ),
+
+    # Code Lab Submission
+    SheetDetector(
+        "codelab_submission", "Code Lab Submission",
+        [r"code\s+lab\s+submissio"],
+        critical=True,
+    ),
+
+    # Optional MCQ Track N (must contain "Optional" between MCQ and Track)
+    SheetDetector("optional_mcq", "Optional MCQ Track 1",
+                  [r"mcq\s+optional\s+track\s+1\b"], track=1, critical=True),
+    SheetDetector("optional_mcq", "Optional MCQ Track 2",
+                  [r"mcq\s+optional\s+track\s+2\b"], track=2, critical=True),
+    SheetDetector("optional_mcq", "Optional MCQ Track 3",
+                  [r"mcq\s+optional\s+track\s+3\b"], track=3, critical=True),
+
+    # Main MCQ Track N (must NOT have "Optional" between MCQ and Track).
+    # Negative lookahead protects against "MCQ Optional Track 1" matching here.
+    SheetDetector("main_mcq", "Main MCQ Track 1",
+                  [r"mcq\s+(?!optional\s)track\s+1\b"], track=1, critical=True),
+    SheetDetector("main_mcq", "Main MCQ Track 2",
+                  [r"mcq\s+(?!optional\s)track\s+2\b"], track=2, critical=True),
+    SheetDetector("main_mcq", "Main MCQ Track 3",
+                  [r"mcq\s+(?!optional\s)track\s+3\b"], track=3, critical=True),
+
+    # Lab Completion N x Track N
+    SheetDetector("lab_completion", "Lab Completion 1 Track 1",
+                  [r"lab\s+completion\s+1\s+track\s+1\b"], lab=1, track=1, critical=True),
+    SheetDetector("lab_completion", "Lab Completion 1 Track 2",
+                  [r"lab\s+completion\s+1\s+track\s+2\b"], lab=1, track=2, critical=True),
+    SheetDetector("lab_completion", "Lab Completion 1 Track 3",
+                  [r"lab\s+completion\s+1\s+track\s+3\b"], lab=1, track=3, critical=True),
+    SheetDetector("lab_completion", "Lab Completion 2 Track 1",
+                  [r"lab\s+completion\s+2\s+track\s+1\b"], lab=2, track=1, critical=True),
+    SheetDetector("lab_completion", "Lab Completion 2 Track 2",
+                  [r"lab\s+completion\s+2\s+track\s+2\b"], lab=2, track=2, critical=True),
+    SheetDetector("lab_completion", "Lab Completion 2 Track 3",
+                  [r"lab\s+completion\s+2\s+track\s+3\b"], lab=2, track=3, critical=True),
+
+    # Project Submission Track N
+    SheetDetector("project_submission", "Project Submission Track 1",
+                  [r"project\s+submission\s+track\s+1\b"], track=1, critical=True),
+    SheetDetector("project_submission", "Project Submission Track 2",
+                  [r"project\s+submission\s+track\s+2\b"], track=2, critical=True),
+    SheetDetector("project_submission", "Project Submission Track 3",
+                  [r"project\s+submission\s+track\s+3\b"], track=3, critical=True),
+
+    # Cohort 2 Optional MCQ — anchored exact pattern "<digits>.MCQ Optional"
+    # (e.g. "14.MCQ Optional"). Active only for Cohort 2.
+    SheetDetector(
+        "cohort2_optional_mcq", "Cohort 2 Optional MCQ",
+        [r"^\s*\d+\.\s*mcq\s+optional\s*$"],
+        critical=True, cohorts=(2,),
+    ),
+]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Backward-compatibility constants
+# Existing call sites still import these names; they now resolve to the
+# regex-based detectors above. A new substring such as "MCQ Track 1" works
+# regardless of any leading "16." / "15." numbering.
+# ─────────────────────────────────────────────────────────────────────────────
+SKILLBOOST_SHEET_SUBSTRINGS = (
+    "Share your Google Skills Pub",
+    "Share your Google Skills Boost",
+    "Share your Google Skills Pu",
+)
+SKILLBOOST_SHEET_SUBSTRING = SKILLBOOST_SHEET_SUBSTRINGS[0]
 SKILLLAB_SUBMISSION_SHEET_SUBSTRING = "Google Skills Lab Submissio"
-
-# Substring to auto-detect Code Lab Submission sheet (case-insensitive)
 CODELAB_SUBMISSION_SHEET_SUBSTRING = "Code Lab Submissio"
-
-# Substrings to auto-detect Lab Completion sheets (Lab 1 & Lab 2, Track 1-3)
 LAB_COMPLETION_SHEET_SUBSTRINGS = [
     {'substring': 'Lab Completion 1 Track 1', 'lab': 1, 'track': 1},
     {'substring': 'Lab Completion 1 Track 2', 'lab': 1, 'track': 2},
@@ -25,28 +180,128 @@ LAB_COMPLETION_SHEET_SUBSTRINGS = [
     {'substring': 'Lab Completion 2 Track 2', 'lab': 2, 'track': 2},
     {'substring': 'Lab Completion 2 Track 3', 'lab': 2, 'track': 3},
 ]
-
-# Substrings to auto-detect Optional MCQ sheets (Track 1, 2, 3)
-MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING = "MCQ Optional Track 1  Agent"
-MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING = "MCQ Optional Track 2 Connec"
-MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING = "MCQ Optional Track 3 Poweri"
-
-# Substrings to auto-detect Main MCQ sheets (16, 17, 18)
-MCQ_MAIN_TRACK1_SHEET_SUBSTRING = "16.MCQ Track 1"
-MCQ_MAIN_TRACK2_SHEET_SUBSTRING = "17.MCQ Track 2"
-MCQ_MAIN_TRACK3_SHEET_SUBSTRING = "18.MCQ Track 3"
-
-# Project Submission sheets (Track 1–3), e.g. "1.Project Submission Track 1"
+MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING = "MCQ Optional Track 1"
+MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING = "MCQ Optional Track 2"
+MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING = "MCQ Optional Track 3"
+_COHORT2_OPTIONAL_MCQ_SHEET_NAME_RE = re.compile(
+    r"^\s*\d+\.\s*MCQ\s+Optional\s*$",
+    re.IGNORECASE,
+)
+# Prefix-agnostic Main MCQ substrings (no leading "16."/"17."/"18." required).
+MCQ_MAIN_TRACK1_SHEET_SUBSTRING = "MCQ Track 1"
+MCQ_MAIN_TRACK2_SHEET_SUBSTRING = "MCQ Track 2"
+MCQ_MAIN_TRACK3_SHEET_SUBSTRING = "MCQ Track 3"
 PROJECT_SUBMISSION_SHEET_DEFINITIONS = [
     {'track': 1, 'substring': 'Project Submission Track 1'},
     {'track': 2, 'substring': 'Project Submission Track 2'},
     {'track': 3, 'substring': 'Project Submission Track 3'},
 ]
 
-# Batch outer commit every N successful DB rows during import (nested savepoints per row keep one failure from aborting the whole batch)
+# Per-row SAVEPOINT (db.session.begin_nested) is used inside every importer so
+# a single failed row never aborts a multi-row batch. The outer commit at the
+# end of the importer flushes everything that survived.
 IMPORT_BATCH_COMMIT_SIZE = 500
 # Chunk size for SQL IN (...) when preloading rows by email
 IMPORT_EMAIL_IN_CHUNK = 500
+
+
+def _match_detector(sheet_name, cohort_id=None):
+    """Return the first SheetDetector matching sheet_name (active for cohort), or None."""
+    if sheet_name is None:
+        return None
+    for det in SHEET_DETECTORS:
+        if not det.applies_to_cohort(cohort_id):
+            continue
+        if det.matches(sheet_name):
+            return det
+    return None
+
+
+def classify_workbook_sheets(file_path, cohort_id=None):
+    """Walk every tab in the workbook and classify it via SHEET_DETECTORS.
+
+    Returns dict with:
+        sheet_count
+        sheet_names         — every tab in workbook order
+        sheet_mapping       — list of dicts, one per tab in workbook order:
+                              {"sheet_name", "module", "label", "track",
+                               "lab", "status"}
+                              status in {"detected", "duplicate", "unrecognised"}.
+                              "duplicate" = a later tab matched a detector that
+                              an earlier tab already claimed (only the first
+                              wins for import).
+        detected_by_module  — dict module_key -> list of mapping rows that
+                              were classified as that module (in workbook order).
+        missing_critical_modules — list of {"module", "label", "track", "lab"}
+                              for every critical detector (for the cohort) that
+                              did not match any tab.
+    """
+    sheet_names = get_sheet_names(file_path)
+    sheet_mapping = []
+    detected_by_module = {}
+    matched_detector_keys = set()
+
+    for name in sheet_names:
+        det = _match_detector(name, cohort_id=cohort_id)
+        if det is None:
+            sheet_mapping.append({
+                "sheet_name": name,
+                "module": None,
+                "label": None,
+                "track": None,
+                "lab": None,
+                "status": "unrecognised",
+            })
+            continue
+
+        det_key = (det.module, det.track, det.lab)
+        status = "duplicate" if det_key in matched_detector_keys else "detected"
+        row = {
+            "sheet_name": name,
+            "module": det.module,
+            "label": det.label,
+            "track": det.track,
+            "lab": det.lab,
+            "status": status,
+        }
+        sheet_mapping.append(row)
+        if status == "detected":
+            matched_detector_keys.add(det_key)
+            detected_by_module.setdefault(det.module, []).append(row)
+
+    # Missing critical modules
+    missing = []
+    for det in SHEET_DETECTORS:
+        if not det.is_critical_for_cohort(cohort_id):
+            continue
+        det_key = (det.module, det.track, det.lab)
+        if det_key in matched_detector_keys:
+            continue
+        missing.append({
+            "module": det.module,
+            "label": det.label,
+            "track": det.track,
+            "lab": det.lab,
+        })
+
+    return {
+        "sheet_count": len(sheet_names),
+        "sheet_names": sheet_names,
+        "sheet_mapping": sheet_mapping,
+        "detected_by_module": detected_by_module,
+        "missing_critical_modules": missing,
+    }
+
+
+def first_sheet_for_module(classification, module, track=None, lab=None):
+    """Return the first detected sheet name for (module, track, lab), or None."""
+    for row in classification.get("detected_by_module", {}).get(module, []) or []:
+        if track is not None and row.get("track") != track:
+            continue
+        if lab is not None and row.get("lab") != lab:
+            continue
+        return row.get("sheet_name")
+    return None
 
 
 def _chunk_list(items, size):
@@ -69,6 +324,234 @@ def get_sheet_names(file_path):
         return list(xl.sheet_names)
     except Exception:
         return []
+
+
+def find_skillboost_sheet_name_in_list(sheet_names):
+    """
+    First worksheet whose name contains any of SKILLBOOST_SHEET_SUBSTRINGS.
+    Matches in substring order, then workbook sheet order (same as previous single-substring behavior).
+    """
+    if not sheet_names:
+        return None
+    for sub in SKILLBOOST_SHEET_SUBSTRINGS:
+        for name in sheet_names:
+            if name is not None and sub.lower() in str(name).lower():
+                return name
+    return None
+
+
+def find_skillboost_sheet_in_file(file_path):
+    return find_skillboost_sheet_name_in_list(get_sheet_names(file_path))
+
+
+def skillboost_sheet_not_found_message():
+    """Short user-facing hint when no Skills profile sheet is detected."""
+    inner = '", "'.join(SKILLBOOST_SHEET_SUBSTRINGS)
+    return f'No worksheet whose name contains one of: "{inner}".'
+
+
+ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE = (
+    "No recognized Action Center subsheets in this workbook. "
+    "Expected at least one sheet whose name contains one of (any leading "
+    'numbering is ignored): "MCQ Track 1/2/3" (Main MCQ), '
+    '"MCQ Optional Track 1/2/3" (Optional MCQ), '
+    '"Share your Google Skills …" (profile), '
+    '"Google Skills Lab Submissio…", "Code Lab Submissio…", '
+    '"Lab Completion 1/2 Track 1/2/3", or "Project Submission Track 1/2/3".'
+)
+
+
+def action_center_has_non_profile_imports(sheets):
+    """
+    True if load_all_skillboost_sheets found at least one non-empty importable sheet
+    other than the Skill Lab profile sheet (submission, code lab, MCQ, labs, projects).
+    """
+    if not sheets or not isinstance(sheets, dict):
+        return False
+
+    def _nonempty_df(df):
+        return df is not None and len(df) > 0
+
+    if sheets.get("submission_sheet_name") and _nonempty_df(sheets.get("submission_df")):
+        return True
+    if sheets.get("codelab_sheet_name") and _nonempty_df(sheets.get("codelab_df")):
+        return True
+    for lc in sheets.get("lab_completion_sheets") or []:
+        if _nonempty_df(lc.get("df")):
+            return True
+    for m in sheets.get("main_mcq_sheets") or []:
+        if _nonempty_df(m.get("df")):
+            return True
+    for om in sheets.get("optional_mcq_sheets") or []:
+        if _nonempty_df(om.get("df")):
+            return True
+    for ps in sheets.get("project_submission_sheets") or []:
+        if _nonempty_df(ps.get("df")):
+            return True
+    c2 = sheets.get("cohort2_optional_mcq_sheet")
+    if c2 and isinstance(c2, dict) and _nonempty_df(c2.get("df")):
+        return True
+    return False
+
+
+def action_center_preview_has_recognized_imports(preview):
+    """True if preview dict lists any importable subsheet besides the Skills profile sheet."""
+    if not preview or not isinstance(preview, dict):
+        return False
+    if preview.get("submission_sheet_name"):
+        return True
+    if preview.get("mcq_sheets"):
+        return True
+    c2 = preview.get("cohort2_optional_mcq_sheet") or {}
+    if c2.get("sheet_name"):
+        return True
+    if preview.get("lab_completion_sheets"):
+        return True
+    if preview.get("main_mcq_sheets"):
+        return True
+    if preview.get("project_submission_sheets"):
+        return True
+    return False
+
+
+def fill_action_center_secondary_preview(file_path, result, classification=None, cohort_id=None):
+    """Populate submission / optional & main MCQ / lab / project / C2 optional keys on preview dict.
+
+    Detection is fully delegated to classify_workbook_sheets() so a renumbered
+    Action Center tab (e.g. "15.MCQ Track 1" instead of "16.MCQ Track 1") still
+    maps to its module. The classification is reused if already computed.
+    """
+    if classification is None:
+        classification = classify_workbook_sheets(file_path, cohort_id=cohort_id)
+    detected = classification.get("detected_by_module", {}) or {}
+
+    def _row_count(name):
+        try:
+            df = parse_excel_sheet(file_path, name)
+            return len(df) if df is not None else 0
+        except Exception:
+            return 0
+
+    # Skill Lab Submission
+    try:
+        for d in detected.get("skilllab_submission", []):
+            name = d.get("sheet_name")
+            if not name:
+                continue
+            result["submission_sheet_name"] = name
+            result["submission_sheet_rows"] = _row_count(name)
+            break
+    except Exception:
+        pass
+
+    # Optional MCQ sheets (Track 1–3)
+    result["mcq_sheets"] = []
+    try:
+        om_rows = sorted(
+            detected.get("optional_mcq", []),
+            key=lambda r: (r.get("track") is None, r.get("track") or 0),
+        )
+        for d in om_rows:
+            name = d.get("sheet_name")
+            if not name:
+                continue
+            result["mcq_sheets"].append({
+                "track": d.get("track"),
+                "sheet_name": name,
+                "rows": _row_count(name),
+            })
+    except Exception:
+        pass
+
+    # Cohort 2 Optional MCQ
+    result["cohort2_optional_mcq_sheet"] = None
+    try:
+        c2_rows = detected.get("cohort2_optional_mcq", [])
+        c2_name = c2_rows[0].get("sheet_name") if c2_rows else None
+        if not c2_name and cohort_id is None:
+            c2_name = find_cohort2_optional_mcq_sheet_name(classification.get("sheet_names") or [])
+        if c2_name:
+            result["cohort2_optional_mcq_sheet"] = {
+                "sheet_name": c2_name,
+                "rows": _row_count(c2_name),
+            }
+    except Exception:
+        pass
+
+    # Lab Completion sheets
+    result["lab_completion_sheets"] = []
+    try:
+        for d in detected.get("lab_completion", []):
+            name = d.get("sheet_name")
+            if not name:
+                continue
+            result["lab_completion_sheets"].append({
+                "lab": d.get("lab"),
+                "track": d.get("track"),
+                "sheet_name": name,
+                "rows": _row_count(name),
+            })
+    except Exception:
+        pass
+
+    # Main MCQ sheets (Track 1–3) — prefix-agnostic
+    result["main_mcq_sheets"] = []
+    try:
+        main_rows = sorted(
+            detected.get("main_mcq", []),
+            key=lambda r: (r.get("track") is None, r.get("track") or 0),
+        )
+        for d in main_rows:
+            name = d.get("sheet_name")
+            if not name:
+                continue
+            result["main_mcq_sheets"].append({
+                "track": d.get("track"),
+                "sheet_name": name,
+                "rows": _row_count(name),
+            })
+    except Exception:
+        pass
+
+    # Project Submission Track 1–3
+    result["project_submission_sheets"] = []
+    try:
+        ps_rows = sorted(
+            detected.get("project_submission", []),
+            key=lambda r: (r.get("track") is None, r.get("track") or 0),
+        )
+        for d in ps_rows:
+            name = d.get("sheet_name")
+            if not name:
+                continue
+            result["project_submission_sheets"].append({
+                "track": d.get("track"),
+                "sheet_name": name,
+                "rows": _row_count(name),
+            })
+    except Exception:
+        pass
+
+
+def find_cohort2_optional_mcq_sheet_name(sheet_names):
+    """
+    Find the Cohort 2 Optional MCQ worksheet: first sheet whose name matches
+    <number>.MCQ Optional (e.g. '14.MCQ Optional', '1. MCQ Optional'); letters case-insensitive.
+    Returns the exact sheet name from the workbook, or None.
+    """
+    if not sheet_names:
+        return None
+    for raw in sheet_names:
+        if raw is None:
+            continue
+        name = str(raw).replace("\u00a0", " ").strip()
+        if _COHORT2_OPTIONAL_MCQ_SHEET_NAME_RE.fullmatch(name):
+            return raw
+    return None
+
+
+def find_cohort2_optional_mcq_sheet_name_from_file(file_path):
+    return find_cohort2_optional_mcq_sheet_name(get_sheet_names(file_path))
 
 
 def find_sheet_by_substring(file_path, substring):
@@ -95,13 +578,24 @@ def find_sheet_by_substring(file_path, substring):
     return None
 
 
-def load_all_skillboost_sheets(file_path):
+def load_all_skillboost_sheets(file_path, cohort_id=None):
     """
-    Open the workbook once and load all sheets needed for action center import.
-    Returns a dict: profile_sheet_name, profile_df, submission_sheet_name, submission_df,
-    codelab_sheet_name, codelab_df, lab_completion_sheets (list of {lab, track, sheet_name, df}),
-    main_mcq_sheets (list of {track, sheet_name, df}),
-    project_submission_sheets (list of {track, sheet_name, df}).
+    Open the workbook once and load all sheets needed for Action Center import.
+
+    Sheet-to-module classification goes through classify_workbook_sheets() so the
+    importer picks up renumbered Action Center tabs (e.g. "15.MCQ Track 1"
+    instead of "16.MCQ Track 1") without code changes.
+
+    Returns a dict: profile_sheet_name, profile_df, submission_sheet_name,
+    submission_df, codelab_sheet_name, codelab_df,
+    lab_completion_sheets    (list of {lab, track, sheet_name, df}),
+    main_mcq_sheets          (list of {track, sheet_name, df}),
+    optional_mcq_sheets      (list of {track, sheet_name, df}),
+    project_submission_sheets(list of {track, sheet_name, df}),
+    cohort2_optional_mcq_sheet (dict or None),
+    plus the raw classification under 'classification' so callers can surface
+    sheet_mapping / missing_critical_modules without re-walking the workbook.
+
     Missing sheets are omitted. Use this to avoid re-opening the same file many times.
     """
     result = {
@@ -113,182 +607,276 @@ def load_all_skillboost_sheets(file_path):
         'codelab_df': None,
         'lab_completion_sheets': [],
         'main_mcq_sheets': [],
+        'optional_mcq_sheets': [],
+        'cohort2_optional_mcq_sheet': None,
         'project_submission_sheets': [],
+        'classification': None,
     }
+
     try:
+        classification = classify_workbook_sheets(file_path, cohort_id=cohort_id)
+        result['classification'] = classification
+        detected = classification.get('detected_by_module', {}) or {}
+
         engine = 'openpyxl' if str(file_path).lower().endswith('.xlsx') else None
         xl = pd.ExcelFile(file_path, engine=engine)
-        sheet_names = xl.sheet_names
 
-        def _find(substring):
-            for name in sheet_names:
-                if substring.lower() in name.lower():
-                    return name
-            return None
+        # Skill Lab profile (only the first matched tab is used as the profile)
+        for det_row in detected.get('skillboost_profile', []):
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            result['profile_sheet_name'] = name
+            try:
+                result['profile_df'] = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                result['profile_df'] = None
+            break
 
-        profile_sheet = _find(SKILLBOOST_SHEET_SUBSTRING)
-        if profile_sheet:
-            result['profile_sheet_name'] = profile_sheet
-            result['profile_df'] = pd.read_excel(xl, sheet_name=profile_sheet)
+        # Skill Lab Submission
+        for det_row in detected.get('skilllab_submission', []):
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            result['submission_sheet_name'] = name
+            try:
+                result['submission_df'] = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                result['submission_df'] = None
+            break
 
-        sub_sheet = _find(SKILLLAB_SUBMISSION_SHEET_SUBSTRING)
-        if sub_sheet:
-            result['submission_sheet_name'] = sub_sheet
-            result['submission_df'] = pd.read_excel(xl, sheet_name=sub_sheet)
+        # Code Lab Submission
+        for det_row in detected.get('codelab_submission', []):
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            result['codelab_sheet_name'] = name
+            try:
+                result['codelab_df'] = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                result['codelab_df'] = None
+            break
 
-        codelab_sheet = _find(CODELAB_SUBMISSION_SHEET_SUBSTRING)
-        if codelab_sheet:
-            result['codelab_sheet_name'] = codelab_sheet
-            result['codelab_df'] = pd.read_excel(xl, sheet_name=codelab_sheet)
+        # Lab Completion sheets (preserve registry order)
+        for det_row in detected.get('lab_completion', []):
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            try:
+                df = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                df = None
+            result['lab_completion_sheets'].append({
+                'lab': det_row.get('lab'),
+                'track': det_row.get('track'),
+                'sheet_name': name,
+                'df': df,
+            })
 
-        for lc_info in LAB_COMPLETION_SHEET_SUBSTRINGS:
-            lc_sheet = _find(lc_info['substring'])
-            if lc_sheet:
-                result['lab_completion_sheets'].append({
-                    'lab': lc_info['lab'],
-                    'track': lc_info['track'],
-                    'sheet_name': lc_sheet,
-                    'df': pd.read_excel(xl, sheet_name=lc_sheet),
-                })
+        # Main MCQ sheets (sorted by track 1->3)
+        main_rows = sorted(
+            detected.get('main_mcq', []),
+            key=lambda r: (r.get('track') is None, r.get('track') or 0),
+        )
+        for det_row in main_rows:
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            try:
+                df = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                df = None
+            result['main_mcq_sheets'].append({
+                'track': det_row.get('track'),
+                'sheet_name': name,
+                'df': df,
+            })
 
-        for track, substring in [
-            (1, MCQ_MAIN_TRACK1_SHEET_SUBSTRING),
-            (2, MCQ_MAIN_TRACK2_SHEET_SUBSTRING),
-            (3, MCQ_MAIN_TRACK3_SHEET_SUBSTRING),
-        ]:
-            main_sheet = _find(substring)
-            if main_sheet:
-                result['main_mcq_sheets'].append({
-                    'track': track,
-                    'sheet_name': main_sheet,
-                    'df': pd.read_excel(xl, sheet_name=main_sheet),
-                })
+        # Project Submission (sorted by track)
+        ps_rows = sorted(
+            detected.get('project_submission', []),
+            key=lambda r: (r.get('track') is None, r.get('track') or 0),
+        )
+        for det_row in ps_rows:
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            try:
+                df = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                df = None
+            result['project_submission_sheets'].append({
+                'track': det_row.get('track'),
+                'sheet_name': name,
+                'df': df,
+            })
 
-        for ps in PROJECT_SUBMISSION_SHEET_DEFINITIONS:
-            ps_sheet = _find(ps['substring'])
-            if ps_sheet:
-                result['project_submission_sheets'].append({
-                    'track': ps['track'],
-                    'sheet_name': ps_sheet,
-                    'df': pd.read_excel(xl, sheet_name=ps_sheet),
-                })
+        # Optional MCQ (sorted by track)
+        om_rows = sorted(
+            detected.get('optional_mcq', []),
+            key=lambda r: (r.get('track') is None, r.get('track') or 0),
+        )
+        for det_row in om_rows:
+            name = det_row.get('sheet_name')
+            if not name:
+                continue
+            try:
+                df = pd.read_excel(xl, sheet_name=name)
+            except Exception:
+                df = None
+            result['optional_mcq_sheets'].append({
+                'track': det_row.get('track'),
+                'sheet_name': name,
+                'df': df,
+            })
+
+        # Cohort 2 Optional MCQ (anchored "<digits>.MCQ Optional" pattern).
+        # The detector is gated on cohort_id=2, but legacy callers may not pass
+        # cohort_id; fall back to the historic name-only detection for Cohort 1
+        # workflows so behaviour is unchanged when cohort_id is not provided.
+        c2_rows = detected.get('cohort2_optional_mcq', [])
+        c2_name = None
+        if c2_rows:
+            c2_name = c2_rows[0].get('sheet_name')
+        elif cohort_id is None:
+            c2_name = find_cohort2_optional_mcq_sheet_name(classification.get('sheet_names') or [])
+        if c2_name:
+            try:
+                c2_df = pd.read_excel(xl, sheet_name=c2_name)
+            except Exception:
+                c2_df = None
+            result['cohort2_optional_mcq_sheet'] = {
+                'sheet_name': c2_name,
+                'df': c2_df,
+            }
     except Exception:
         pass
     return result
 
 
-def get_skillboost_preview(file_path):
+def load_cohort2_optional_mcq_sheet_only(file_path):
     """
-    Preview Skill Lab XLSX: sheet count, sheet names, detected sheet name and row count.
-    Also detects the Skill Lab Submission sheet if present.
-    Returns dict: sheet_count, sheet_names, detected_sheet_name, detected_sheet_rows, columns, error,
-                  submission_sheet_name, submission_sheet_rows.
+    Load only the Cohort 2 Optional MCQ worksheet (e.g. "14.MCQ  Optional").
+    Used when importing from Action Center without the Google Skills Boost profile sheet.
+    """
+    out = {'cohort2_optional_mcq_sheet': None}
+    try:
+        engine = 'openpyxl' if str(file_path).lower().endswith('.xlsx') else None
+        xl = pd.ExcelFile(file_path, engine=engine)
+
+        c2_name = find_cohort2_optional_mcq_sheet_name(xl.sheet_names)
+        if c2_name:
+            out['cohort2_optional_mcq_sheet'] = {
+                'sheet_name': c2_name,
+                'df': pd.read_excel(xl, sheet_name=c2_name),
+            }
+    except Exception:
+        pass
+    return out
+
+
+def get_skillboost_preview(file_path, cohort_id=None):
+    """
+    Preview Skill Lab / Action Center XLSX: sheet list plus detected subsheets
+    for import.
+
+    Detection is fully driven by the SHEET_DETECTORS regex registry, so any tab
+    whose name contains, e.g., "MCQ Track 1" is detected regardless of leading
+    numbering ("16.MCQ Track 1", "15.MCQ Track 1", "MCQ Track 1", …).
+
+    cohort_id=1 (or unset): Skills profile sheet is optional if the workbook
+        contains other recognized subsheets (Main MCQ, Optional MCQ, …).
+    cohort_id=2: without a Skills profile sheet, preview is Optional-MCQ–only if
+        that tab exists; otherwise full subsheet mapping (split Action Center files).
+
+    Response dict adds two top-level fields the UI uses to show a full mapping
+    table and warn about missing critical modules:
+        sheet_mapping             — list of {sheet_name, module, label, track,
+                                    lab, status} (every tab in workbook order;
+                                    status in detected/duplicate/unrecognised).
+        missing_critical_modules  — list of {module, label, track, lab} that
+                                    were expected for this cohort but did not
+                                    match any tab.
+
+    Existing per-module fields (main_mcq_sheets, mcq_sheets,
+    cohort2_optional_mcq_sheet, lab_completion_sheets,
+    project_submission_sheets, submission_sheet_name, submission_sheet_rows,
+    detected_sheet_name, …) are derived from the same classification for
+    backward compatibility.
     """
     sheet_names = get_sheet_names(file_path)
     sheet_count = len(sheet_names)
+    classification = classify_workbook_sheets(file_path, cohort_id=cohort_id)
+    detected = classification.get('detected_by_module', {}) or {}
+
     result = {
         'sheet_count': sheet_count,
         'sheet_names': sheet_names,
+        'sheet_mapping': classification.get('sheet_mapping') or [],
+        'missing_critical_modules': classification.get('missing_critical_modules') or [],
         'detected_sheet_name': None,
         'detected_sheet_rows': None,
         'columns': None,
         'error': None,
         'submission_sheet_name': None,
         'submission_sheet_rows': None,
+        'cohort2_optional_import_only': False,
+        'action_center_profile_sheet_missing': False,
     }
     if not sheet_names:
         result['error'] = 'Could not read any worksheets from the file.'
         return result
-    detected = find_sheet_by_substring(file_path, SKILLBOOST_SHEET_SUBSTRING)
-    if not detected:
-        result['error'] = f'No worksheet whose name contains "{SKILLBOOST_SHEET_SUBSTRING}" found.'
+
+    profile_rows = detected.get('skillboost_profile', [])
+    skill_sheet = profile_rows[0]['sheet_name'] if profile_rows else None
+
+    # Cohort 2: Action Center export may omit the Google Skills sheet — Optional MCQ–only preview
+    # when that tab exists; otherwise full mapping (split exports: submission / forms / quiz files).
+    if cohort_id == 2 and not skill_sheet:
+        c2_rows = detected.get('cohort2_optional_mcq', [])
+        c2_sheet = c2_rows[0]['sheet_name'] if c2_rows else None
+        if c2_sheet:
+            result['cohort2_optional_import_only'] = True
+            try:
+                df = parse_excel_sheet(file_path, c2_sheet)
+                nrows = len(df) if df is not None else 0
+                result['detected_sheet_name'] = c2_sheet
+                result['detected_sheet_rows'] = nrows
+                result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
+                result['cohort2_optional_mcq_sheet'] = {'sheet_name': c2_sheet, 'rows': nrows}
+            except Exception as e:
+                result['error'] = f'Error reading sheet "{c2_sheet}": {str(e)}'
+            return result
+        result['cohort2_optional_import_only'] = False
+        result['action_center_profile_sheet_missing'] = True
+        fill_action_center_secondary_preview(
+            file_path, result, classification=classification, cohort_id=cohort_id,
+        )
+        if not action_center_preview_has_recognized_imports(result):
+            result['error'] = ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE
         return result
-    result['detected_sheet_name'] = detected
-    try:
-        df = parse_excel_sheet(file_path, detected)
-        result['detected_sheet_rows'] = len(df) if df is not None else 0
-        result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
-    except Exception as e:
-        result['error'] = f'Error reading sheet "{detected}": {str(e)}'
 
-    # Also detect Skill Lab Submission sheet
-    try:
-        sub_sheet = find_sheet_by_substring(file_path, SKILLLAB_SUBMISSION_SHEET_SUBSTRING)
-        if sub_sheet:
-            result['submission_sheet_name'] = sub_sheet
-            sub_df = parse_excel_sheet(file_path, sub_sheet)
-            result['submission_sheet_rows'] = len(sub_df) if sub_df is not None else 0
-    except Exception:
-        pass
+    result['cohort2_optional_import_only'] = False
+    # Populate per-module preview keys from the same classification (no second pass).
+    fill_action_center_secondary_preview(
+        file_path, result, classification=classification, cohort_id=cohort_id,
+    )
 
-    # Detect Optional MCQ sheets (Track 1, 2, 3)
-    result['mcq_sheets'] = []
-    try:
-        for track, substring in [
-            (1, MCQ_OPTIONAL_TRACK1_SHEET_SUBSTRING),
-            (2, MCQ_OPTIONAL_TRACK2_SHEET_SUBSTRING),
-            (3, MCQ_OPTIONAL_TRACK3_SHEET_SUBSTRING),
-        ]:
-            mcq_sheet = find_sheet_by_substring(file_path, substring)
-            if mcq_sheet:
-                mcq_df = parse_excel_sheet(file_path, mcq_sheet)
-                result['mcq_sheets'].append({
-                    'track': track,
-                    'sheet_name': mcq_sheet,
-                    'rows': len(mcq_df) if mcq_df is not None else 0,
-                })
-    except Exception:
-        pass
+    if skill_sheet:
+        result['detected_sheet_name'] = skill_sheet
+        result['action_center_profile_sheet_missing'] = False
+        try:
+            df = parse_excel_sheet(file_path, skill_sheet)
+            result['detected_sheet_rows'] = len(df) if df is not None else 0
+            result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
+        except Exception as e:
+            result['error'] = f'Error reading profile sheet "{skill_sheet}": {str(e)}'
+    else:
+        result['action_center_profile_sheet_missing'] = True
 
-    # Detect Lab Completion sheets (Lab 1/2 x Track 1/2/3)
-    result['lab_completion_sheets'] = []
-    try:
-        for lc_info in LAB_COMPLETION_SHEET_SUBSTRINGS:
-            lc_sheet = find_sheet_by_substring(file_path, lc_info['substring'])
-            if lc_sheet:
-                lc_df = parse_excel_sheet(file_path, lc_sheet)
-                result['lab_completion_sheets'].append({
-                    'lab': lc_info['lab'],
-                    'track': lc_info['track'],
-                    'sheet_name': lc_sheet,
-                    'rows': len(lc_df) if lc_df is not None else 0,
-                })
-    except Exception:
-        pass
-
-    # Detect Main MCQ sheets (16, 17, 18)
-    result['main_mcq_sheets'] = []
-    try:
-        for track, substring in [
-            (1, MCQ_MAIN_TRACK1_SHEET_SUBSTRING),
-            (2, MCQ_MAIN_TRACK2_SHEET_SUBSTRING),
-            (3, MCQ_MAIN_TRACK3_SHEET_SUBSTRING),
-        ]:
-            main_sheet = find_sheet_by_substring(file_path, substring)
-            if main_sheet:
-                main_df = parse_excel_sheet(file_path, main_sheet)
-                result['main_mcq_sheets'].append({
-                    'track': track,
-                    'sheet_name': main_sheet,
-                    'rows': len(main_df) if main_df is not None else 0,
-                })
-    except Exception:
-        pass
-
-    # Project Submission Track 1–3
-    result['project_submission_sheets'] = []
-    try:
-        for ps in PROJECT_SUBMISSION_SHEET_DEFINITIONS:
-            ps_sheet = find_sheet_by_substring(file_path, ps['substring'])
-            if ps_sheet:
-                ps_df = parse_excel_sheet(file_path, ps_sheet)
-                result['project_submission_sheets'].append({
-                    'track': ps['track'],
-                    'sheet_name': ps_sheet,
-                    'rows': len(ps_df) if ps_df is not None else 0,
-                })
-    except Exception:
-        pass
+    if cohort_id in (1, None) and not skill_sheet:
+        if not action_center_preview_has_recognized_imports(result):
+            result['error'] = ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE
 
     return result
 
@@ -545,8 +1133,11 @@ def import_data(df, mappings, mode='create', progress_callback=None):
     Returns:
         Dictionary with import summary
     """
-    from server.models import db, UserPII
-    
+    from server.models import db
+
+    IM = _import_models()
+    UserPII = IM.UserPII
+
     total_rows = len(df)
     created = 0
     updated = 0
@@ -857,6 +1448,9 @@ def import_data_injected(df, mappings, mode='create', progress_callback=None):
     """
     from server.models import db
 
+    IM = _import_models()
+    UserPIIInjected = IM.UserPIIInjected
+
     total_rows = len(df)
     created = 0
     updated = 0
@@ -1138,13 +1732,202 @@ def import_data_injected(df, mappings, mode='create', progress_callback=None):
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Per-row error classification + structured error reporting
+#
+# Every importer wraps each row in db.session.begin_nested() (a SAVEPOINT).
+# When a row raises, _classify_row_error converts the exception into a stable
+# reason_code so the result UI can group similar issues. The structured row
+# dicts also ride into the import response under per_sheet_errors so users
+# get a concrete view of what failed and can download a CSV.
+# ─────────────────────────────────────────────────────────────────────────────
+
+ROW_ERROR_REASONS = (
+    'missing_email',
+    'invalid_email',
+    'fk_user_pii_missing',
+    'unique_constraint_violation',
+    'value_too_long',
+    'data_type_error',
+    'integrity_error',
+    'other',
+)
+
+
+def _classify_row_error(index, exc, raw_email=None, *, reason_code=None,
+                        reason_message=None):
+    """Return a structured error dict for one failed row.
+
+    index   : pandas row index (0-based); converted to a 1-based sheet row
+              (header is row 1, first data row is row 2).
+    exc     : the exception raised, OR None when the caller already knows
+              the reason (e.g. missing_email pre-check).
+    """
+    row_no = (int(index) + 2) if index is not None else None
+
+    if reason_code is None:
+        reason_code = 'other'
+        try:
+            from sqlalchemy.exc import IntegrityError, DataError
+        except Exception:
+            IntegrityError = DataError = None  # type: ignore
+
+        msg = (str(exc) if exc is not None else '').lower()
+
+        if IntegrityError is not None and isinstance(exc, IntegrityError):
+            if 'foreign key' in msg or 'foreignkeyviolation' in msg:
+                reason_code = 'fk_user_pii_missing'
+            elif 'unique' in msg or 'duplicate' in msg:
+                reason_code = 'unique_constraint_violation'
+            else:
+                reason_code = 'integrity_error'
+        elif DataError is not None and isinstance(exc, DataError):
+            if 'too long' in msg or 'value too long' in msg or 'truncat' in msg:
+                reason_code = 'value_too_long'
+            else:
+                reason_code = 'data_type_error'
+
+    if reason_message is None:
+        reason_message = (str(exc) if exc is not None else '')[:300]
+
+    return {
+        'row': row_no,
+        'reason_code': reason_code,
+        'reason_message': reason_message,
+        'raw_email': (raw_email or '')[:255],
+    }
+
+
+# Legacy `errors` strings power the import UI warning list; omit expected outcomes.
+_INFORMATIONAL_IMPORT_REASON_CODES = frozenset({'profile_verified_no_update'})
+
+
+def _record_row_error(errors, rows_errors, error_dict, max_errors=100,
+                      max_rows_errors=2000):
+    """Append a structured row-error to `rows_errors` and optionally the legacy
+    `errors` text list (capped). Informational reason codes (e.g. verified profile
+    left unchanged) are kept in `rows_errors` / CSV / per-sheet breakdown only,
+    not in `errors`, so the UI does not treat them as failures.
+    """
+    if rows_errors is not None and len(rows_errors) < max_rows_errors:
+        rows_errors.append(error_dict)
+    code = error_dict.get('reason_code')
+    if code in _INFORMATIONAL_IMPORT_REASON_CODES:
+        return
+    if errors is not None and len(errors) < max_errors:
+        row = error_dict.get('row')
+        msg = error_dict.get('reason_message') or error_dict.get('reason_code') or ''
+        errors.append(f"Row {row}: [{code}] {msg}")
+
+
+def _ensure_user_pii_for_leaders(df, email_col, *, name_col=None,
+                                 phone_col=None, organization_col=None):
+    """For every distinct leader_email in `df` that's not already in user_pii,
+    insert a minimal UserPII row (name/mobile_number filled when available)
+    inside its own SAVEPOINT so a single bad row never aborts the rest.
+
+    Returns dict {pii_auto_created, pii_auto_skipped, by_email_lower}, where
+    by_email_lower maps lower(email) -> UserPII (every row that now exists).
+    """
+    from sqlalchemy import func
+    from server.models import db
+
+    IM = _import_models()
+    UserPII = IM.UserPII
+
+    out = {
+        'pii_auto_created': 0,
+        'pii_auto_skipped': 0,
+        'by_email_lower': {},
+    }
+    if df is None or len(df) == 0 or not email_col or email_col not in df.columns:
+        return out
+
+    distinct_lowers = []
+    seen = set()
+    for v in df[email_col].dropna():
+        e = str(v).strip().lower()
+        if not e or '@' not in e or e in seen:
+            continue
+        seen.add(e)
+        distinct_lowers.append(e)
+    if not distinct_lowers:
+        return out
+
+    existing_by_lower = {}
+    try:
+        for chunk in _chunk_list(distinct_lowers, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for p in UserPII.query.filter(func.lower(UserPII.email).in_(chunk)).all():
+                el = (p.email or '').strip().lower()
+                if el:
+                    existing_by_lower[el] = p
+    except Exception:
+        pass
+    out['by_email_lower'] = dict(existing_by_lower)
+
+    missing_lowers = [e for e in distinct_lowers if e not in existing_by_lower]
+    if not missing_lowers:
+        return out
+
+    name_lookup = {}
+    phone_lookup = {}
+    org_lookup = {}
+    try:
+        for _, row in df.iterrows():
+            try:
+                ev = row.get(email_col)
+                if ev is None or pd.isna(ev):
+                    continue
+                el = str(ev).strip().lower()
+                if not el or el in existing_by_lower:
+                    continue
+                if name_col and name_col in df.columns and el not in name_lookup:
+                    nv = row.get(name_col)
+                    if nv is not None and not pd.isna(nv):
+                        name_lookup[el] = str(nv).strip()[:255]
+                if phone_col and phone_col in df.columns and el not in phone_lookup:
+                    pv = row.get(phone_col)
+                    if pv is not None and not pd.isna(pv):
+                        phone_lookup[el] = str(pv).strip()[:50]
+                if organization_col and organization_col in df.columns and el not in org_lookup:
+                    ov = row.get(organization_col)
+                    if ov is not None and not pd.isna(ov):
+                        org_lookup[el] = str(ov).strip()[:255]
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    for el in missing_lowers:
+        try:
+            with db.session.begin_nested():
+                u = UserPII(
+                    email=el,
+                    name=name_lookup.get(el),
+                    mobile_number=phone_lookup.get(el),
+                    organization_name=org_lookup.get(el),
+                )
+                db.session.add(u)
+            existing_by_lower[el] = u
+            out['pii_auto_created'] += 1
+        except Exception:
+            out['pii_auto_skipped'] += 1
+
+    out['by_email_lower'] = existing_by_lower
+    return out
+
+
 def import_skillboost_profile(df, email_col, profile_link_col, progress_callback=None):
     """
     Import Skill Lab / Google Skills Boost profiles from a DataFrame into skillboost_profile.
     - Create new rows for (email, link) that don't exist.
     - Update only when existing row has valid = FALSE; never overwrite valid = TRUE.
     - Email: required; strip, lowercase. Link: optional; if missing/empty store empty string (import row).
-    - Skips only rows with missing email (or duplicate in file / already verified).
+    - Skips rows with missing email, duplicate (email, link) later in the file,
+      or an existing row that is already verified (valid = TRUE; never overwritten).
+      Those verified unchanged rows are informational only (rows_errors / counts), not legacy ``errors``.
     - All emails are imported (no skip for email not in user_pii).
 
     Large files: preloads existing rows only for emails present in the sheet; batched commits;
@@ -1152,11 +1935,16 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
     """
     from server.models import db
 
+    IM = _import_models()
+    SkillboostProfile = IM.SkillboostProfile
+
     total_rows = len(df)
     created = 0
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
+    skip_reason_counts = Counter()
 
     if not email_col or email_col not in df.columns:
         raise Exception("Email column not found in sheet")
@@ -1182,7 +1970,6 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
         pass
 
     inserted_this_run = set()
-    since_outer_commit = 0
 
     for index, row in df.iterrows():
         try:
@@ -1190,14 +1977,20 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
             link_val = row.get(profile_link_col)
             if pd.isna(email_val):
                 skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing email")
+                skip_reason_counts['missing_email'] += 1
+                _record_row_error(errors, rows_errors, _classify_row_error(
+                    index, None, raw_email='', reason_code='missing_email',
+                    reason_message='Missing email',
+                ))
                 continue
             email = str(email_val).strip().lower()
             if not email:
                 skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing email")
+                skip_reason_counts['missing_email'] += 1
+                _record_row_error(errors, rows_errors, _classify_row_error(
+                    index, None, raw_email='', reason_code='missing_email',
+                    reason_message='Missing email',
+                ))
                 continue
             if pd.isna(link_val):
                 link = ''
@@ -1210,14 +2003,31 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 rec = existing[key]
                 if rec.valid:
                     skipped += 1
+                    skip_reason_counts['profile_verified_no_update'] += 1
+                    _record_row_error(errors, rows_errors, _classify_row_error(
+                        index, None, raw_email=email,
+                        reason_code='profile_verified_no_update',
+                        reason_message=(
+                            'This email + profile link already exists and is verified '
+                            '(valid=TRUE); the row was not changed.'
+                        ),
+                    ))
                     continue
                 if key in inserted_this_run:
                     skipped += 1
+                    skip_reason_counts['duplicate_row_in_workbook'] += 1
+                    _record_row_error(errors, rows_errors, _classify_row_error(
+                        index, None, raw_email=email,
+                        reason_code='duplicate_row_in_workbook',
+                        reason_message=(
+                            'Duplicate email + profile link after an earlier row in '
+                            'this file; only the first occurrence is kept.'
+                        ),
+                    ))
                     continue
                 with db.session.begin_nested():
                     rec.updated_at = datetime.utcnow()
                 updated += 1
-                since_outer_commit += 1
             else:
                 with db.session.begin_nested():
                     rec = SkillboostProfile(
@@ -1230,11 +2040,7 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 existing[key] = rec
                 inserted_this_run.add(key)
                 created += 1
-                since_outer_commit += 1
 
-            if since_outer_commit >= IMPORT_BATCH_COMMIT_SIZE:
-                db.session.commit()
-                since_outer_commit = 0
             if progress_callback:
                 try:
                     progress_callback(created, updated, skipped)
@@ -1242,13 +2048,40 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                     pass
         except Exception as e:
             skipped += 1
-            if len(errors) < 100:
-                errors.append(f"Row {index + 2}: {str(e)}")
+            err_d = _classify_row_error(
+                index, e, raw_email=str(row.get(email_col) or '')[:255],
+            )
+            skip_reason_counts[err_d.get('reason_code') or 'other'] += 1
+            _record_row_error(errors, rows_errors, err_d)
 
     try:
         db.session.commit()
     except Exception:
         db.session.rollback()
+        return {
+            'total_rows': total_rows,
+            'created': created,
+            'updated': updated,
+            'skipped': skipped,
+            'errors': errors[:100],
+            'rows_errors': rows_errors,
+            'skip_reason_counts': dict(skip_reason_counts),
+        }
+
+    try:
+        from server.utils.skillboost_profile_reconcile import reconcile_skillboost_for_emails
+
+        reconcile_skillboost_for_emails(emails_for_lookup or [])
+    except Exception:
+        try:
+            from flask import current_app
+
+            current_app.logger.warning(
+                'skillboost_profile reconcile after import failed',
+                exc_info=True,
+            )
+        except Exception:
+            pass
 
     return {
         'total_rows': total_rows,
@@ -1256,6 +2089,8 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'skip_reason_counts': dict(skip_reason_counts),
     }
 
 
@@ -1280,6 +2115,7 @@ _SUBMISSION_COL_MAP = {
     'problem_statement': 'problem_statement',
     'problem_statements': 'problem_statement',
     'upload supporting screenshot of your selected track': 'upload_screenshot',
+    'share the link for your skill badge': 'upload_screenshot',
     'upload_screenshot': 'upload_screenshot',
     'screenshot': 'upload_screenshot',
     'created at': 'created_at',
@@ -1330,6 +2166,40 @@ def _find_leader_email_column(columns):
     return None
 
 
+def _find_leader_name_column(columns):
+    """Return the XLSX column name that maps to leader_name, or None."""
+    for col in columns:
+        if col is None:
+            continue
+        key = str(col).strip().lower()
+        if key in ('leader name', 'leader_name'):
+            return col
+    for col in columns:
+        if col is None:
+            continue
+        low = str(col).strip().lower()
+        if 'leader' in low and 'name' in low and 'email' not in low and 'phone' not in low:
+            return col
+    return None
+
+
+def _find_leader_phone_column(columns):
+    """Return the XLSX column name that maps to leader_phone, or None."""
+    for col in columns:
+        if col is None:
+            continue
+        key = str(col).strip().lower()
+        if key in ('leader phone', 'leader_phone'):
+            return col
+    for col in columns:
+        if col is None:
+            continue
+        low = str(col).strip().lower()
+        if 'leader' in low and ('phone' in low or 'mobile' in low):
+            return col
+    return None
+
+
 # Project submission sheets: headers match action-center export (leader email -> user_pii.email)
 _PROJECT_SUBMISSION_COL_MAP = {
     'team name': 'team_name',
@@ -1366,7 +2236,66 @@ _PROJECT_SUBMISSION_COL_MAP = {
     'updated_by_name': 'updated_by_name',
     'updated by email': 'updated_by_email',
     'updated_by_email': 'updated_by_email',
+    'score': 'score',
+    'project score': 'score',
+    'project_score': 'score',
+    'final score': 'score',
+    'final_score': 'score',
+    'total score': 'score',
+    'total_score': 'score',
 }
+
+
+def _find_score_column(columns):
+    """Return the column that holds numeric project score, or None."""
+    preferred = (
+        'score',
+        'project score',
+        'final score',
+        'total score',
+        'project_score',
+        'final_score',
+        'total_score',
+    )
+    lowered = {}
+    for col in columns:
+        if col is None:
+            continue
+        k = str(col).strip().lower()
+        lowered[k] = col
+    for p in preferred:
+        if p in lowered:
+            return lowered[p]
+    for col in columns:
+        if col is None:
+            continue
+        low = str(col).strip().lower()
+        if 'score' in low and 'email' not in low:
+            return col
+    return None
+
+
+def _parse_project_score_value(val):
+    """Parse a cell value into a float suitable for project_submission.score, or None."""
+    if val is None:
+        return None
+    try:
+        if pd.isna(val):
+            return None
+    except Exception:
+        pass
+    if isinstance(val, bool):
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip()
+    if not s:
+        return None
+    s = s.rstrip('%').strip().replace(',', '')
+    try:
+        return float(s)
+    except (ValueError, TypeError):
+        return None
 
 
 def _map_project_submission_columns(columns):
@@ -1389,9 +2318,15 @@ def import_project_submission(df, track_number, progress_callback=None):
     from sqlalchemy import func
     from server.models import db
 
+    IM = _import_models()
+    UserPII = IM.UserPII
+    ProjectSubmission = IM.ProjectSubmission
+
     columns = list(df.columns)
     col_map = _map_project_submission_columns(columns)
     leader_email_col = _find_leader_email_column(columns)
+    leader_name_col = _find_leader_name_column(columns)
+    leader_phone_col = _find_leader_phone_column(columns)
 
     if not leader_email_col:
         raise Exception(
@@ -1404,6 +2339,11 @@ def import_project_submission(df, track_number, progress_callback=None):
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
+
+    pii_pre = _ensure_user_pii_for_leaders(
+        df, leader_email_col, name_col=leader_name_col, phone_col=leader_phone_col,
+    )
 
     emails_in_sheet = []
     try:
@@ -1449,6 +2389,194 @@ def import_project_submission(df, track_number, progress_callback=None):
     )
 
     for index, row in df.iterrows():
+        email_val = row.get(leader_email_col)
+        if pd.isna(email_val):
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email='', reason_code='missing_email',
+                reason_message='Missing leader email',
+            ))
+            continue
+        email_norm = str(email_val).strip().lower()
+        if not email_norm or '@' not in email_norm:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email_norm, reason_code='invalid_email',
+                reason_message='Invalid leader email',
+            ))
+            continue
+
+        pii = pii_by_lower.get(email_norm)
+        if not pii:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email_norm, reason_code='fk_user_pii_missing',
+                reason_message=f'Leader email not found in user PII ({email_norm})',
+            ))
+            continue
+
+        canonical_email = (pii.email or '').strip()
+        if not canonical_email:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email_norm, reason_code='fk_user_pii_missing',
+                reason_message='Empty user PII email',
+            ))
+            continue
+
+        try:
+            with db.session.begin_nested():
+                data = {'track_number': track_number}
+                for xlsx_col, model_field in col_map.items():
+                    if model_field == 'leader_email':
+                        continue
+                    val = row.get(xlsx_col)
+                    if pd.isna(val):
+                        val = None
+                    elif model_field == 'team_size':
+                        try:
+                            val = int(val)
+                        except (ValueError, TypeError):
+                            val = None
+                    elif model_field == 'score':
+                        val = _parse_project_score_value(val)
+                    elif model_field in ('created_at', 'updated_at'):
+                        if val is not None:
+                            try:
+                                if isinstance(val, str):
+                                    val = pd.to_datetime(val)
+                                elif not isinstance(val, datetime):
+                                    val = pd.to_datetime(val)
+                            except Exception:
+                                val = None
+                    else:
+                        val = str(val).strip() if val is not None else None
+                        if val and model_field in short_str_fields:
+                            val = val[:255]
+                        elif val and model_field in link_fields:
+                            val = val[:1024]
+                        elif val and model_field == 'problem_statement':
+                            pass
+                    data[model_field] = val
+
+                data['leader_email'] = canonical_email
+
+                rec = existing.get(canonical_email.lower())
+                if rec:
+                    for field, val in data.items():
+                        if field in ('leader_email', 'track_number'):
+                            continue
+                        if val is not None:
+                            setattr(rec, field, val)
+                    rec.updated_at = datetime.utcnow()
+                    updated += 1
+                else:
+                    rec = ProjectSubmission(**data)
+                    db.session.add(rec)
+                    existing[canonical_email.lower()] = rec
+                    created += 1
+
+            if progress_callback:
+                try:
+                    progress_callback(created, updated, skipped)
+                except Exception:
+                    pass
+
+        except Exception as e:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, e, raw_email=email_norm,
+            ))
+
+    try:
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return {
+        'total_rows': total_rows,
+        'created': created,
+        'updated': updated,
+        'skipped': skipped,
+        'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'pii_auto_created': pii_pre.get('pii_auto_created', 0),
+        'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
+    }
+
+
+def import_project_submission_scores(df, track_number, progress_callback=None, audit_user=None):
+    """
+    Set project_submission.score from a CSV/Excel with leader email + score columns.
+    Only updates rows that already exist for (leader_email, track_number). Leader email
+    must match a user_pii row (canonical casing applied).
+
+    audit_user: optional dict with 'name' and 'email' for updated_by_* on each row.
+    """
+    from sqlalchemy import func
+    from server.models import db
+
+    if track_number not in (1, 2, 3):
+        raise ValueError("track_number must be 1, 2, or 3")
+
+    IM = _import_models()
+    UserPII = IM.UserPII
+    ProjectSubmission = IM.ProjectSubmission
+
+    columns = list(df.columns)
+    leader_email_col = _find_leader_email_column(columns)
+    score_col = _find_score_column(columns)
+
+    if not leader_email_col:
+        raise Exception(
+            "Could not find a leader email column. Use a header such as 'Leader Email' or 'leader_email'."
+        )
+    if not score_col:
+        raise Exception(
+            "Could not find a score column. Use a header such as 'Score' or 'Project Score'."
+        )
+
+    total_rows = len(df)
+    updated = 0
+    skipped = 0
+    errors = []
+
+    emails_in_sheet = []
+    try:
+        for v in df[leader_email_col].dropna():
+            e = str(v).strip().lower()
+            if e and '@' in e:
+                emails_in_sheet.append(e)
+    except Exception:
+        pass
+    unique_sheet_emails = list(dict.fromkeys(emails_in_sheet))
+
+    pii_by_lower = {}
+    try:
+        for chunk in _chunk_list(unique_sheet_emails, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for p in UserPII.query.filter(func.lower(UserPII.email).in_(chunk)).all():
+                el = (p.email or '').strip().lower()
+                if el:
+                    pii_by_lower[el] = p
+    except Exception:
+        pass
+
+    existing = {}
+    try:
+        for chunk in _chunk_list(unique_sheet_emails, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for ps_row in ProjectSubmission.query.filter(
+                ProjectSubmission.track_number == track_number,
+                func.lower(ProjectSubmission.leader_email).in_(chunk),
+            ).all():
+                existing[(ps_row.leader_email or '').lower()] = ps_row
+    except Exception:
+        pass
+
+    for index, row in df.iterrows():
         try:
             email_val = row.get(leader_email_col)
             if pd.isna(email_val):
@@ -1467,7 +2595,7 @@ def import_project_submission(df, track_number, progress_callback=None):
             if not pii:
                 skipped += 1
                 if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Leader email not found in user PII ({email_norm})")
+                    errors.append(f"Row {index + 2}: Leader email not in user PII ({email_norm})")
                 continue
 
             canonical_email = (pii.email or '').strip()
@@ -1477,60 +2605,35 @@ def import_project_submission(df, track_number, progress_callback=None):
                     errors.append(f"Row {index + 2}: Empty user PII email")
                 continue
 
-            data = {'track_number': track_number}
-            for xlsx_col, model_field in col_map.items():
-                if model_field == 'leader_email':
-                    continue
-                val = row.get(xlsx_col)
-                if pd.isna(val):
-                    val = None
-                elif model_field == 'team_size':
-                    try:
-                        val = int(val)
-                    except (ValueError, TypeError):
-                        val = None
-                elif model_field in ('created_at', 'updated_at'):
-                    if val is not None:
-                        try:
-                            if isinstance(val, str):
-                                val = pd.to_datetime(val)
-                            elif not isinstance(val, datetime):
-                                val = pd.to_datetime(val)
-                        except Exception:
-                            val = None
-                else:
-                    val = str(val).strip() if val is not None else None
-                    if val and model_field in short_str_fields:
-                        val = val[:255]
-                    elif val and model_field in link_fields:
-                        val = val[:1024]
-                    elif val and model_field == 'problem_statement':
-                        pass
-                data[model_field] = val
-
-            data['leader_email'] = canonical_email
+            score_val = _parse_project_score_value(row.get(score_col))
+            if score_val is None:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(f"Row {index + 2}: Missing or invalid score")
+                continue
 
             rec = existing.get(canonical_email.lower())
-            if rec:
-                for field, val in data.items():
-                    if field in ('leader_email', 'track_number'):
-                        continue
-                    if val is not None:
-                        setattr(rec, field, val)
-                rec.updated_at = datetime.utcnow()
-                updated += 1
-            else:
-                rec = ProjectSubmission(**data)
-                db.session.add(rec)
-                existing[canonical_email.lower()] = rec
-                created += 1
+            if not rec:
+                skipped += 1
+                if len(errors) < 100:
+                    errors.append(
+                        f"Row {index + 2}: No project submission for track {track_number} ({email_norm})"
+                    )
+                continue
 
-            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
+            rec.score = score_val
+            rec.updated_at = datetime.utcnow()
+            if audit_user:
+                rec.updated_by_name = (audit_user.get('name') or '')[:255] or None
+                rec.updated_by_email = (audit_user.get('email') or '')[:255] or None
+            updated += 1
+
+            if updated % IMPORT_BATCH_COMMIT_SIZE == 0:
                 db.session.commit()
 
             if progress_callback:
                 try:
-                    progress_callback(created, updated, skipped)
+                    progress_callback(updated, skipped)
                 except Exception:
                     pass
 
@@ -1547,7 +2650,6 @@ def import_project_submission(df, track_number, progress_callback=None):
 
     return {
         'total_rows': total_rows,
-        'created': created,
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
@@ -1560,13 +2662,24 @@ def import_skilllab_submission(df, progress_callback=None):
     Upsert by leader_email: if a row with that leader_email exists, update it;
     otherwise create a new row.
 
-    Returns dict with total_rows, created, updated, skipped, errors.
+    Robustness: every row runs in its own SAVEPOINT
+    (db.session.begin_nested) so a single FK / integrity error never poisons
+    the rest of the batch. Missing user_pii rows for leaders in the sheet are
+    auto-created up front.
+
+    Returns dict with total_rows, created, updated, skipped, errors,
+    rows_errors, pii_auto_created, pii_auto_skipped.
     """
     from server.models import db
+
+    IM = _import_models()
+    SkillLabSubmission = IM.SkillLabSubmission
 
     columns = list(df.columns)
     col_map = _map_submission_columns(columns)
     leader_email_col = _find_leader_email_column(columns)
+    leader_name_col = _find_leader_name_column(columns)
+    leader_phone_col = _find_leader_phone_column(columns)
 
     if not leader_email_col:
         raise Exception(
@@ -1579,8 +2692,13 @@ def import_skilllab_submission(df, progress_callback=None):
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
 
     from sqlalchemy import func
+
+    pii_pre = _ensure_user_pii_for_leaders(
+        df, leader_email_col, name_col=leader_name_col, phone_col=leader_phone_col,
+    )
 
     emails_in_sheet = set()
     try:
@@ -1604,73 +2722,70 @@ def import_skilllab_submission(df, progress_callback=None):
         pass
 
     for index, row in df.iterrows():
+        email_val = row.get(leader_email_col)
+        if pd.isna(email_val):
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email='', reason_code='missing_email',
+                reason_message='Missing leader email',
+            ))
+            continue
+        email = str(email_val).strip().lower()
+        if not email or '@' not in email:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email, reason_code='invalid_email',
+                reason_message='Invalid leader email',
+            ))
+            continue
+
         try:
-            email_val = row.get(leader_email_col)
-            if pd.isna(email_val):
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing leader email")
-                continue
-            email = str(email_val).strip().lower()
-            if not email or '@' not in email:
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Invalid leader email")
-                continue
-
-            # Build data dict from column mapping
-            data = {}
-            for xlsx_col, model_field in col_map.items():
-                val = row.get(xlsx_col)
-                if pd.isna(val):
-                    val = None
-                elif model_field in ('team_size',):
-                    try:
-                        val = int(val)
-                    except (ValueError, TypeError):
+            with db.session.begin_nested():
+                data = {}
+                for xlsx_col, model_field in col_map.items():
+                    val = row.get(xlsx_col)
+                    if pd.isna(val):
                         val = None
-                elif model_field in ('created_at', 'updated_at'):
-                    if val is not None:
+                    elif model_field in ('team_size',):
                         try:
-                            if isinstance(val, str):
-                                val = pd.to_datetime(val)
-                            elif not isinstance(val, datetime):
-                                val = pd.to_datetime(val)
-                        except Exception:
+                            val = int(val)
+                        except (ValueError, TypeError):
                             val = None
+                    elif model_field in ('created_at', 'updated_at'):
+                        if val is not None:
+                            try:
+                                if isinstance(val, str):
+                                    val = pd.to_datetime(val)
+                                elif not isinstance(val, datetime):
+                                    val = pd.to_datetime(val)
+                            except Exception:
+                                val = None
+                    else:
+                        val = str(val).strip() if val is not None else None
+                        if val and model_field in ('team_name', 'leader_name', 'leader_phone',
+                                                    'created_by_name', 'created_by_email',
+                                                    'updated_by_name', 'updated_by_email'):
+                            val = val[:255]
+                        elif val and model_field == 'upload_screenshot':
+                            val = val[:1024]
+                    data[model_field] = val
+
+                data['leader_email'] = email
+
+                rec = existing.get(email)
+                if rec:
+                    for field, val in data.items():
+                        if field == 'leader_email':
+                            continue
+                        if val is not None:
+                            setattr(rec, field, val)
+                    rec.updated_at = datetime.utcnow()
+                    updated += 1
                 else:
-                    val = str(val).strip() if val is not None else None
-                    # Truncate long strings
-                    if val and model_field in ('team_name', 'leader_name', 'leader_phone',
-                                                'created_by_name', 'created_by_email',
-                                                'updated_by_name', 'updated_by_email'):
-                        val = val[:255]
-                    elif val and model_field == 'upload_screenshot':
-                        val = val[:1024]
-                data[model_field] = val
-
-            # Ensure leader_email is always set from the dedicated column
-            data['leader_email'] = email
-
-            rec = existing.get(email)
-            if rec:
-                # Update existing record
-                for field, val in data.items():
-                    if field == 'leader_email':
-                        continue  # don't change the key
-                    if val is not None:
-                        setattr(rec, field, val)
-                rec.updated_at = datetime.utcnow()
-                updated += 1
-            else:
-                # Create new record
-                rec = SkillLabSubmission(**data)
-                db.session.add(rec)
-                existing[email] = rec
-                created += 1
-
-            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
-                db.session.commit()
+                    rec = SkillLabSubmission(**data)
+                    db.session.add(rec)
+                    existing[email] = rec
+                    created += 1
 
             if progress_callback:
                 try:
@@ -1679,10 +2794,10 @@ def import_skilllab_submission(df, progress_callback=None):
                     pass
 
         except Exception as e:
-            db.session.rollback()
             skipped += 1
-            if len(errors) < 100:
-                errors.append(f"Row {index + 2}: {str(e)}")
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, e, raw_email=email,
+            ))
 
     try:
         db.session.commit()
@@ -1695,6 +2810,9 @@ def import_skilllab_submission(df, progress_callback=None):
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'pii_auto_created': pii_pre.get('pii_auto_created', 0),
+        'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
     }
 
 
@@ -1702,15 +2820,24 @@ def import_codelab_submission(df, progress_callback=None):
     """
     Import Code Lab submissions from a DataFrame into codelab_submission.
     Upsert by leader_email: if a row with that leader_email exists, update it;
-    otherwise create a new row. Uses same column mapping as Skill Lab (_map_submission_columns).
+    otherwise create a new row. Uses same column mapping as Skill Lab.
 
-    Returns dict with total_rows, created, updated, skipped, errors.
+    Per-row SAVEPOINT (db.session.begin_nested) isolates row failures and
+    missing user_pii rows for leaders are auto-created up front.
+
+    Returns dict with total_rows, created, updated, skipped, errors,
+    rows_errors, pii_auto_created, pii_auto_skipped.
     """
     from server.models import db
+
+    IM = _import_models()
+    CodeLabSubmission = IM.CodeLabSubmission
 
     columns = list(df.columns)
     col_map = _map_submission_columns(columns)
     leader_email_col = _find_leader_email_column(columns)
+    leader_name_col = _find_leader_name_column(columns)
+    leader_phone_col = _find_leader_phone_column(columns)
 
     if not leader_email_col:
         raise Exception(
@@ -1723,8 +2850,13 @@ def import_codelab_submission(df, progress_callback=None):
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
 
     from sqlalchemy import func
+
+    pii_pre = _ensure_user_pii_for_leaders(
+        df, leader_email_col, name_col=leader_name_col, phone_col=leader_phone_col,
+    )
 
     emails_in_sheet = set()
     try:
@@ -1748,68 +2880,70 @@ def import_codelab_submission(df, progress_callback=None):
         pass
 
     for index, row in df.iterrows():
+        email_val = row.get(leader_email_col)
+        if pd.isna(email_val):
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email='', reason_code='missing_email',
+                reason_message='Missing leader email',
+            ))
+            continue
+        email = str(email_val).strip().lower()
+        if not email or '@' not in email:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email, reason_code='invalid_email',
+                reason_message='Invalid leader email',
+            ))
+            continue
+
         try:
-            email_val = row.get(leader_email_col)
-            if pd.isna(email_val):
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing leader email")
-                continue
-            email = str(email_val).strip().lower()
-            if not email or '@' not in email:
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Invalid leader email")
-                continue
-
-            data = {}
-            for xlsx_col, model_field in col_map.items():
-                val = row.get(xlsx_col)
-                if pd.isna(val):
-                    val = None
-                elif model_field in ('team_size',):
-                    try:
-                        val = int(val)
-                    except (ValueError, TypeError):
+            with db.session.begin_nested():
+                data = {}
+                for xlsx_col, model_field in col_map.items():
+                    val = row.get(xlsx_col)
+                    if pd.isna(val):
                         val = None
-                elif model_field in ('created_at', 'updated_at'):
-                    if val is not None:
+                    elif model_field in ('team_size',):
                         try:
-                            if isinstance(val, str):
-                                val = pd.to_datetime(val)
-                            elif not isinstance(val, datetime):
-                                val = pd.to_datetime(val)
-                        except Exception:
+                            val = int(val)
+                        except (ValueError, TypeError):
                             val = None
+                    elif model_field in ('created_at', 'updated_at'):
+                        if val is not None:
+                            try:
+                                if isinstance(val, str):
+                                    val = pd.to_datetime(val)
+                                elif not isinstance(val, datetime):
+                                    val = pd.to_datetime(val)
+                            except Exception:
+                                val = None
+                    else:
+                        val = str(val).strip() if val is not None else None
+                        if val and model_field in ('team_name', 'leader_name', 'leader_phone',
+                                                    'created_by_name', 'created_by_email',
+                                                    'updated_by_name', 'updated_by_email'):
+                            val = val[:255]
+                        elif val and model_field == 'upload_screenshot':
+                            val = val[:1024]
+                    data[model_field] = val
+
+                data['leader_email'] = email
+
+                rec = existing.get(email)
+                if rec:
+                    for field, val in data.items():
+                        if field == 'leader_email':
+                            continue
+                        if val is not None:
+                            setattr(rec, field, val)
+                    rec.updated_at = datetime.utcnow()
+                    updated += 1
                 else:
-                    val = str(val).strip() if val is not None else None
-                    if val and model_field in ('team_name', 'leader_name', 'leader_phone',
-                                                'created_by_name', 'created_by_email',
-                                                'updated_by_name', 'updated_by_email'):
-                        val = val[:255]
-                    elif val and model_field == 'upload_screenshot':
-                        val = val[:1024]
-                data[model_field] = val
-
-            data['leader_email'] = email
-
-            rec = existing.get(email)
-            if rec:
-                for field, val in data.items():
-                    if field == 'leader_email':
-                        continue
-                    if val is not None:
-                        setattr(rec, field, val)
-                rec.updated_at = datetime.utcnow()
-                updated += 1
-            else:
-                rec = CodeLabSubmission(**data)
-                db.session.add(rec)
-                existing[email] = rec
-                created += 1
-
-            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
-                db.session.commit()
+                    rec = CodeLabSubmission(**data)
+                    db.session.add(rec)
+                    existing[email] = rec
+                    created += 1
 
             if progress_callback:
                 try:
@@ -1818,10 +2952,10 @@ def import_codelab_submission(df, progress_callback=None):
                     pass
 
         except Exception as e:
-            db.session.rollback()
             skipped += 1
-            if len(errors) < 100:
-                errors.append(f"Row {index + 2}: {str(e)}")
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, e, raw_email=email,
+            ))
 
     try:
         db.session.commit()
@@ -1834,6 +2968,9 @@ def import_codelab_submission(df, progress_callback=None):
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'pii_auto_created': pii_pre.get('pii_auto_created', 0),
+        'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
     }
 
 
@@ -1844,6 +2981,9 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
     problem_statement is set to "Lab 1" or "Lab 2" based on lab_number.
     """
     from server.models import db
+
+    IM = _import_models()
+    CodeLabSubmission = IM.CodeLabSubmission
 
     columns = list(df.columns)
     email_col = _find_email_column(columns)
@@ -1891,6 +3031,9 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
+
+    pii_pre = _ensure_user_pii_for_leaders(df, email_col, name_col=name_col)
 
     emails_in_sheet = set()
     try:
@@ -1916,54 +3059,56 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
         pass
 
     for index, row in df.iterrows():
+        email_val = row.get(email_col)
+        if pd.isna(email_val):
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email='', reason_code='missing_email',
+                reason_message='Missing email',
+            ))
+            continue
+        email = str(email_val).strip().lower()
+        if not email or '@' not in email:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email, reason_code='invalid_email',
+                reason_message='Invalid email',
+            ))
+            continue
+
         try:
-            email_val = row.get(email_col)
-            if pd.isna(email_val):
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing email")
-                continue
-            email = str(email_val).strip().lower()
-            if not email or '@' not in email:
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Invalid email")
-                continue
+            with db.session.begin_nested():
+                name_val = None
+                if name_col:
+                    nv = row.get(name_col)
+                    if not pd.isna(nv):
+                        name_val = str(nv).strip()[:255] or None
 
-            name_val = None
-            if name_col:
-                nv = row.get(name_col)
-                if not pd.isna(nv):
-                    name_val = str(nv).strip()[:255] or None
+                upload_val = None
+                if upload_col:
+                    uv = row.get(upload_col)
+                    if not pd.isna(uv):
+                        upload_val = str(uv).strip()[:1024] or None
 
-            upload_val = None
-            if upload_col:
-                uv = row.get(upload_col)
-                if not pd.isna(uv):
-                    upload_val = str(uv).strip()[:1024] or None
-
-            rec = existing.get(email)
-            if rec:
-                if name_val and not rec.leader_name:
-                    rec.leader_name = name_val
-                if upload_val:
-                    rec.upload_screenshot = upload_val
-                rec.updated_at = datetime.utcnow()
-                updated += 1
-            else:
-                rec = CodeLabSubmission(
-                    leader_email=email,
-                    leader_name=name_val,
-                    track_number=track_number,
-                    problem_statement=problem_stmt,
-                    upload_screenshot=upload_val,
-                )
-                db.session.add(rec)
-                existing[email] = rec
-                created += 1
-
-            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
-                db.session.commit()
+                rec = existing.get(email)
+                if rec:
+                    if name_val and not rec.leader_name:
+                        rec.leader_name = name_val
+                    if upload_val:
+                        rec.upload_screenshot = upload_val
+                    rec.updated_at = datetime.utcnow()
+                    updated += 1
+                else:
+                    rec = CodeLabSubmission(
+                        leader_email=email,
+                        leader_name=name_val,
+                        track_number=track_number,
+                        problem_statement=problem_stmt,
+                        upload_screenshot=upload_val,
+                    )
+                    db.session.add(rec)
+                    existing[email] = rec
+                    created += 1
 
             if progress_callback:
                 try:
@@ -1972,10 +3117,10 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
                     pass
 
         except Exception as e:
-            db.session.rollback()
             skipped += 1
-            if len(errors) < 100:
-                errors.append(f"Row {index + 2}: {str(e)}")
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, e, raw_email=email,
+            ))
 
     try:
         db.session.commit()
@@ -1988,6 +3133,9 @@ def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'pii_auto_created': pii_pre.get('pii_auto_created', 0),
+        'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
     }
 
 
@@ -2071,13 +3219,65 @@ def _find_mcq_column(columns, *candidates):
     return None
 
 
-def import_optional_mcq_response(df, track_number, progress_callback=None):
+def _parse_mcq_score_slash(cell_value):
+    """
+    Parse Action Center score cells like '6 / 10' or '0/10'.
+    Returns (numerator, denominator) integers, or (None, None) if not parseable.
+    """
+    if cell_value is None or (isinstance(cell_value, float) and pd.isna(cell_value)):
+        return None, None
+    s = str(cell_value).strip()
+    m = re.match(r"^(\d+)\s*/\s*(\d+)", s)
+    if m:
+        return int(m.group(1)), int(m.group(2))
+    try:
+        v = int(float(s))
+        return v, 10
+    except (ValueError, TypeError):
+        return None, None
+
+
+def _find_question_columns_score_to_created(columns):
+    """
+    For Cohort 2 optional sheet: ten question columns sit between 'Score' and 'Created At'.
+    Returns list of (xlsx_col, question_N) or None.
+    """
+    cols = list(columns)
+    score_col = _find_mcq_column(columns, "score")
+    created_col = _find_mcq_column(columns, "created at", "Created At")
+    if not score_col or not created_col:
+        return None
+    try:
+        i0 = cols.index(score_col)
+        i1 = cols.index(created_col)
+    except ValueError:
+        return None
+    if i1 <= i0 + 1:
+        return None
+    middle = cols[i0 + 1:i1]
+    if len(middle) < 10:
+        return None
+    model_fields = [f"question_{i}" for i in range(1, 11)]
+    return [(middle[i], model_fields[i]) for i in range(10)]
+
+
+def import_optional_mcq_response(
+    df,
+    track_number,
+    progress_callback=None,
+    score_from_sheet=False,
+    allow_multiple_per_email=False,
+):
     """
     Import Optional MCQ responses from a DataFrame into optional_mcq_response.
-    Upsert by (track_number, email): update if exists, else insert.
+    Upsert by (track_number, email): update if exists, else insert — unless allow_multiple_per_email
+    is True (Cohort 2 track 4), in which case every row is inserted and duplicates per email are kept.
     Returns dict: total_rows, created, updated, skipped, errors.
     """
     from server.models import db
+
+    IM = _import_models()
+    OptionalMcqResponse = IM.OptionalMcqResponse
 
     columns = list(df.columns)
     email_col = _find_leader_email_column(columns)
@@ -2087,9 +3287,13 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
             "Please ensure the sheet has a column named 'Leader Email'."
         )
     question_cols = _find_mcq_question_columns(columns, email_col)
+    if not question_cols and score_from_sheet:
+        question_cols = _find_question_columns_score_to_created(columns)
     if not question_cols:
         raise Exception("Could not find 10 question columns in the MCQ sheet.")
 
+    score_col = _find_mcq_column(columns, 'score')
+    team_name_col = _find_mcq_column(columns, 'team name', 'Team Name')
     leader_name_col = _find_mcq_column(columns, 'leader name', 'Leader Name')
     leader_phone_col = _find_mcq_column(columns, 'leader phone', 'Leader Phone')
     team_size_col = _find_mcq_column(columns, 'team size', 'Team size', 'team_size')
@@ -2106,121 +3310,139 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
 
     from sqlalchemy import func
 
-    emails_in_sheet = set()
-    try:
-        for v in df[email_col].dropna():
-            e = str(v).strip().lower()
-            if e and '@' in e:
-                emails_in_sheet.add(e)
-    except Exception:
-        pass
+    pii_pre = _ensure_user_pii_for_leaders(
+        df, email_col, name_col=leader_name_col, phone_col=leader_phone_col,
+    )
 
+    emails_in_sheet = set()
     existing = {}
-    try:
-        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
-            if not chunk:
-                continue
-            for mrow in OptionalMcqResponse.query.filter(
-                OptionalMcqResponse.track_number == track_number,
-                func.lower(OptionalMcqResponse.email).in_(chunk),
-            ).all():
-                existing[mrow.email.lower()] = mrow
-    except Exception:
-        pass
+    if not allow_multiple_per_email:
+        try:
+            for v in df[email_col].dropna():
+                e = str(v).strip().lower()
+                if e and '@' in e:
+                    emails_in_sheet.add(e)
+        except Exception:
+            pass
+
+        try:
+            for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+                if not chunk:
+                    continue
+                for mrow in OptionalMcqResponse.query.filter(
+                    OptionalMcqResponse.track_number == track_number,
+                    func.lower(OptionalMcqResponse.email).in_(chunk),
+                ).all():
+                    existing[mrow.email.lower()] = mrow
+        except Exception:
+            pass
 
     for index, row in df.iterrows():
+        email_val = row.get(email_col)
+        if pd.isna(email_val):
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email='', reason_code='missing_email',
+                reason_message='Missing email',
+            ))
+            continue
+        email = str(email_val).strip().lower()
+        if not email or '@' not in email:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email, reason_code='invalid_email',
+                reason_message='Invalid email',
+            ))
+            continue
+
         try:
-            email_val = row.get(email_col)
-            if pd.isna(email_val):
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing email")
-                continue
-            email = str(email_val).strip().lower()
-            if not email or '@' not in email:
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Invalid email")
-                continue
+            with db.session.begin_nested():
+                def _get(col, default=None):
+                    if col is None:
+                        return default
+                    v = row.get(col)
+                    if pd.isna(v):
+                        return default
+                    return str(v).strip() or default
 
-            def _get(col, default=None):
-                if col is None:
-                    return default
-                v = row.get(col)
-                if pd.isna(v):
-                    return default
-                return str(v).strip() or default
+                data = {'track_number': track_number, 'email': email}
+                if team_name_col:
+                    data['team_name'] = _get(team_name_col)
+                if leader_name_col:
+                    data['leader_name'] = _get(leader_name_col)
+                if leader_phone_col:
+                    data['leader_phone'] = _get(leader_phone_col)
+                if team_size_col:
+                    try:
+                        v = row.get(team_size_col)
+                        data['team_size'] = int(v) if v is not None and not pd.isna(v) else None
+                    except (ValueError, TypeError):
+                        data['team_size'] = None
+                if problem_col:
+                    data['problem_statement'] = _get(problem_col)
+                if created_at_col:
+                    try:
+                        v = row.get(created_at_col)
+                        if v is not None and not pd.isna(v):
+                            data['created_at'] = pd.to_datetime(v) if hasattr(pd, 'to_datetime') else v
+                    except Exception:
+                        pass
+                if created_by_name_col:
+                    data['created_by_name'] = _get(created_by_name_col)
+                if created_by_email_col:
+                    data['created_by_email'] = _get(created_by_email_col)
+                if updated_at_col:
+                    try:
+                        v = row.get(updated_at_col)
+                        if v is not None and not pd.isna(v):
+                            data['updated_at'] = pd.to_datetime(v) if hasattr(pd, 'to_datetime') else v
+                    except Exception:
+                        pass
+                if updated_by_name_col:
+                    data['updated_by_name'] = _get(updated_by_name_col)
+                if updated_by_email_col:
+                    data['updated_by_email'] = _get(updated_by_email_col)
 
-            data = {'track_number': track_number, 'email': email}
-            if leader_name_col:
-                data['leader_name'] = _get(leader_name_col)
-            if leader_phone_col:
-                data['leader_phone'] = _get(leader_phone_col)
-            if team_size_col:
-                try:
-                    v = row.get(team_size_col)
-                    data['team_size'] = int(v) if v is not None and not pd.isna(v) else None
-                except (ValueError, TypeError):
-                    data['team_size'] = None
-            if problem_col:
-                data['problem_statement'] = _get(problem_col)
-            if created_at_col:
-                try:
-                    v = row.get(created_at_col)
-                    if v is not None and not pd.isna(v):
-                        data['created_at'] = pd.to_datetime(v) if hasattr(pd, 'to_datetime') else v
-                except Exception:
-                    pass
-            if created_by_name_col:
-                data['created_by_name'] = _get(created_by_name_col)
-            if created_by_email_col:
-                data['created_by_email'] = _get(created_by_email_col)
-            if updated_at_col:
-                try:
-                    v = row.get(updated_at_col)
-                    if v is not None and not pd.isna(v):
-                        data['updated_at'] = pd.to_datetime(v) if hasattr(pd, 'to_datetime') else v
-                except Exception:
-                    pass
-            if updated_by_name_col:
-                data['updated_by_name'] = _get(updated_by_name_col)
-            if updated_by_email_col:
-                data['updated_by_email'] = _get(updated_by_email_col)
+                for xlsx_col, model_field in question_cols:
+                    val = row.get(xlsx_col)
+                    if pd.isna(val):
+                        data[model_field] = None
+                    else:
+                        data[model_field] = str(val).strip() or None
 
-            for xlsx_col, model_field in question_cols:
-                val = row.get(xlsx_col)
-                if pd.isna(val):
-                    data[model_field] = None
+                if score_from_sheet:
+                    num, den = _parse_mcq_score_slash(row.get(score_col)) if score_col else (None, None)
+                    if num is not None and den and den > 0:
+                        data['score'] = min(10, max(0, int(round(num * 10.0 / float(den)))))
+                    else:
+                        data['score'] = None
                 else:
-                    data[model_field] = str(val).strip() or None
+                    from server.utils.mcq_answer_key import score_submission
+                    auto = score_submission(
+                        track_number,
+                        data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
+                        data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
+                        data.get('question_9'), data.get('question_10'),
+                    )
+                    data['score'] = auto['correct_count']
 
-            from server.utils.mcq_answer_key import score_submission
-            auto = score_submission(
-                track_number,
-                data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
-                data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
-                data.get('question_9'), data.get('question_10'),
-            )
-            data['score'] = auto['correct_count']
-
-            rec = existing.get(email)
-            if rec:
-                for k, v in data.items():
-                    if k == 'email':
-                        continue
-                    setattr(rec, k, v)
-                updated += 1
-            else:
-                rec = OptionalMcqResponse(**data)
-                db.session.add(rec)
-                existing[email] = rec
-                created += 1
-
-            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
-                db.session.commit()
+                rec = None if allow_multiple_per_email else existing.get(email)
+                if rec:
+                    for k, v in data.items():
+                        if k == 'email':
+                            continue
+                        setattr(rec, k, v)
+                    updated += 1
+                else:
+                    rec = OptionalMcqResponse(**data)
+                    db.session.add(rec)
+                    if not allow_multiple_per_email:
+                        existing[email] = rec
+                    created += 1
 
             if progress_callback:
                 try:
@@ -2229,10 +3451,10 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
                     pass
 
         except Exception as e:
-            db.session.rollback()
             skipped += 1
-            if len(errors) < 100:
-                errors.append(f"Row {index + 2}: {str(e)}")
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, e, raw_email=email,
+            ))
 
     try:
         db.session.commit()
@@ -2245,6 +3467,9 @@ def import_optional_mcq_response(df, track_number, progress_callback=None):
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'pii_auto_created': pii_pre.get('pii_auto_created', 0),
+        'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
     }
 
 
@@ -2257,6 +3482,9 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
     """
     from server.models import db
     from server.utils.main_mcq_answer_key import score_submission as main_score_submission
+
+    IM = _import_models()
+    MainMcqResponse = IM.MainMcqResponse
 
     columns = list(df.columns)
     email_col = _find_leader_email_column(columns)
@@ -2279,8 +3507,13 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
     updated = 0
     skipped = 0
     errors = []
+    rows_errors = []
 
     from sqlalchemy import func
+
+    pii_pre = _ensure_user_pii_for_leaders(
+        df, email_col, name_col=leader_name_col, phone_col=leader_phone_col,
+    )
 
     emails_in_sheet = set()
     try:
@@ -2305,72 +3538,74 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
         pass
 
     for index, row in df.iterrows():
+        email_val = row.get(email_col)
+        if pd.isna(email_val):
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email='', reason_code='missing_email',
+                reason_message='Missing email',
+            ))
+            continue
+        email = str(email_val).strip().lower()
+        if not email or '@' not in email:
+            skipped += 1
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, None, raw_email=email, reason_code='invalid_email',
+                reason_message='Invalid email',
+            ))
+            continue
+
         try:
-            email_val = row.get(email_col)
-            if pd.isna(email_val):
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Missing email")
-                continue
-            email = str(email_val).strip().lower()
-            if not email or '@' not in email:
-                skipped += 1
-                if len(errors) < 100:
-                    errors.append(f"Row {index + 2}: Invalid email")
-                continue
+            with db.session.begin_nested():
+                def _get(col, default=None):
+                    if col is None:
+                        return default
+                    v = row.get(col)
+                    if pd.isna(v):
+                        return default
+                    return str(v).strip() or default
 
-            def _get(col, default=None):
-                if col is None:
-                    return default
-                v = row.get(col)
-                if pd.isna(v):
-                    return default
-                return str(v).strip() or default
+                data = {'track_number': track_number, 'email': email}
+                if leader_name_col:
+                    data['leader_name'] = _get(leader_name_col)
+                if leader_phone_col:
+                    data['leader_phone'] = _get(leader_phone_col)
+                if team_size_col:
+                    try:
+                        v = row.get(team_size_col)
+                        data['team_size'] = int(v) if v is not None and not pd.isna(v) else None
+                    except (ValueError, TypeError):
+                        data['team_size'] = None
+                if problem_col:
+                    data['problem_statement'] = _get(problem_col)
 
-            data = {'track_number': track_number, 'email': email}
-            if leader_name_col:
-                data['leader_name'] = _get(leader_name_col)
-            if leader_phone_col:
-                data['leader_phone'] = _get(leader_phone_col)
-            if team_size_col:
-                try:
-                    v = row.get(team_size_col)
-                    data['team_size'] = int(v) if v is not None and not pd.isna(v) else None
-                except (ValueError, TypeError):
-                    data['team_size'] = None
-            if problem_col:
-                data['problem_statement'] = _get(problem_col)
+                for xlsx_col, model_field in question_cols:
+                    val = row.get(xlsx_col)
+                    if pd.isna(val):
+                        data[model_field] = None
+                    else:
+                        data[model_field] = str(val).strip() or None
 
-            for xlsx_col, model_field in question_cols:
-                val = row.get(xlsx_col)
-                if pd.isna(val):
-                    data[model_field] = None
+                auto = main_score_submission(
+                    track_number,
+                    data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
+                    data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
+                    data.get('question_9'), data.get('question_10'),
+                )
+                data['score'] = auto['correct_count']
+
+                rec = existing.get(email)
+                if rec:
+                    for k, v in data.items():
+                        if k == 'email':
+                            continue
+                        setattr(rec, k, v)
+                    updated += 1
                 else:
-                    data[model_field] = str(val).strip() or None
-
-            auto = main_score_submission(
-                track_number,
-                data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
-                data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
-                data.get('question_9'), data.get('question_10'),
-            )
-            data['score'] = auto['correct_count']
-
-            rec = existing.get(email)
-            if rec:
-                for k, v in data.items():
-                    if k == 'email':
-                        continue
-                    setattr(rec, k, v)
-                updated += 1
-            else:
-                rec = MainMcqResponse(**data)
-                db.session.add(rec)
-                existing[email] = rec
-                created += 1
-
-            if (created + updated) % IMPORT_BATCH_COMMIT_SIZE == 0:
-                db.session.commit()
+                    rec = MainMcqResponse(**data)
+                    db.session.add(rec)
+                    existing[email] = rec
+                    created += 1
 
             if progress_callback:
                 try:
@@ -2379,10 +3614,10 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
                     pass
 
         except Exception as e:
-            db.session.rollback()
             skipped += 1
-            if len(errors) < 100:
-                errors.append(f"Row {index + 2}: {str(e)}")
+            _record_row_error(errors, rows_errors, _classify_row_error(
+                index, e, raw_email=email,
+            ))
 
     try:
         db.session.commit()
@@ -2395,4 +3630,7 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
         'updated': updated,
         'skipped': skipped,
         'errors': errors[:100],
+        'rows_errors': rows_errors,
+        'pii_auto_created': pii_pre.get('pii_auto_created', 0),
+        'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
     }

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codelab image verification</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Codelab image verification</h1>
+      <p class="muted">Gemini vision · CSV with image URLs · not part of the main app</p>
+    </div>
+    <form method="post" action="{{ url_for('logout') }}">
+      <button type="submit" class="secondary">Sign out</button>
+    </form>
+  </header>
+
+  <main class="layout">
+    <section class="card">
+      <p class="hint">Model and system instruction are set in <code>verification_config.py</code> (restart after edits).</p>
+
+      <h2>1. CSV</h2>
+      <label for="csv">File (column of <code>https://</code> links to images or PDFs)</label>
+      <input id="csv" type="file" accept=".csv,text/csv">
+      <label for="url_column">URL column name (optional)</label>
+      <input id="url_column" type="text" placeholder="e.g. screenshot_url — leave empty to auto-detect">
+      <p class="hint">Auto-detect picks a column whose header looks like an image or URL field.</p>
+
+      <button type="button" id="run" class="primary">Run verification</button>
+      <div id="progress-panel" class="progress-panel" hidden>
+        <div class="progress-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progress-track">
+          <div class="progress-fill" id="progress-fill" style="width:0%"></div>
+        </div>
+        <p id="progress-detail" class="muted progress-detail"></p>
+      </div>
+      <p id="status" class="muted" aria-live="polite"></p>
+    </section>
+
+    <section class="card results" id="out" hidden>
+      <h2>Results</h2>
+      <p id="elapsed-banner" class="elapsed-banner" hidden></p>
+      <pre id="summary"></pre>
+      <div id="table-wrap"></div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

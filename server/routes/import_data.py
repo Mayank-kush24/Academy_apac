@@ -5,9 +5,9 @@ import os
 import json
 import queue
 import threading
-from flask import Blueprint, request, jsonify, Response, stream_with_context, current_app
+from flask import Blueprint, request, jsonify, Response, stream_with_context, current_app, g
 from werkzeug.utils import secure_filename
-from server.models import db, BobCompany, SkillboostProfile
+from server.models import db, BobCompany, SkillboostProfile, SkillLabSubmission, CodeLabSubmission
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role, require_page_access
 from server.utils.excel_parser import (
@@ -27,16 +27,26 @@ from server.utils.excel_parser import (
     import_project_submission,
     import_lab_completion_sheet,
     import_main_mcq_response,
-    SKILLBOOST_SHEET_SUBSTRING,
+    import_optional_mcq_response,
+    load_cohort2_optional_mcq_sheet_only,
+    skillboost_sheet_not_found_message,
+    action_center_has_non_profile_imports,
+    ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE,
     SKILLLAB_SUBMISSION_SHEET_SUBSTRING,
     CODELAB_SUBMISSION_SHEET_SUBSTRING,
     LAB_COMPLETION_SHEET_SUBSTRINGS,
 )
 from server.utils.bob_match import recalculate_bob_match, _normalize
+from server.utils.cohort_participant_models import (
+    apply_cohort_globals,
+    participant_model,
+    snapshot_cohort_globals,
+)
 from server.utils.cache import clear_cache
 from server.utils.skillboost_verify import verify_profile_url
 from server.utils.audit import set_audit_session_vars
-from datetime import datetime
+from server.utils.import_file_archive import archive_upload, ImportArchiveError
+from datetime import date, datetime
 
 bp = Blueprint('import', __name__)
 
@@ -46,6 +56,143 @@ ALLOWED_EXTENSIONS = {'xlsx', 'xls'}
 def allowed_file(filename):
     """Check if file extension is allowed"""
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _per_sheet_block(module, sheet_name, importer_result, *, track=None, lab=None):
+    """Build one entry for the per_sheet_errors response array.
+
+    importer_result is the dict returned by an import_*() function. It MAY
+    include 'rows_errors' (structured: list of {row, reason_code,
+    reason_message, raw_email}). When absent we still emit a block with
+    only counts so the UI can show 'sheet detected, no row issues'.
+    """
+    if importer_result is None:
+        return None
+    block = {
+        'module': module,
+        'sheet_name': sheet_name or '',
+        'skipped': importer_result.get('skipped', 0) or 0,
+        'created': importer_result.get('created', 0) or 0,
+        'updated': importer_result.get('updated', 0) or 0,
+        'total_rows': importer_result.get('total_rows', 0) or 0,
+        'pii_auto_created': importer_result.get('pii_auto_created', 0) or 0,
+        'pii_auto_skipped': importer_result.get('pii_auto_skipped', 0) or 0,
+        'rows': [],
+        'by_reason': [],
+    }
+    if track is not None:
+        block['track'] = track
+    if lab is not None:
+        block['lab'] = lab
+
+    rows_errors = importer_result.get('rows_errors') or []
+    seen = []
+    for r in rows_errors:
+        if not isinstance(r, dict):
+            continue
+        seen.append({
+            'row': r.get('row'),
+            'reason_code': r.get('reason_code') or 'other',
+            'reason_message': (r.get('reason_message') or '')[:300],
+            'raw_email': (r.get('raw_email') or '')[:255],
+        })
+    block['rows'] = seen[:500]
+
+    # Sample rows per reason (from capped row log)
+    samples_by_reason = {}
+    for r in seen:
+        rc = r['reason_code']
+        bucket = samples_by_reason.setdefault(rc, [])
+        if len(bucket) < 5 and r['row'] is not None:
+            bucket.append(r['row'])
+
+    skip_reason_counts = importer_result.get('skip_reason_counts') or {}
+    if isinstance(skip_reason_counts, dict) and skip_reason_counts:
+        by_reason = []
+        for rc, cnt in sorted(skip_reason_counts.items(), key=lambda kv: -int(kv[1] or 0)):
+            try:
+                n = int(cnt)
+            except (TypeError, ValueError):
+                n = 0
+            by_reason.append({
+                'reason_code': rc,
+                'count': n,
+                'sample_rows': samples_by_reason.get(rc, [])[:5],
+            })
+        block['by_reason'] = by_reason
+    else:
+        counts = {}
+        for r in seen:
+            rc = r['reason_code']
+            d = counts.setdefault(rc, {'reason_code': rc, 'count': 0, 'sample_rows': []})
+            d['count'] += 1
+            if len(d['sample_rows']) < 5 and r['row'] is not None:
+                d['sample_rows'].append(r['row'])
+        block['by_reason'] = sorted(counts.values(), key=lambda d: -d['count'])
+    return block
+
+
+def _build_per_sheet_errors(*, profile_result=None, profile_sheet_name=None,
+                            submission_result=None, submission_sheet_name=None,
+                            codelab_result=None, codelab_sheet_name=None,
+                            main_mcq_results=None,
+                            optional_mcq_results=None,
+                            lab_completion_results=None,
+                            project_submission_results=None):
+    """Aggregate every importer's structured row errors into one list.
+
+    Each per-sheet block carries module/track/lab metadata, total counts and
+    a 'by_reason' breakdown the import-result UI groups under the
+    'Issues by sheet' panel.
+    """
+    out = []
+
+    if profile_result and isinstance(profile_result, dict):
+        block = _per_sheet_block('skillboost_profile', profile_sheet_name, profile_result)
+        if block:
+            out.append(block)
+
+    if submission_result and isinstance(submission_result, dict) and 'error' not in submission_result:
+        block = _per_sheet_block('skilllab_submission', submission_sheet_name, submission_result)
+        if block:
+            out.append(block)
+
+    if codelab_result and isinstance(codelab_result, dict) and 'error' not in codelab_result:
+        block = _per_sheet_block('codelab_submission', codelab_sheet_name, codelab_result)
+        if block:
+            out.append(block)
+
+    for mcr in main_mcq_results or []:
+        if not isinstance(mcr, dict) or 'error' in mcr:
+            continue
+        block = _per_sheet_block('main_mcq', mcr.get('sheet_name'), mcr, track=mcr.get('track'))
+        if block:
+            out.append(block)
+
+    for omr in optional_mcq_results or []:
+        if not isinstance(omr, dict) or 'error' in omr:
+            continue
+        block = _per_sheet_block('optional_mcq', omr.get('sheet_name'), omr, track=omr.get('track'))
+        if block:
+            out.append(block)
+
+    for lcr in lab_completion_results or []:
+        if not isinstance(lcr, dict) or 'error' in lcr:
+            continue
+        block = _per_sheet_block('lab_completion', lcr.get('sheet_name'), lcr,
+                                 track=lcr.get('track'), lab=lcr.get('lab'))
+        if block:
+            out.append(block)
+
+    for psr in project_submission_results or []:
+        if not isinstance(psr, dict) or 'error' in psr:
+            continue
+        block = _per_sheet_block('project_submission', psr.get('sheet_name'), psr,
+                                 track=psr.get('track'))
+        if block:
+            out.append(block)
+
+    return out
 
 
 @bp.route('/preview', methods=['POST'])
@@ -62,16 +209,13 @@ def preview_import():
         
         if not allowed_file(file.filename):
             return jsonify({'error': 'Invalid file type. Only Excel files (.xlsx, .xls) are allowed'}), 400
-        
-        # Save file temporarily
-        filename = secure_filename(file.filename)
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        file_path = os.path.join(upload_folder, filename)
-        file.save(file_path)
-        
-        # Parse Excel
-        df = parse_excel(file_path)
+
+        try:
+            archive_path = archive_upload(file, kind="main_import_preview")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
+
+        df = parse_excel(archive_path)
         
         # Get Excel columns
         excel_columns = list(df.columns)
@@ -84,13 +228,7 @@ def preview_import():
         
         # Get DB fields for dropdown
         db_fields = get_db_fields()
-        
-        # Clean up temp file
-        try:
-            os.remove(file_path)
-        except:
-            pass
-        
+
         return jsonify({
             'excel_columns': excel_columns,
             'preview_rows': preview_rows,
@@ -129,15 +267,15 @@ def execute_import():
         
         if mode not in ['create', 'create_update', 'update_only']:
             return jsonify({'error': 'Invalid import mode'}), 400
-        
-        # Save file temporarily
+
+        try:
+            archive_path = archive_upload(file, kind="main_import")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
+
         filename = secure_filename(file.filename)
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        file_path = os.path.join(upload_folder, filename)
-        file.save(file_path)
-        
-        # Parse Excel
+        file_path = archive_path
+
         df = parse_excel(file_path)
         
         # Optional: set additional_info for master_logs (source, filename)
@@ -151,12 +289,14 @@ def execute_import():
         if request.args.get('stream') == '1':
             progress_queue = queue.Queue()
             app = current_app._get_current_object()
+            cohort_snap = snapshot_cohort_globals()
 
             def progress_callback(created, updated, skipped):
                 progress_queue.put({'created': created, 'updated': updated, 'skipped': skipped})
 
             def run_import():
                 with app.app_context():
+                    apply_cohort_globals(cohort_snap[0], cohort_snap[1])
                     try:
                         res = import_data(df, mappings, mode, progress_callback=progress_callback)
                         try:
@@ -170,11 +310,6 @@ def execute_import():
                         progress_queue.put({'done': True, 'result': res})
                     except Exception as e:
                         progress_queue.put({'done': True, 'error': str(e)})
-                    finally:
-                        try:
-                            os.remove(file_path)
-                        except Exception:
-                            pass
 
             thread = threading.Thread(target=run_import)
             thread.start()
@@ -211,10 +346,6 @@ def execute_import():
             clear_cache('_get_dashboard_data_cached')
         except Exception:
             pass
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
         return jsonify(result), 200
         
     except Exception as e:
@@ -237,10 +368,10 @@ def import_bob_companies():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Only Excel files (.xlsx, .xls) are allowed for BOB import'}), 400
 
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        file_path = os.path.join(upload_folder, secure_filename(file.filename))
-        file.save(file_path)
+        try:
+            file_path = archive_upload(file, kind="bob")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
 
         try:
             import openpyxl
@@ -253,26 +384,18 @@ def import_bob_companies():
                     company_names.append(str(val).strip())
             wb.close()
         except Exception as e:
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
             return jsonify({'error': f'Error reading XLSX: {str(e)}'}), 400
 
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
-
-        # Replace bob_companies: delete all then batch insert
-        db.session.query(BobCompany).delete()
+        # Replace bob_companies: delete all then batch insert (cohort-prefixed table when applicable)
+        Bob = participant_model(BobCompany)
+        db.session.query(Bob).delete()
         db.session.commit()
 
         for i in range(0, len(company_names), BOB_INSERT_BATCH):
             batch = company_names[i:i + BOB_INSERT_BATCH]
             for name in batch:
                 norm = _normalize(name)
-                db.session.add(BobCompany(company_name=name, normalized_name=norm if norm else None))
+                db.session.add(Bob(company_name=name, normalized_name=norm if norm else None))
             db.session.commit()
 
         updated = recalculate_bob_match()
@@ -286,6 +409,29 @@ def import_bob_companies():
             'companies_imported': len(company_names),
             'bob_match_updated': updated,
             'message': f'Imported {len(company_names)} companies and updated BOB match for {updated} profile(s).'
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/bob/recalculate-matches', methods=['POST'])
+@require_page_access('import')
+def recalculate_bob_matches_only():
+    """
+    Recompute bob_match on user_pii and user_pii_injected from the cohort's bob_companies table.
+    Use after loading cohort_*_bob_companies directly in SQL (BOB XLSX import already runs this).
+    """
+    try:
+        from server.utils.bob_match import recalculate_bob_match
+
+        updated = recalculate_bob_match()
+        try:
+            clear_cache('_get_dashboard_data_cached')
+        except Exception:
+            pass
+        return jsonify({
+            'bob_match_updated': updated,
+            'message': f'Recalculated BOB match; {updated} row(s) updated.',
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -307,18 +453,27 @@ def preview_skillboost_file():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Only Excel files (.xlsx, .xls) are allowed'}), 400
 
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        file_path = os.path.join(upload_folder, secure_filename(file.filename))
-        file.save(file_path)
         try:
-            preview = get_skillboost_preview(file_path)
-            return jsonify(preview), 200
-        finally:
-            try:
-                os.remove(file_path)
-            except Exception:
-                pass
+            file_path = archive_upload(file, kind="skillboost_preview")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
+
+        cohort_id = getattr(g, 'cohort_id', None)
+        preview = get_skillboost_preview(file_path, cohort_id=cohort_id)
+        try:
+            mapping = preview.get('sheet_mapping') or []
+            missing = preview.get('missing_critical_modules') or []
+            current_app.logger.info(
+                "[skillboost_preview] cohort=%s tabs=%d detected=%d unrecognised=%d missing_critical=%d",
+                cohort_id,
+                len(mapping),
+                sum(1 for r in mapping if r.get('status') == 'detected'),
+                sum(1 for r in mapping if r.get('status') == 'unrecognised'),
+                len(missing),
+            )
+        except Exception:
+            pass
+        return jsonify(preview), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -327,12 +482,14 @@ def preview_skillboost_file():
 @require_page_access('import')
 def import_skillboost_profiles():
     """
-    Import Skill Lab / Google Skills Boost profiles from XLSX.
-    Auto-detects sheet whose name contains "Share your Google Skills Pu" (case-insensitive).
-    Maps Email -> email, and a column containing profile/link/skills -> google_cloud_skills_boost_profile_link.
-    Uses skillboost_profile table; does not overwrite rows where valid = TRUE.
+    Import Action Center XLSX (Skill Lab profile and/or other subsheets).
+    Cohort 1: Skills profile sheet is optional when the workbook includes other recognized sheets
+    (Main MCQ 16/17/18, optional MCQ, Skill Lab submission, Code Lab, lab completion, project submission).
+    Cohort 2: without a profile sheet, imports Cohort 2 Optional MCQ only when that tab is present;
+    otherwise behaves like Cohort 1 for non-profile subsheets (split Action Center exports).
+    When a profile sheet is present, maps Email + profile link columns into skillboost_profile (does not
+    overwrite rows where valid = TRUE).
     """
-    file_path = None
     try:
         if 'file' not in request.files and 'skillboost_file' not in request.files:
             return jsonify({'error': 'No file provided'}), 400
@@ -342,42 +499,208 @@ def import_skillboost_profiles():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Only Excel files (.xlsx, .xls) are allowed for Skill Lab profile import'}), 400
 
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        file_path = os.path.join(upload_folder, secure_filename(file.filename))
-        file.save(file_path)
+        try:
+            file_path = archive_upload(file, kind="skillboost_import")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
 
-        # Open workbook once and load all sheets needed for import (avoids many file reads)
-        sheets = load_all_skillboost_sheets(file_path)
-        if not sheets.get('profile_sheet_name') or sheets.get('profile_df') is None:
+        cohort_id = getattr(g, 'cohort_id', None)
+
+        sheets = load_all_skillboost_sheets(file_path, cohort_id=cohort_id)
+        classification = sheets.get('classification') or {}
+        sheet_mapping = classification.get('sheet_mapping') or []
+        missing_critical_modules = classification.get('missing_critical_modules') or []
+
+        # Confirmation gate: when critical modules are missing the client must
+        # POST confirm_missing_modules=true after the user explicitly
+        # acknowledges the warning in the preview UI.
+        raw_confirm = (
+            request.form.get('confirm_missing_modules')
+            or request.values.get('confirm_missing_modules')
+            or ''
+        ).strip().lower()
+        confirm_missing = raw_confirm in ('1', 'true', 'yes', 'on')
+        if missing_critical_modules and not confirm_missing:
             return jsonify({
-                'error': f'No worksheet found whose name contains "{SKILLBOOST_SHEET_SUBSTRING}". '
-                         'Please use an XLSX file that has a sheet with that name (e.g. from Google Skills Boost / Skill Lab export).'
-            }), 400
-
-        df = sheets['profile_df']
-        if len(df) == 0:
-            return jsonify({'error': 'The selected sheet is empty'}), 400
-
-        sheet_name = sheets['profile_sheet_name']
-        columns = list(df.columns)
-        email_col = _find_email_column(columns)
-        profile_link_col = _find_profile_link_column(columns)
-        if not email_col:
-            return jsonify({'error': 'Could not find an Email column in the sheet. Please ensure the sheet has a column named "Email".'}), 400
-        if not profile_link_col:
-            return jsonify({
-                'error': 'Could not find a profile link column (column containing "profile", "link", or "skills"). '
-                         'Please ensure the sheet has a column for the Google Skills Boost public profile link.'
-            }), 400
+                'error': (
+                    'Some expected Action Center subsheets are missing from this '
+                    'workbook (see "missing_critical_modules"). Re-confirm the upload '
+                    'to import only the detected sheets.'
+                ),
+                'sheet_mapping': sheet_mapping,
+                'missing_critical_modules': missing_critical_modules,
+                'requires_confirmation': True,
+            }), 409
 
         try:
-            from server.utils.audit import set_audit_extra
-            set_audit_extra({"source": "skillboost_import", "filename": file.filename, "sheet": sheet_name})
+            from flask import current_app as _ca
+            try:
+                _ca.logger.info(
+                    "[skillboost_import] cohort=%s tabs=%d detected=%d unrecognised=%d missing_critical=%d",
+                    cohort_id,
+                    len(sheet_mapping),
+                    sum(1 for r in sheet_mapping if r.get('status') == 'detected'),
+                    sum(1 for r in sheet_mapping if r.get('status') == 'unrecognised'),
+                    len(missing_critical_modules),
+                )
+            except Exception:
+                pass
         except Exception:
             pass
 
-        result = import_skillboost_profile(df, email_col, profile_link_col)
+        # Cohort 2: no Skills profile sheet — if this file has the Cohort 2 Optional MCQ tab, import that only
+        # and return. Otherwise keep the full workbook parse: split Action Center exports (forms / quiz /
+        # submission) may omit both profile and 14.MCQ Optional while still carrying other subsheets.
+        if cohort_id == 2 and (not sheets.get('profile_sheet_name') or sheets.get('profile_df') is None):
+            c2_only_sheets = load_cohort2_optional_mcq_sheet_only(file_path)
+            c2 = c2_only_sheets.get('cohort2_optional_mcq_sheet')
+            c2df = c2.get('df') if c2 else None
+            if c2 and c2df is not None and len(c2df) > 0:
+                sheets = c2_only_sheets
+                optional_mcq_results = []
+                optional_mcq_errors = []
+                try:
+                    try:
+                        from server.utils.audit import set_audit_extra
+                        set_audit_extra({
+                            'source': 'optional_mcq_import_cohort2',
+                            'filename': file.filename,
+                            'sheet': c2.get('sheet_name'),
+                        })
+                    except Exception:
+                        pass
+                    omr = import_optional_mcq_response(
+                        c2df, 4, score_from_sheet=True, allow_multiple_per_email=True
+                    )
+                    omr['track'] = 4
+                    omr['sheet_name'] = c2.get('sheet_name')
+                    optional_mcq_results.append(omr)
+                except Exception as e:
+                    optional_mcq_errors.append({
+                        'track': 4,
+                        'sheet_name': c2.get('sheet_name', ''),
+                        'error': str(e),
+                    })
+
+                try:
+                    clear_cache('_get_mcq_stats_cached')
+                except Exception:
+                    pass
+                try:
+                    clear_cache('_get_dashboard_data_cached')
+                except Exception:
+                    pass
+
+                omr = optional_mcq_results[0] if optional_mcq_results else None
+                response = {
+                    'total_rows': omr['total_rows'] if omr else 0,
+                    'created': omr['created'] if omr else 0,
+                    'updated': omr['updated'] if omr else 0,
+                    'skipped': omr['skipped'] if omr else 0,
+                    'errors': omr.get('errors', []) if omr else [],
+                    'message': '',
+                }
+                if omr:
+                    response['message'] = (
+                        f"Optional MCQ (Cohort 2): {omr['created']} created, {omr['updated']} updated, "
+                        f"{omr['skipped']} skipped."
+                    )
+                elif optional_mcq_errors:
+                    response['message'] = 'Optional MCQ (Cohort 2) import did not complete.'
+                    response['errors'] = [optional_mcq_errors[0].get('error', 'Unknown error')]
+                if optional_mcq_results:
+                    response['mcq'] = []
+                    for x in optional_mcq_results:
+                        response['mcq'].append({
+                            'track': x.get('track'),
+                            'sheet_name': x.get('sheet_name', ''),
+                            'total_rows': x['total_rows'],
+                            'created': x['created'],
+                            'updated': x['updated'],
+                            'skipped': x['skipped'],
+                            'errors': x.get('errors', []),
+                        })
+                if optional_mcq_errors:
+                    response['mcq_errors'] = optional_mcq_errors
+
+                response['sheet_mapping'] = sheet_mapping
+                response['missing_critical_modules'] = missing_critical_modules
+                response['per_sheet_errors'] = _build_per_sheet_errors(
+                    profile_result=None,
+                    profile_sheet_name=None,
+                    submission_result=None,
+                    submission_sheet_name=None,
+                    codelab_result=None,
+                    codelab_sheet_name=None,
+                    main_mcq_results=[],
+                    optional_mcq_results=optional_mcq_results,
+                    lab_completion_results=[],
+                    project_submission_results=[],
+                )
+
+                try:
+                    from flask import current_app as _ca
+                    for blk in response['per_sheet_errors']:
+                        _ca.logger.info(
+                            "[skillboost_import] module=%s track=%s lab=%s sheet=%r "
+                            "created=%d updated=%d skipped=%d pii_auto_created=%d pii_auto_skipped=%d",
+                            blk.get('module'), blk.get('track'), blk.get('lab'),
+                            blk.get('sheet_name'),
+                            blk.get('created') or 0,
+                            blk.get('updated') or 0,
+                            blk.get('skipped') or 0,
+                            blk.get('pii_auto_created') or 0,
+                            blk.get('pii_auto_skipped') or 0,
+                        )
+                except Exception:
+                    pass
+
+                return jsonify(response), 200
+
+        has_profile = (
+            sheets.get('profile_sheet_name')
+            and sheets.get('profile_df') is not None
+            and len(sheets['profile_df']) > 0
+        )
+        cohort_oneish = cohort_id in (1, None)
+        profile_import_skipped = (not has_profile) and (cohort_oneish or cohort_id == 2)
+
+        if profile_import_skipped:
+            if not action_center_has_non_profile_imports(sheets):
+                return jsonify({'error': ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE}), 400
+            result = {'total_rows': 0, 'created': 0, 'updated': 0, 'skipped': 0, 'errors': []}
+        else:
+            if not has_profile:
+                # Cohort 2 without profile is handled via profile_import_skipped when other sheets exist.
+                if cohort_id != 2:
+                    return jsonify({
+                        'error': skillboost_sheet_not_found_message()
+                        + ' Please use an XLSX from Google Skills Boost / Skill Lab (Action Center) export.',
+                    }), 400
+
+            df = sheets['profile_df']
+            if len(df) == 0:
+                return jsonify({'error': 'The selected sheet is empty'}), 400
+
+            sheet_name = sheets['profile_sheet_name']
+            columns = list(df.columns)
+            email_col = _find_email_column(columns)
+            profile_link_col = _find_profile_link_column(columns)
+            if not email_col:
+                return jsonify({'error': 'Could not find an Email column in the sheet. Please ensure the sheet has a column named "Email".'}), 400
+            if not profile_link_col:
+                return jsonify({
+                    'error': 'Could not find a profile link column (column containing "profile", "link", or "skills"). '
+                             'Please ensure the sheet has a column for the Google Skills Boost public profile link.'
+                }), 400
+
+            try:
+                from server.utils.audit import set_audit_extra
+                set_audit_extra({"source": "skillboost_import", "filename": file.filename, "sheet": sheet_name})
+            except Exception:
+                pass
+
+            result = import_skillboost_profile(df, email_col, profile_link_col)
 
         # Skill Lab Submission (already loaded)
         submission_result = None
@@ -453,6 +776,33 @@ def import_skillboost_profiles():
             except Exception as main_err:
                 main_mcq_errors.append({'track': track, 'sheet_name': main_sheet_name, 'error': str(main_err)})
 
+        # Optional MCQ: Cohort 1 → sheets per track 1–3 (Cohort 2 handled above).
+        optional_mcq_results = []
+        optional_mcq_errors = []
+        if cohort_oneish:
+            for om in sheets.get('optional_mcq_sheets') or []:
+                odf = om.get('df')
+                if odf is None or len(odf) == 0:
+                    continue
+                try:
+                    from server.utils.audit import set_audit_extra
+                    set_audit_extra({
+                        'source': 'optional_mcq_import',
+                        'filename': file.filename,
+                        'sheet': om.get('sheet_name'),
+                        'track': om.get('track'),
+                    })
+                    omr = import_optional_mcq_response(odf, om['track'], score_from_sheet=False)
+                    omr['track'] = om['track']
+                    omr['sheet_name'] = om.get('sheet_name')
+                    optional_mcq_results.append(omr)
+                except Exception as e:
+                    optional_mcq_errors.append({
+                        'track': om.get('track'),
+                        'sheet_name': om.get('sheet_name', ''),
+                        'error': str(e),
+                    })
+
         try:
             clear_cache('_get_dashboard_data_cached')
         except Exception:
@@ -465,6 +815,16 @@ def import_skillboost_profiles():
         if codelab_result and 'error' not in codelab_result:
             try:
                 clear_cache('_get_codelab_submission_stats_cached')
+            except Exception:
+                pass
+        if optional_mcq_results:
+            try:
+                clear_cache('_get_mcq_stats_cached')
+            except Exception:
+                pass
+        if main_mcq_results:
+            try:
+                clear_cache('_get_main_mcq_stats_cached')
             except Exception:
                 pass
 
@@ -507,14 +867,29 @@ def import_skillboost_profiles():
             except Exception:
                 pass
 
-        response = {
-            'total_rows': result['total_rows'],
-            'created': result['created'],
-            'updated': result['updated'],
-            'skipped': result['skipped'],
-            'errors': result.get('errors', []),
-            'message': f"Imported Skill Lab profiles: {result['created']} created, {result['updated']} updated, {result['skipped']} skipped."
-        }
+        if profile_import_skipped:
+            response = {
+                'total_rows': 0,
+                'created': 0,
+                'updated': 0,
+                'skipped': 0,
+                'errors': [],
+                'message': (
+                    'No Skill Lab profile sheet in workbook; imported other recognized subsheets only.'
+                ),
+            }
+        else:
+            response = {
+                'total_rows': result['total_rows'],
+                'created': result['created'],
+                'updated': result['updated'],
+                'skipped': result['skipped'],
+                'errors': result.get('errors', []),
+                'message': (
+                    f"Imported Skill Lab profiles: {result['created']} created, "
+                    f"{result['updated']} updated, {result['skipped']} skipped."
+                ),
+            }
 
         if submission_result:
             if 'error' in submission_result:
@@ -621,16 +996,60 @@ def import_skillboost_profiles():
         if main_mcq_errors:
             response['main_mcq_errors'] = main_mcq_errors
 
+        if optional_mcq_results:
+            response['mcq'] = []
+            for omr in optional_mcq_results:
+                response['mcq'].append({
+                    'track': omr.get('track'),
+                    'sheet_name': omr.get('sheet_name', ''),
+                    'total_rows': omr['total_rows'],
+                    'created': omr['created'],
+                    'updated': omr['updated'],
+                    'skipped': omr['skipped'],
+                    'errors': omr.get('errors', []),
+                })
+                response['message'] += (
+                    f" | Optional MCQ Track {omr.get('track')}: {omr['created']} created, "
+                    f"{omr['updated']} updated, {omr['skipped']} skipped."
+                )
+        if optional_mcq_errors:
+            response['mcq_errors'] = optional_mcq_errors
+
+        response['sheet_mapping'] = sheet_mapping
+        response['missing_critical_modules'] = missing_critical_modules
+        response['per_sheet_errors'] = _build_per_sheet_errors(
+            profile_result=(None if profile_import_skipped else result),
+            profile_sheet_name=(None if profile_import_skipped else sheets.get('profile_sheet_name')),
+            submission_result=submission_result,
+            submission_sheet_name=submission_sheet,
+            codelab_result=codelab_result,
+            codelab_sheet_name=codelab_sheet,
+            main_mcq_results=main_mcq_results,
+            optional_mcq_results=optional_mcq_results,
+            lab_completion_results=lab_completion_results,
+            project_submission_results=project_submission_results,
+        )
+
+        try:
+            from flask import current_app as _ca
+            for blk in response['per_sheet_errors']:
+                _ca.logger.info(
+                    "[skillboost_import] module=%s track=%s lab=%s sheet=%r "
+                    "created=%d updated=%d skipped=%d pii_auto_created=%d pii_auto_skipped=%d",
+                    blk.get('module'), blk.get('track'), blk.get('lab'),
+                    blk.get('sheet_name'),
+                    blk.get('created') or 0,
+                    blk.get('updated') or 0,
+                    blk.get('skipped') or 0,
+                    blk.get('pii_auto_created') or 0,
+                    blk.get('pii_auto_skipped') or 0,
+                )
+        except Exception:
+            pass
+
         return jsonify(response), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-    finally:
-        if file_path:
-            try:
-                if os.path.isfile(file_path):
-                    os.remove(file_path)
-            except Exception:
-                pass
 
 
 def _verify_one(email, link):
@@ -644,9 +1063,13 @@ def _verify_skillboost_stream(pending_only=False):
     Uses ThreadPoolExecutor (same idea as verify_skillboost_profile_csv.py --workers) for speed.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    query = SkillboostProfile.query
+
+    from server.models import SkillboostProfile as _SkillboostBase
+
+    SB = participant_model(_SkillboostBase)
+    query = SB.query
     if pending_only:
-        query = query.filter(SkillboostProfile.valid == False)
+        query = query.filter(SB.valid == False)
     rows = query.all()
     total = len(rows)
     if total == 0:
@@ -709,4 +1132,164 @@ def verify_skillboost_profiles():
         stream_with_context(_verify_skillboost_stream(pending_only=pending_only)),
         mimetype='text/event-stream',
         headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no', 'Connection': 'keep-alive'},
+    )
+
+
+def _parse_min_date_arg(raw):
+    """Parse YYYY-MM-DD from query/form; return None if empty."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s:
+        return None
+    s = s[:10]
+    try:
+        return date.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def _verify_submission_worker(kind, row_id, url, problem_statement, min_date):
+    """Run badge HTTP verification in a worker thread (own requests.Session)."""
+    import requests
+    from server.utils.badge_verify import verify_badge
+
+    sess = requests.Session()
+    try:
+        return kind, row_id, verify_badge(
+            url, problem_statement, min_date=min_date, session=sess
+        )
+    finally:
+        try:
+            sess.close()
+        except Exception:
+            pass
+
+
+def _verify_submissions_stream(pending_only=False, min_date=None):
+    """SSE: verify Skill Lab + Code Lab submission badge URLs (upload_screenshot)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from uuid import UUID
+
+    SL = participant_model(SkillLabSubmission)
+    CL = participant_model(CodeLabSubmission)
+
+    sl_q = SL.query.filter(SL.upload_screenshot.isnot(None)).filter(SL.upload_screenshot != "")
+    cl_q = CL.query.filter(CL.upload_screenshot.isnot(None)).filter(CL.upload_screenshot != "")
+    if pending_only:
+        sl_q = sl_q.filter(SL.valid == False)
+        cl_q = cl_q.filter(CL.valid == False)
+
+    work = []
+    for r in sl_q.all():
+        work.append(("sl", str(r.id), (r.upload_screenshot or "").strip(), r.problem_statement))
+    for r in cl_q.all():
+        work.append(("cl", str(r.id), (r.upload_screenshot or "").strip(), r.problem_statement))
+
+    total = len(work)
+    if total == 0:
+        yield f"data: {json.dumps({'done': True, 'total': 0, 'verified_ok': 0, 'verified_fail': 0, 'pending': 0})}\n\n"
+        return
+
+    verified_ok = 0
+    verified_fail = 0
+    pending_n = 0
+    current = 0
+    workers = min(10, total)
+
+    def _apply_result(kind, row_id, result):
+        nonlocal verified_ok, verified_fail, pending_n
+        try:
+            uid = UUID(row_id)
+        except ValueError:
+            verified_fail += 1
+            return
+        rec = SL.query.get(uid) if kind == "sl" else CL.query.get(uid)
+        if not rec:
+            verified_fail += 1
+            return
+        try:
+            status = (result or {}).get("status", "failed")
+            rec.valid = status == "verified"
+            rec.remark = ((result or {}).get("remarks") or "")[:8192]
+            cd = (result or {}).get("completion_date")
+            if cd:
+                try:
+                    d = date.fromisoformat(str(cd)[:10])
+                    rec.completion_date = datetime(d.year, d.month, d.day)
+                except ValueError:
+                    rec.completion_date = None
+            else:
+                rec.completion_date = None
+            rec.last_verified_at = datetime.utcnow()
+            set_audit_session_vars()
+            db.session.commit()
+            if status == "verified":
+                verified_ok += 1
+            elif status == "pending":
+                pending_n += 1
+            else:
+                verified_fail += 1
+        except Exception:
+            db.session.rollback()
+            verified_fail += 1
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                _verify_submission_worker,
+                kind,
+                row_id,
+                url,
+                problem_statement,
+                min_date,
+            ): (kind, row_id)
+            for kind, row_id, url, problem_statement in work
+        }
+        for future in as_completed(futures):
+            kind, row_id = futures[future]
+            try:
+                k, rid, result = future.result()
+            except Exception:
+                k, rid = kind, row_id
+                result = {
+                    "status": "pending",
+                    "valid": False,
+                    "remarks": "Pending: verification error",
+                }
+            _apply_result(k, rid, result)
+            current += 1
+            yield f"data: {json.dumps({'current': current, 'total': total, 'verified_ok': verified_ok, 'verified_fail': verified_fail, 'pending': pending_n})}\n\n"
+
+    yield f"data: {json.dumps({'done': True, 'total': total, 'verified_ok': verified_ok, 'verified_fail': verified_fail, 'pending': pending_n})}\n\n"
+    try:
+        clear_cache("_get_skilllab_submission_stats_cached")
+    except Exception:
+        pass
+    try:
+        clear_cache("_get_codelab_submission_stats_cached")
+    except Exception:
+        pass
+    try:
+        clear_cache("_get_dashboard_data_cached")
+    except Exception:
+        pass
+
+
+@bp.route("/submission/verify", methods=["POST", "GET"])
+@require_page_access("import")
+def verify_submissions():
+    """
+    Verify badge URLs on skilllab_submission and codelab_submission (upload_screenshot).
+    SSE progress. Query: pending_only=1, min_date=YYYY-MM-DD (optional).
+    """
+    min_date_raw = request.args.get("min_date") or request.form.get("min_date") or ""
+    min_date = _parse_min_date_arg(min_date_raw)
+    if str(min_date_raw).strip() and min_date is None:
+        return jsonify({"error": "Invalid min_date; use YYYY-MM-DD"}), 400
+    pending_only = request.args.get("pending_only", "0") == "1"
+    return Response(
+        stream_with_context(_verify_submissions_stream(pending_only=pending_only, min_date=min_date)),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )

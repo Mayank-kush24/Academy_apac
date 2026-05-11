@@ -15,7 +15,7 @@
             </div>
         </div>
 
-        <!-- Manage credit links (5 links, 3000 users each) -->
+        <!-- Manage credit links (up to 5; max per link is configurable) -->
         <div class="glass-card" style="margin-bottom: 1.5rem;">
             <div style="padding: 1rem 1.25rem;">
                 <h3 style="margin: 0 0 1rem 0;"><i class="fas fa-link"></i> Manage credit links (up to 5)</h3>
@@ -238,7 +238,7 @@
 
         document.getElementById('creditsTableBody').innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
 
-        fetch('/api/skilllab/credits?' + params.toString(), { headers: headers })
+        fetch(cohortApiUrl('/api/skilllab/credits?' + params.toString()), { headers: headers })
             .then(function(res) {
                 if (!res.ok) {
                     var msg = res.status === 401 ? 'Please log in again' : res.status === 403 ? 'Access denied' : 'Request failed';
@@ -275,7 +275,7 @@
         const search = document.getElementById('searchInput').value.trim();
         const params = new URLSearchParams();
         if (search) params.set('search', search);
-        const url = '/api/skilllab/credits/export' + (params.toString() ? '?' + params.toString() : '');
+        const url = cohortApiUrl('/api/skilllab/credits/export' + (params.toString() ? '?' + params.toString() : ''));
         fetch(url, { headers: headers })
             .then(function(res) {
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Export failed'); });
@@ -295,7 +295,7 @@
     };
 
     function loadCreditLinks() {
-        fetch('/api/skilllab/credit-links', { headers: headers })
+        fetch(cohortApiUrl('/api/skilllab/credit-links'), { headers: headers })
             .then(function(res) {
                 if (!res.ok) throw new Error('Failed to load links');
                 return res.json();
@@ -329,7 +329,7 @@
             links.push({ link_url: url || null, display_order: i, max_allocations: Math.max(1, Math.min(100000, maxAlloc)) });
         }
         document.getElementById('saveCreditLinksBtn').disabled = true;
-        fetch('/api/skilllab/credit-links', {
+        fetch(cohortApiUrl('/api/skilllab/credit-links'), {
             method: 'POST',
             headers: Object.assign({}, headers, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ links: links })
@@ -360,7 +360,7 @@
         if (progressEl) { progressEl.style.display = 'block'; progressEl.style.visibility = 'visible'; }
         if (progressBar) progressBar.style.width = '0%';
         if (progressText) progressText.textContent = 'Allocating... 0 / 0';
-        fetch('/api/skilllab/allocate?stream=1', { method: 'POST', headers: headers })
+        fetch(cohortApiUrl('/api/skilllab/allocate?stream=1'), { method: 'POST', headers: headers })
             .then(function(res) {
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Allocate failed'); });
                 return res.body.getReader();
@@ -428,7 +428,7 @@
     };
 
     window.exportNotSent = function() {
-        fetch('/api/skilllab/credits/export-not-sent', { headers: headers })
+        fetch(cohortApiUrl('/api/skilllab/credits/export-not-sent'), { headers: headers })
             .then(function(res) {
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Download failed'); });
                 return res.text();
@@ -455,7 +455,7 @@
         var formData = new FormData();
         formData.append('file', input.files[0]);
         document.getElementById('markSentResult').textContent = 'Uploading...';
-        fetch('/api/skilllab/credits/mark-sent', {
+        fetch(cohortApiUrl('/api/skilllab/credits/mark-sent'), {
             method: 'POST',
             headers: { 'Authorization': headers['Authorization'] },
             body: formData

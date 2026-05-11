@@ -8,6 +8,9 @@ let currentPeriod = 'all';
 let lastLoadedPeriod = null;
 let periodDebounceTimer = null;
 const PERIOD_DEBOUNCE_MS = 150;
+/** Last successful /api/dashboard/data payload for AI refresh without full reload */
+let lastDashboardSummary = null;
+let lastDashboardCharts = null;
 
 function _removeChartSkeletons() {
     document.querySelectorAll('.chart-skeleton').forEach(el => el.remove());
@@ -15,13 +18,11 @@ function _removeChartSkeletons() {
 
 // Load dashboard data on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Only load if we're on the dashboard page
-    if (window.location.pathname === '/dashboard') {
-        // Set active nav item
+    if (/\/c\/\d+\/dashboard$/.test(window.location.pathname)) {
         setActiveNavItem();
         initializeDashboard();
         loadDashboardData();
-        updateHeaderUserInfo(); // Update header user info on load
+        updateHeaderUserInfo();
     }
 });
 
@@ -29,16 +30,16 @@ document.addEventListener('DOMContentLoaded', function() {
  * Set active navigation item
  */
 function setActiveNavItem() {
-    // Remove active class from all nav items
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
     });
-    
-    // Add active class to dashboard nav item
-    const dashboardNav = document.querySelector('a[href="/dashboard"]');
-    if (dashboardNav) {
-        dashboardNav.classList.add('active');
-    }
+    const path = window.location.pathname;
+    document.querySelectorAll('.nav-item').forEach(item => {
+        const href = item.getAttribute('href');
+        if (href && href === path) {
+            item.classList.add('active');
+        }
+    });
 }
 
 /**
@@ -225,12 +226,15 @@ async function loadDashboardData() {
                 optional_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
                 main_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
                 optional_mcq_top5_winners: [],
-                previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null
+                previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null,
+                net_new_registrations: null, users_in_cohort1_and_cohort2: null
             };
         }
         if (!chartsData) {
             chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], persona_distribution: [], top_domains: [], user_segmentation: { industries: [] }, top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
+        lastDashboardSummary = summary;
+        lastDashboardCharts = chartsData;
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
         _removeChartSkeletons();
@@ -238,6 +242,8 @@ async function loadDashboardData() {
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
         lastLoadedPeriod = null;
+        lastDashboardSummary = null;
+        lastDashboardCharts = null;
         // Show empty state instead of error
         updateKPICards({
             total_users: 0,
@@ -395,6 +401,30 @@ function updateKPICards(summary, chartsData) {
     updateKPITrend('totalUsersChange', totalUsers, summary.previous_period_total_users, '—');
     renderMiniChart('totalUsersMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(totalUsers));
 
+    const netNewHeroEl = document.getElementById('netNewRegistrationsHero');
+    if (netNewHeroEl) {
+        let nn = summary.net_new_registrations;
+        if (nn === undefined || nn === null) {
+            const overlap = summary.users_in_cohort1_and_cohort2;
+            const ovNum = typeof overlap === 'number' ? overlap : 0;
+            nn = Math.max(0, totalUsers - ovNum);
+        }
+        netNewHeroEl.textContent = formatNumber(nn);
+    }
+    const netNewFooterStat = document.getElementById('netNewRegistrationsFooterStat');
+    if (netNewFooterStat) {
+        const ov = summary.users_in_cohort1_and_cohort2;
+        if (ov !== undefined && ov !== null) {
+            netNewFooterStat.innerHTML = '<span class="kpi-footer-stat-num">' + escapeHtml(String(formatNumber(ov))) + '</span><span class="kpi-footer-stat-label">returning (Cohort 1 user)</span>';
+        } else {
+            netNewFooterStat.innerHTML = '<span class="kpi-footer-stat-label">Overlap not available</span>';
+        }
+    }
+    const netNewSpark = document.getElementById('netNewRegistrationsMiniChart');
+    if (netNewSpark) {
+        renderMiniChart('netNewRegistrationsMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(totalUsers));
+    }
+
     const apacUsers = summary.apac_except_india_users || 0;
     const apacUsersEl = document.getElementById('apacUsers');
     if (apacUsersEl) apacUsersEl.textContent = formatNumber(apacUsers);
@@ -410,41 +440,36 @@ function updateKPICards(summary, chartsData) {
     updateKPITrend('averageAgeChange', avgAge || 0, summary.previous_period_average_age, '—');
     renderMiniChart('averageAgeMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(avgAge || 0));
 
-    const topIndiaStateLineEl = document.getElementById('topIndiaStateLine');
-    const topIndiaCityLineEl = document.getElementById('topIndiaCityLine');
-    if (topIndiaStateLineEl) {
-        const state = summary.top_india_state || 'N/A';
-        const stateCount = summary.top_india_state_count;
-        const stateReg = (stateCount != null && stateCount !== undefined) ? formatNumber(stateCount) + ' reg' : '—';
-        topIndiaStateLineEl.innerHTML = escapeHtml(state) + ' <span class="kpi-count-muted">: ' + escapeHtml(stateReg) + '</span>';
-    }
-    if (topIndiaCityLineEl) {
-        const city = summary.top_india_city || 'N/A';
-        const cityCount = summary.top_india_city_count;
-        const cityReg = (cityCount != null && cityCount !== undefined) ? formatNumber(cityCount) + ' reg' : '—';
-        topIndiaCityLineEl.innerHTML = escapeHtml(city) + ' <span class="kpi-count-muted">: ' + escapeHtml(cityReg) + '</span>';
-    }
-    updateKPITrend('topIndiaLocationChange', null, null, '—');
+    const renderLocStat = function (el, label, count) {
+        if (!el) return;
+        const name = label && label !== 'N/A' ? label : '—';
+        if (count != null && count !== undefined) {
+            el.innerHTML = escapeHtml(String(name)) + ' <span class="kpi-count-muted">· ' + escapeHtml(formatNumber(count) + ' reg') + '</span>';
+        } else {
+            el.textContent = String(name);
+        }
+    };
+    renderLocStat(document.getElementById('topIndiaStateLine'), summary.top_india_state, summary.top_india_state_count);
+    renderLocStat(document.getElementById('topIndiaCityLine'), summary.top_india_city, summary.top_india_city_count);
+    renderMiniChart('topIndiaLocationMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(totalUsers));
 
-    const topOutsideIndiaCountryLineEl = document.getElementById('topOutsideIndiaCountryLine');
+    renderLocStat(document.getElementById('topOutsideIndiaCountryLine'), summary.top_apac_country, summary.top_apac_country_count);
     const topOutsideIndiaCityLineEl = document.getElementById('topOutsideIndiaCityLine');
-    if (topOutsideIndiaCountryLineEl) {
-        const country = summary.top_apac_country || 'N/A';
-        const countryCount = summary.top_apac_country_count;
-        const countryReg = (countryCount != null && countryCount !== undefined) ? formatNumber(countryCount) + ' reg' : '—';
-        topOutsideIndiaCountryLineEl.innerHTML = escapeHtml(country) + ' <span class="kpi-count-muted">: ' + escapeHtml(countryReg) + '</span>';
+    if (topOutsideIndiaCityLineEl) {
+        if (chartsData && Array.isArray(chartsData.top_cities_outside_india) && chartsData.top_cities_outside_india.length > 0) {
+            const first = chartsData.top_cities_outside_india[0];
+            renderLocStat(topOutsideIndiaCityLineEl, first.label || '', first.value != null ? first.value : null);
+        } else {
+            topOutsideIndiaCityLineEl.textContent = '—';
+        }
     }
-    if (topOutsideIndiaCityLineEl && chartsData && Array.isArray(chartsData.top_cities_outside_india) && chartsData.top_cities_outside_india.length > 0) {
-        const first = chartsData.top_cities_outside_india[0];
-        const label = first.label || '';
-        const value = first.value != null && first.value !== undefined ? first.value : 0;
-        const regText = formatNumber(value) + ' reg';
-        topOutsideIndiaCityLineEl.innerHTML = label ? (escapeHtml(label) + ' <span class="kpi-count-muted">: ' + escapeHtml(regText) + '</span>') : '—';
-    } else if (topOutsideIndiaCityLineEl) {
-        topOutsideIndiaCityLineEl.textContent = '—';
-    }
-    updateKPITrend('topApacCountryChange', null, null, '—');
     renderMiniChart('topApacCountryMiniChart', trendValues && trendValues.length > 0 ? trendValues : generateTrendData(0));
+
+    const cohortOverlapEl = document.getElementById('cohort1Cohort2OverlapUsers');
+    if (cohortOverlapEl) {
+        const ov = summary.users_in_cohort1_and_cohort2;
+        cohortOverlapEl.textContent = (ov !== undefined && ov !== null) ? formatNumber(ov) : '—';
+    }
 
     const bookOfBusinessEl = document.getElementById('bookOfBusinessRegistrations');
     if (bookOfBusinessEl) {
@@ -480,6 +505,17 @@ function updateKPICards(summary, chartsData) {
     if (slSubTotalEl) slSubTotalEl.textContent = (summary.total_skilllab_submissions !== undefined && summary.total_skilllab_submissions !== null) ? formatNumber(summary.total_skilllab_submissions) : '-';
     const slSubMetaEl = document.getElementById('skillLabSubmissionsMeta');
     if (slSubMetaEl) slSubMetaEl.textContent = 'Total Submissions';
+    const slSubVerifyMetaEl = document.getElementById('skillLabSubmissionsVerificationMeta');
+    if (slSubVerifyMetaEl) {
+        const slVerified = summary.verified_skilllab_submissions;
+        const slRate = summary.skilllab_submission_verification_rate;
+        const slTotal = summary.total_skilllab_submissions;
+        if (slTotal !== undefined && slTotal !== null && slVerified !== undefined && slVerified !== null) {
+            slSubVerifyMetaEl.textContent = 'Verified: ' + formatNumber(slVerified) + (slRate != null ? ' / ' + slRate + '%' : '');
+        } else {
+            slSubVerifyMetaEl.textContent = 'Verified: — / —%';
+        }
+    }
 
     // Code Lab Submission Verification stats
     const clSubTotalEl = document.getElementById('codeLabSubmissionsTotal');
@@ -504,25 +540,59 @@ function updateKPICards(summary, chartsData) {
 
     updateProjectSubmissionTracksSection(summary);
 
-    // Optional MCQ completion by track
+    // Optional MCQ completion by track (Cohort 2: single track 4 row)
     const byTrack = summary.optional_mcq_by_track;
+    const cid = document.body && document.body.dataset ? document.body.dataset.cohortId : '';
     if (Array.isArray(byTrack)) {
-        [1, 2, 3].forEach(function (t) {
-            const row = byTrack.find(function (r) { return r.track === t; });
-            const el = document.getElementById('optionalMcqTrack' + t);
-            if (el) {
-                if (row && (row.total !== undefined || row.passed_6 !== undefined)) {
-                    el.textContent = formatNumber(row.total) + ' (' + formatNumber(row.passed_6 || 0) + ' passed 6+)';
-                } else {
-                    el.textContent = '—';
-                }
+        if (cid === '2') {
+            const row = byTrack.find(function (r) { return r.track === 4; });
+            const allPri = document.getElementById('optionalMcqTrack4Primary');
+            const allSec = document.getElementById('optionalMcqTrack4Secondary');
+            const uPri = document.getElementById('optionalMcqUniquePrimary');
+            const uSec = document.getElementById('optionalMcqUniqueSecondary');
+            if (row && (row.total !== undefined || row.passed_6 !== undefined)) {
+                if (allPri) allPri.textContent = formatNumber(row.total != null ? row.total : 0);
+                if (allSec) allSec.textContent = formatNumber(row.passed_6 || 0) + ' passed · ≥6/10';
+            } else {
+                if (allPri) allPri.textContent = '—';
+                if (allSec) allSec.textContent = '';
             }
-        });
+            if (row && (row.unique_users !== undefined || row.unique_passed_6 !== undefined)) {
+                if (uPri) uPri.textContent = formatNumber(row.unique_users != null ? row.unique_users : 0);
+                if (uSec) uSec.textContent = formatNumber(row.unique_passed_6 != null ? row.unique_passed_6 : 0) + ' with pass · ≥6/10';
+            } else {
+                if (uPri) uPri.textContent = '—';
+                if (uSec) uSec.textContent = '';
+            }
+        } else {
+            [1, 2, 3].forEach(function (t) {
+                const row = byTrack.find(function (r) { return r.track === t; });
+                const el = document.getElementById('optionalMcqTrack' + t);
+                if (el) {
+                    if (row && (row.total !== undefined || row.passed_6 !== undefined)) {
+                        el.textContent = formatNumber(row.total) + ' (' + formatNumber(row.passed_6 || 0) + ' passed 6+)';
+                    } else {
+                        el.textContent = '—';
+                    }
+                }
+            });
+        }
     } else {
-        [1, 2, 3].forEach(function (t) {
-            const el = document.getElementById('optionalMcqTrack' + t);
-            if (el) el.textContent = '—';
-        });
+        if (cid === '2') {
+            var ap = document.getElementById('optionalMcqTrack4Primary');
+            var as = document.getElementById('optionalMcqTrack4Secondary');
+            var up = document.getElementById('optionalMcqUniquePrimary');
+            var us = document.getElementById('optionalMcqUniqueSecondary');
+            if (ap) ap.textContent = '—';
+            if (as) as.textContent = '';
+            if (up) up.textContent = '—';
+            if (us) us.textContent = '';
+        } else {
+            [1, 2, 3].forEach(function (t) {
+                const el = document.getElementById('optionalMcqTrack' + t);
+                if (el) el.textContent = '—';
+            });
+        }
     }
 
     // Main MCQ (MCQ Verification) by track + total
@@ -595,7 +665,8 @@ function updateKPITrend(elementId, current, previous, fallbackLabel) {
     if (!trendEl) return;
     if (previous == null || previous === undefined || previous === 0) {
         trendEl.className = 'kpi-change neutral';
-        trendEl.innerHTML = `<span>${fallbackLabel !== undefined ? fallbackLabel : '—'}</span>`;
+        const label = fallbackLabel !== undefined ? fallbackLabel : '—';
+        trendEl.innerHTML = `<span class="kpi-trend-placeholder">${label}</span>`;
         return;
     }
     const changePct = ((current - previous) / previous) * 100;
@@ -725,11 +796,14 @@ function renderCharts(data, summary = null) {
         showEmptyChart('registrationSourceChart', 'No registration source data available');
     }
     
-    // Occupation Distribution (Donut)
-    if (data.occupation_distribution && data.occupation_distribution.length > 0) {
-        renderDonutChart('occupationChart', 'Occupation Distribution', data.occupation_distribution, { palette: 'occupation' });
-    } else {
-        showEmptyChart('occupationChart', 'No occupation data available');
+    // Occupation Distribution (Donut) — skipped when canvas not in DOM (cohort hides chart)
+    var occCanvas = document.getElementById('occupationChart');
+    if (occCanvas) {
+        if (data.occupation_distribution && data.occupation_distribution.length > 0) {
+            renderDonutChart('occupationChart', 'Occupation Distribution', data.occupation_distribution, { palette: 'occupation' });
+        } else {
+            showEmptyChart('occupationChart', 'No occupation data available');
+        }
     }
 
     // Persona Distribution (Vertical Bar Chart, horizontally scrollable)
@@ -783,8 +857,14 @@ function renderCharts(data, summary = null) {
     // APAC country-wise heatmap (interactive)
     renderApacMapHeatmap(data.apac_country_registrations || []);
     
-    // Generate insights (pass both chart data and summary)
-    generateInsights(data, summary);
+    showInsightsLoading();
+    // Defer AI request so KPI/charts finish painting and DB-heavy /data is not contended with a long Gemini call.
+    var periodSnap = currentPeriod;
+    var dataSnap = data;
+    var summarySnap = summary;
+    setTimeout(function () {
+        fetchAiInsights(periodSnap, false, dataSnap, summarySnap);
+    }, 0);
 }
 
 /** India GeoJSON URL (states only – no neighboring countries). */
@@ -1067,6 +1147,94 @@ function renderApacMapHeatmap(countryData) {
 }
 
 /**
+ * Loading placeholder for Data Intelligence panel
+ */
+function showInsightsLoading() {
+    const insightsList = document.getElementById('insightsList');
+    if (!insightsList) return;
+    insightsList.innerHTML =
+        '<div class="insight-item loading">' +
+        '<div class="insight-icon"><i class="fas fa-spinner fa-spin"></i></div>' +
+        '<div class="insight-content"><div class="insight-text">Analyzing data…</div></div>' +
+        '</div>';
+}
+
+function _escapeInsightHtml(s) {
+    const el = document.createElement('span');
+    el.textContent = s == null ? '' : String(s);
+    return el.innerHTML;
+}
+
+/**
+ * Render insight bullet list (plain strings from Gemini or rule-based module)
+ */
+function renderInsightsList(statements) {
+    const insightsList = document.getElementById('insightsList');
+    if (!insightsList) return;
+    if (!statements || statements.length === 0) {
+        insightsList.innerHTML =
+            '<div class="insight-item">' +
+            '<div class="insight-content">' +
+            '<div class="insight-text">Insufficient data available to generate insights at this time.</div>' +
+            '</div></div>';
+        return;
+    }
+    insightsList.innerHTML = statements
+        .map(function (text, index) {
+            return (
+                '<div class="insight-item" style="animation-delay: ' +
+                index * 0.1 +
+                's">' +
+                '<div class="insight-icon"><i class="fas fa-lightbulb"></i></div>' +
+                '<div class="insight-content"><div class="insight-text">' +
+                _escapeInsightHtml(text) +
+                '</div></div></div>'
+            );
+        })
+        .join('');
+}
+
+/**
+ * Fetch Gemini-backed insights; fall back to rule-based generateInsights on empty/error
+ */
+async function fetchAiInsights(period, forceRefresh, chartsData, summaryData) {
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var abortTid = null;
+    if (controller) {
+        abortTid = setTimeout(function () {
+            controller.abort();
+        }, 25000);
+    }
+    try {
+        var url = '/api/dashboard/ai-insights?period=' + encodeURIComponent(period || 'all');
+        if (forceRefresh) url += '&refresh=1';
+        var fetchOpts = controller ? { signal: controller.signal } : {};
+        var response = await authenticatedFetch(url, fetchOpts);
+        if (!response.ok) {
+            generateInsights(chartsData, summaryData);
+            return;
+        }
+        var payload = await response.json();
+        if (payload.insights && payload.insights.length > 0) {
+            if (payload.source === 'gemini_stale') {
+                console.info('AI insights (cached, ' + (payload.stale_age_seconds || 0) + 's old, reason=' + (payload.stale_reason || 'unknown') + ')');
+            }
+            renderInsightsList(payload.insights);
+            return;
+        }
+        if (payload.message) {
+            console.warn('AI insights fallback:', payload.source || 'unknown', payload.message);
+        }
+        generateInsights(chartsData, summaryData);
+    } catch (e) {
+        console.warn('AI insights unavailable, using local summaries:', e);
+        generateInsights(chartsData, summaryData);
+    } finally {
+        if (abortTid) clearTimeout(abortTid);
+    }
+}
+
+/**
  * Generate comprehensive natural language insights from data
  * Designed as a data intelligence module, not a chatbot
  */
@@ -1185,33 +1353,23 @@ function generateInsights(data, summary) {
         });
     }
     
-    // Render insights with premium data intelligence styling
-    if (insights.length > 0) {
-        insightsList.innerHTML = insights.map((insight, index) => `
-            <div class="insight-item" style="animation-delay: ${index * 0.1}s">
-                <div class="insight-icon">
-                    <i class="fas fa-lightbulb"></i>
-                </div>
-                <div class="insight-content">
-                    <div class="insight-text">${insight.statement}</div>
-                </div>
-            </div>
-        `).join('');
-    } else {
-        insightsList.innerHTML = `
-            <div class="insight-item">
-                <div class="insight-category">Analysis</div>
-                <div class="insight-statement">Insufficient data available to generate insights at this time.</div>
-            </div>
-        `;
-    }
+    var statements = insights.map(function (insight) {
+        return insight.statement;
+    });
+    renderInsightsList(statements);
 }
 
 /**
- * Refresh insights
+ * Refresh insights (Gemini with cache bypass when key is set; else rule-based)
  */
 function refreshInsights() {
-    loadDashboardData();
+    if (lastDashboardSummary !== null && lastDashboardCharts !== null) {
+        showInsightsLoading();
+        fetchAiInsights(currentPeriod, true, lastDashboardCharts, lastDashboardSummary);
+    } else {
+        lastLoadedPeriod = null;
+        loadDashboardData();
+    }
 }
 
 /**
@@ -1452,6 +1610,12 @@ window.exportData = async function exportData(event) {
             csvContent += 'Summary Statistics\n';
             csvContent += 'Metric,Value\n';
             csvContent += `Total Users,${summary.total_users}\n`;
+            if (summary.net_new_registrations != null && summary.net_new_registrations !== undefined) {
+                csvContent += `Net new registrations,${summary.net_new_registrations}\n`;
+            }
+            if (summary.users_in_cohort1_and_cohort2 != null && summary.users_in_cohort1_and_cohort2 !== undefined) {
+                csvContent += `Also in Cohort 1 (email overlap),${summary.users_in_cohort1_and_cohort2}\n`;
+            }
             csvContent += `APAC Users (Excl. India),${summary.apac_except_india_users || 0}\n`;
             csvContent += `Average Age,${summary.average_age || 'N/A'}\n`;
             csvContent += `Top India State,${summary.top_india_state || 'N/A'}\n`;
@@ -1581,13 +1745,6 @@ function showNotification(message, type = 'info') {
 }
 
 /**
- * Refresh insights
- */
-function refreshInsights() {
-    loadDashboardData();
-}
-
-/**
  * Show empty chart message
  */
 function showEmptyChart(canvasId, message) {
@@ -1649,14 +1806,20 @@ function renderDonutChart(canvasId, title, data, opts) {
     }
     const existing = charts[canvasId];
     if (existing && existing.config && existing.config.type === 'doughnut') {
-        existing.data.labels = labels;
-        existing.data.datasets[0].data = values;
-        existing.data.datasets[0].backgroundColor = colors;
-        existing.update('none');
-        return;
+        var legPos = existing.options && existing.options.plugins && existing.options.plugins.legend && existing.options.plugins.legend.position;
+        if (legPos === 'bottom') {
+            existing.data.labels = labels;
+            existing.data.datasets[0].data = values;
+            existing.data.datasets[0].backgroundColor = colors;
+            existing.update('none');
+            return;
+        }
+        existing.destroy();
+    } else if (existing) {
+        existing.destroy();
     }
-    if (existing) existing.destroy();
-    const donutHeight = 280;
+    // Tall enough for doughnut + bottom legend (multi-row when many segments; avoids right-side clip in narrow columns).
+    const donutHeight = 330;
     ctx.style.display = 'block';
     const chartContainer = ctx.parentElement;
     if (chartContainer) {
@@ -1682,22 +1845,23 @@ function renderDonutChart(canvasId, title, data, opts) {
         },
         options: {
             responsive: true,
-            maintainAspectRatio: true,
+            maintainAspectRatio: false,
             layout: {
-                padding: { left: 0, right: 4, top: 0, bottom: 0 }
+                padding: { left: 2, right: 2, top: 4, bottom: 2 }
             },
             plugins: {
                 legend: {
                     display: true,
-                    position: 'right',
+                    position: 'bottom',
                     align: 'center',
                     labels: {
                         padding: 10,
                         usePointStyle: true,
                         pointStyle: 'circle',
-                        font: { size: 11, family: 'Inter' },
+                        font: { size: 10, family: 'Inter' },
                         color: '#374151',
-                        boxWidth: 12,
+                        boxWidth: 10,
+                        maxWidth: 220,
                         generateLabels: function(chart) {
                             const data = chart.data;
                             if (data.labels.length && data.datasets.length) {
@@ -1706,8 +1870,10 @@ function renderDonutChart(canvasId, title, data, opts) {
                                 return data.labels.map(function(label, i) {
                                     const value = ds.data[i];
                                     const pct = total ? ((value / total) * 100).toFixed(1) : 0;
+                                    var n = Number(value);
+                                    var countStr = (typeof n.toLocaleString === 'function') ? n.toLocaleString() : String(value);
                                     return {
-                                        text: label + ' (' + value + ' – ' + pct + '%)',
+                                        text: label + '\n' + countStr + ' (' + pct + '%)',
                                         fillStyle: ds.backgroundColor[i],
                                         strokeStyle: ds.backgroundColor[i],
                                         index: i

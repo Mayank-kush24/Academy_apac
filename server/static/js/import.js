@@ -6,6 +6,18 @@ let currentStep = 1;
 let excelData = null;
 let fieldMappings = {};
 
+function _importAuthHeaders() {
+    var t = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
+    var h = {};
+    if (t) h['Authorization'] = 'Bearer ' + t;
+    return h;
+}
+
+function _importFetchUrl(u) {
+    if (typeof appUrl === 'function') return appUrl(u);
+    return u;
+}
+
 // Premium file upload zone: show selected file and support drag-and-drop
 (function initFileUploadZone() {
     const zone = document.getElementById('fileUploadZone');
@@ -71,17 +83,10 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     formData.append('file', file);
     
     try {
-        const token = getAuthToken();
-        if (!token) {
-            throw new Error('Not authenticated');
-        }
-        
-        const response = await fetch('/api/import/preview', {
+        const response = await fetch(_importFetchUrl(cohortApiUrl('/api/import/preview')), {
             method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${token}`
-                // Don't set Content-Type, let browser set it with boundary for FormData
-            },
+            headers: _importAuthHeaders(),
+            credentials: 'same-origin',
             body: formData
         });
         
@@ -315,18 +320,13 @@ async function executeImport() {
     formData.append('mappings', JSON.stringify(fieldMappings));
     formData.append('mode', mode);
 
-    const token = getAuthToken();
-    if (!token) {
-        alert('Not authenticated');
-        return;
-    }
-
     showImportProgressOverlay();
 
     try {
-        const response = await fetch('/api/import/execute?stream=1', {
+        const response = await fetch(_importFetchUrl(cohortApiUrl('/api/import/execute?stream=1')), {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token },
+            headers: _importAuthHeaders(),
+            credentials: 'same-origin',
             body: formData
         });
 
@@ -484,105 +484,298 @@ function showError(elementId, message) {
     }
 }
 
-// Book of Business (BOB) XLSX upload
-(function initBobUpload() {
-    const zone = document.getElementById('bobFileUploadZone');
-    const fileInput = document.getElementById('bobExcelFile');
-    const fileNameDisplay = document.getElementById('bobFileNameDisplay');
-    if (!zone || !fileInput) return;
+// Tracks the latest preview state so the upload handler can read whether the
+// user explicitly confirmed an "import anyway" with critical sheets missing.
+window.skillboostPreviewState = window.skillboostPreviewState || {
+    requiresConfirmation: false,
+    confirmed: false,
+    missingCritical: [],
+    sheetMapping: [],
+};
 
-    function updateBobZone() {
-        const file = fileInput.files[0];
-        if (file) {
-            zone.classList.add('has-file');
-            if (fileNameDisplay) fileNameDisplay.innerHTML = '<i class="fas fa-check-circle"></i> ' + escapeHtml(file.name);
+function _moduleLabelForRow(row) {
+    if (!row) return '';
+    if (row.label) {
+        if (row.lab != null && row.track != null) return row.label;
+        if (row.track != null && row.label.indexOf('Track ' + row.track) === -1) {
+            return row.label + ' (Track ' + row.track + ')';
+        }
+        return row.label;
+    }
+    if (row.module) return row.module;
+    return '';
+}
+
+function _renderSheetMappingTable(mapping) {
+    if (!mapping || mapping.length === 0) {
+        return '<div class="text-muted" style="margin-top: 8px;">No worksheets found.</div>';
+    }
+    var rows = mapping.map(function(r) {
+        var status = r.status || 'unrecognised';
+        var statusBadge;
+        if (status === 'detected') {
+            statusBadge = '<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> Detected</span>';
+        } else if (status === 'duplicate') {
+            statusBadge = '<span style="color:#f59e0b;font-weight:600;"><i class="fas fa-clone"></i> Duplicate (ignored)</span>';
         } else {
-            zone.classList.remove('has-file');
-            if (fileNameDisplay) fileNameDisplay.innerHTML = '';
+            statusBadge = '<span style="color:#94a3b8;font-weight:600;"><i class="fas fa-circle-minus"></i> Will be ignored</span>';
         }
-    }
-    fileInput.addEventListener('change', updateBobZone);
-    ['dragenter', 'dragover'].forEach(ev => {
-        zone.addEventListener(ev, function(e) { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-over'); });
-    });
-    ['dragleave', 'drop'].forEach(ev => {
-        zone.addEventListener(ev, function(e) { e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag-over'); });
-    });
-    zone.addEventListener('drop', function(e) {
-        const files = e.dataTransfer && e.dataTransfer.files;
-        if (files && files.length) { fileInput.files = files; updateBobZone(); }
-    });
-})();
+        var label = _moduleLabelForRow(r);
+        return '<tr>' +
+            '<td style="padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.06);font-family:monospace;">' + escapeHtml(r.sheet_name || '') + '</td>' +
+            '<td style="padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.06);">' + (label ? escapeHtml(label) : '<span class="text-muted">—</span>') + '</td>' +
+            '<td style="padding:6px 10px;border-bottom:1px solid rgba(255,255,255,0.06);">' + statusBadge + '</td>' +
+            '</tr>';
+    }).join('');
+    return '<div style="margin-top:10px;max-height:280px;overflow:auto;border:1px solid rgba(255,255,255,0.08);border-radius:6px;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:0.92em;">' +
+        '<thead><tr style="background:rgba(255,255,255,0.04);text-align:left;">' +
+        '<th style="padding:6px 10px;">Tab name</th>' +
+        '<th style="padding:6px 10px;">Mapped module</th>' +
+        '<th style="padding:6px 10px;">Status</th>' +
+        '</tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>';
+}
 
-document.getElementById('bobUploadForm').addEventListener('submit', async function(e) {
-    e.preventDefault();
-    const fileInput = document.getElementById('bobExcelFile');
-    const file = fileInput && fileInput.files[0];
-    const errorEl = document.getElementById('bobUploadError');
-    const successEl = document.getElementById('bobUploadSuccess');
-    const btn = document.getElementById('bobUploadBtn');
-    if (errorEl) errorEl.style.display = 'none';
-    if (successEl) successEl.style.display = 'none';
-    if (!file) {
-        if (errorEl) { errorEl.textContent = 'Please select an XLSX file'; errorEl.style.display = 'block'; }
-        return;
+function _renderMissingCriticalBanner(missing) {
+    if (!missing || missing.length === 0) {
+        return '<div style="margin-top:10px;padding:10px 12px;border-radius:6px;background:rgba(34,197,94,0.10);border:1px solid rgba(34,197,94,0.35);color:#86efac;">' +
+            '<i class="fas fa-check-circle"></i> All expected modules detected for this cohort.' +
+            '</div>';
     }
-    const formData = new FormData();
-    formData.append('bob_file', file);
-    const token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
-    if (!token) {
-        if (errorEl) { errorEl.textContent = 'Not authenticated'; errorEl.style.display = 'block'; }
-        return;
+    var listItems = missing.map(function(m) {
+        var label = m.label || m.module || '';
+        return '<li style="color:#78350f;"><strong style="color:#451a03;">' + escapeHtml(label) + '</strong> NOT found — this module will not be imported.</li>';
+    }).join('');
+    return '<div style="margin-top:10px;padding:12px 14px;border-radius:6px;background:#fffbeb;border:1px solid #f59e0b;box-shadow:0 1px 2px rgba(0,0,0,0.06);color:#78350f;">' +
+        '<div style="font-weight:600;margin-bottom:6px;color:#451a03;"><i class="fas fa-exclamation-triangle" style="color:#b45309;"></i> ' +
+        missing.length + ' expected sheet' + (missing.length === 1 ? '' : 's') + ' missing from this workbook</div>' +
+        '<ul style="margin:6px 0 8px 22px;padding:0;line-height:1.55;color:#78350f;">' + listItems + '</ul>' +
+        '<label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;color:#451a03;font-weight:500;">' +
+        '<input type="checkbox" id="skillboostConfirmMissing" />' +
+        '<span>Import anyway (skip these missing modules)</span>' +
+        '</label>' +
+        '</div>';
+}
+
+function _setSkillboostUploadEnabled(enabled) {
+    var btn = document.getElementById('skillboostUploadBtn');
+    if (!btn) return;
+    btn.disabled = !enabled;
+    if (enabled) {
+        btn.classList.remove('disabled');
+    } else {
+        btn.classList.add('disabled');
     }
-    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...'; }
-    try {
-        const response = await fetch('/api/import/bob', {
-            method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token },
-            body: formData
+}
+
+var SKILLBOOST_REASON_LABELS = {
+    missing_email: 'Missing email',
+    invalid_email: 'Invalid email',
+    profile_verified_no_update: 'Already verified — row left unchanged (valid=TRUE)',
+    duplicate_row_in_workbook: 'Duplicate row in this file (same email + profile link)',
+    fk_user_pii_missing: 'Leader email not in user_pii (auto-PII insert also failed)',
+    unique_constraint_violation: 'Duplicate / unique constraint violation',
+    value_too_long: 'Value too long for column',
+    data_type_error: 'Wrong data type for column',
+    integrity_error: 'Database integrity error',
+    other: 'Other / unclassified',
+};
+
+function _formatReasonCode(code) {
+    return SKILLBOOST_REASON_LABELS[code] || code || 'other';
+}
+
+/** Matches legacy API error lines for rows that were skipped intentionally (not failures). */
+function _isInformationalSkillboostProfileErrorLine(s) {
+    return typeof s === 'string' && s.indexOf('[profile_verified_no_update]') !== -1;
+}
+
+function _moduleLabelForBlock(block) {
+    if (!block) return '';
+    var base = block.module || '';
+    var pretty = base
+        .replace(/_/g, ' ')
+        .replace(/\b\w/g, function(c) { return c.toUpperCase(); });
+    var extras = [];
+    if (block.track != null) extras.push('Track ' + block.track);
+    if (block.lab != null) extras.push('Lab ' + block.lab);
+    var sheet = block.sheet_name || '';
+    var label = pretty + (extras.length ? ' (' + extras.join(', ') + ')' : '');
+    return sheet ? label + ' — ' + sheet : label;
+}
+
+function _csvEscape(value) {
+    if (value == null) return '';
+    var s = String(value);
+    if (s.indexOf('"') !== -1 || s.indexOf(',') !== -1 || s.indexOf('\n') !== -1) {
+        return '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+}
+
+function _buildPerSheetErrorsCsv(perSheetErrors) {
+    var headers = ['module', 'track', 'lab', 'sheet_name', 'row', 'reason_code', 'reason_message', 'raw_email'];
+    var lines = [headers.join(',')];
+    (perSheetErrors || []).forEach(function(block) {
+        var rows = block && block.rows ? block.rows : [];
+        rows.forEach(function(r) {
+            lines.push([
+                _csvEscape(block.module),
+                _csvEscape(block.track != null ? block.track : ''),
+                _csvEscape(block.lab != null ? block.lab : ''),
+                _csvEscape(block.sheet_name || ''),
+                _csvEscape(r.row != null ? r.row : ''),
+                _csvEscape(r.reason_code || 'other'),
+                _csvEscape(r.reason_message || ''),
+                _csvEscape(r.raw_email || ''),
+            ].join(','));
         });
-        const data = await response.json().catch(function() { return {}; });
-        if (!response.ok) {
-            if (errorEl) { errorEl.textContent = data.error || 'Import failed'; errorEl.style.display = 'block'; }
-            return;
-        }
-        if (successEl) {
-            successEl.innerHTML = (data.message || 'Imported ' + (data.companies_imported || 0) + ' companies. BOB match updated for ' + (data.bob_match_updated || 0) + ' profile(s).');
-            successEl.style.display = 'block';
-        }
-        fileInput.value = '';
-        const zone = document.getElementById('bobFileUploadZone');
-        const fileNameDisplay = document.getElementById('bobFileNameDisplay');
-        if (zone) zone.classList.remove('has-file');
-        if (fileNameDisplay) fileNameDisplay.innerHTML = '';
-    } catch (err) {
-        if (errorEl) { errorEl.textContent = err.message || 'Request failed'; errorEl.style.display = 'block'; }
-    } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-upload"></i> Import Book of Business'; }
+    });
+    return lines.join('\n');
+}
+
+function _downloadCsv(filename, content) {
+    try {
+        var blob = new Blob([content], { type: 'text/csv;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function() {
+            try { document.body.removeChild(a); } catch (e) { /* ignore */ }
+            try { URL.revokeObjectURL(url); } catch (e) { /* ignore */ }
+        }, 200);
+    } catch (e) { /* ignore */ }
+}
+
+function renderPerSheetErrorsPanel(perSheetErrors) {
+    var container = document.getElementById('skillboostPerSheetErrors');
+    if (!container) return;
+    if (!perSheetErrors || perSheetErrors.length === 0) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+        return;
     }
-});
+    var totalSkipped = 0;
+    var totalAutoCreated = 0;
+    var blocksWithIssues = [];
+    perSheetErrors.forEach(function(b) {
+        totalSkipped += (b.skipped || 0);
+        totalAutoCreated += (b.pii_auto_created || 0);
+        if ((b.rows && b.rows.length > 0) || (b.skipped || 0) > 0) {
+            blocksWithIssues.push(b);
+        }
+    });
+    if (blocksWithIssues.length === 0 && totalAutoCreated === 0) {
+        container.innerHTML = '';
+        container.style.display = 'none';
+        return;
+    }
+
+    var html = '<details open style="border:1px solid rgba(255,255,255,0.10);border-radius:8px;background:var(--glass-bg, rgba(255,255,255,0.04));">' +
+        '<summary style="padding:10px 14px;cursor:pointer;font-weight:600;">' +
+        '<i class="fas fa-list-check"></i> Skips &amp; issues by sheet' +
+        ' <span class="text-muted" style="font-weight:400;">(' + blocksWithIssues.length + ' sheet' + (blocksWithIssues.length === 1 ? '' : 's') +
+        ', ' + totalSkipped.toLocaleString() + ' skipped row' + (totalSkipped === 1 ? '' : 's') +
+        (totalAutoCreated > 0 ? ', ' + totalAutoCreated.toLocaleString() + ' user_pii auto-created' : '') +
+        ')</span>' +
+        ' <button type="button" class="btn btn-sm btn-secondary" id="skillboostDownloadErrorCsvBtn" style="margin-left:12px;">' +
+        '<i class="fas fa-download"></i> Download error report (CSV)</button>' +
+        '</summary>' +
+        '<div style="padding:8px 14px 14px 14px;">' +
+        '<p class="text-muted" style="font-size:0.9em;margin:0 0 10px 0;line-height:1.45;">' +
+        '<strong>Skipped</strong> is not always a problem: e.g. profiles that are already <strong>verified</strong> ' +
+        'are intentionally left unchanged. The table below explains each reason and shows sample Excel row numbers ' +
+        '(row 1 = header).</p>';
+
+    perSheetErrors.forEach(function(block) {
+        var skipped = block.skipped || 0;
+        var autoCreated = block.pii_auto_created || 0;
+        var byReason = block.by_reason || [];
+        if (skipped === 0 && autoCreated === 0 && byReason.length === 0) return;
+
+        html += '<div style="margin-top:10px;padding:10px 12px;border-radius:6px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">';
+        html += '<div style="font-weight:600;">' + escapeHtml(_moduleLabelForBlock(block)) + '</div>';
+        html += '<div class="text-muted" style="font-size:0.9em;margin-top:2px;">' +
+            (block.created || 0) + ' created · ' +
+            (block.updated || 0) + ' updated · ' +
+            '<span style="color:#fca5a5;">' + skipped + ' skipped</span>' +
+            (autoCreated > 0 ? ' · <span style="color:#86efac;">' + autoCreated + ' user_pii auto-created</span>' : '') +
+            '</div>';
+        if (byReason.length > 0) {
+            html += '<table style="width:100%;border-collapse:collapse;font-size:0.9em;margin-top:8px;">' +
+                '<thead><tr style="text-align:left;color:#cbd5e1;">' +
+                '<th style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.08);">Reason</th>' +
+                '<th style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.08);width:80px;">Count</th>' +
+                '<th style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.08);">Sample rows</th>' +
+                '</tr></thead><tbody>';
+            byReason.forEach(function(r) {
+                html += '<tr>' +
+                    '<td style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">' + escapeHtml(_formatReasonCode(r.reason_code)) + '</td>' +
+                    '<td style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);">' + (r.count || 0) + '</td>' +
+                    '<td style="padding:4px 8px;border-bottom:1px solid rgba(255,255,255,0.05);font-family:monospace;color:#cbd5e1;">' +
+                    ((r.sample_rows || []).join(', ') || '—') + '</td>' +
+                    '</tr>';
+            });
+            html += '</tbody></table>';
+            var sumReasons = byReason.reduce(function(acc, r) { return acc + (r.count || 0); }, 0);
+            if (skipped > 0 && sumReasons < skipped) {
+                html += '<p class="text-muted" style="font-size:0.85em;margin:8px 0 0 0;">' +
+                    'Note: only the first ~2000 skipped rows are logged with samples; reason counts may be partial (' +
+                    sumReasons.toLocaleString() + ' of ' + skipped.toLocaleString() +
+                    '). Download CSV for all logged rows.</p>';
+            }
+        } else if (skipped > 0) {
+            html += '<p style="font-size:0.9em;margin-top:8px;color:#fcd34d;">' +
+                'This sheet reported ' + skipped + ' skipped row(s), but no per-reason breakdown was returned. ' +
+                'Try upgrading the server import, or check the legacy error list above.</p>';
+        }
+        html += '</div>';
+    });
+
+    html += '</div></details>';
+    container.innerHTML = html;
+    container.style.display = 'block';
+
+    var btn = document.getElementById('skillboostDownloadErrorCsvBtn');
+    if (btn) {
+        btn.addEventListener('click', function(ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            var csv = _buildPerSheetErrorsCsv(perSheetErrors);
+            var ts = new Date().toISOString().replace(/[:.]/g, '-');
+            _downloadCsv('action_center_import_errors_' + ts + '.csv', csv);
+        });
+    }
+}
 
 // Skill Lab: run preview and show subsheet/sheet/row info (called automatically when file is selected)
 async function runSkillboostPreview(file) {
     const previewResultEl = document.getElementById('skillboostPreviewResult');
     const errorEl = document.getElementById('skillboostUploadError');
+    window.skillboostPreviewState = {
+        requiresConfirmation: false,
+        confirmed: false,
+        missingCritical: [],
+        sheetMapping: [],
+    };
+    _setSkillboostUploadEnabled(true);
     if (!file) {
         if (previewResultEl) previewResultEl.style.display = 'none';
         return;
     }
     if (errorEl) errorEl.style.display = 'none';
-    const token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
-    if (!token) {
-        if (errorEl) { errorEl.textContent = 'Not authenticated'; errorEl.style.display = 'block'; }
-        return;
-    }
     if (previewResultEl) { previewResultEl.style.display = 'block'; previewResultEl.innerHTML = '<span class="text-muted">Checking file...</span>'; }
     try {
         const formData = new FormData();
         formData.append('skillboost_file', file);
-        const response = await fetch('/api/import/skillboost/preview', {
+        const response = await fetch(_importFetchUrl(cohortApiUrl('/api/import/skillboost/preview')), {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token },
+            headers: _importAuthHeaders(),
+            credentials: 'same-origin',
             body: formData
         });
         const data = await response.json().catch(function() { return {}; });
@@ -590,45 +783,61 @@ async function runSkillboostPreview(file) {
             if (previewResultEl) { previewResultEl.innerHTML = '<span class="text-danger">' + escapeHtml(data.error || 'Preview failed') + '</span>'; previewResultEl.style.display = 'block'; }
             return;
         }
+
         const count = data.sheet_count != null ? data.sheet_count : 0;
-        const names = data.sheet_names || [];
-        const detected = data.detected_sheet_name;
-        const rows = data.detected_sheet_rows != null ? data.detected_sheet_rows : 0;
-        const subSheet = data.submission_sheet_name;
-        const subRows = data.submission_sheet_rows != null ? data.submission_sheet_rows : 0;
-        if (data.error) {
-            previewResultEl.innerHTML = '<strong><i class="fas fa-info-circle"></i> ' + count + ' subsheet(s) detected.</strong><br>' +
-                '<span class="text-warning">' + escapeHtml(data.error) + '</span>' +
-                (names.length ? '<br><span class="text-muted">Sheet names: ' + escapeHtml(names.join(', ')) + '</span>' : '');
+        const mapping = data.sheet_mapping || [];
+        const missing = data.missing_critical_modules || [];
+        window.skillboostPreviewState.sheetMapping = mapping;
+        window.skillboostPreviewState.missingCritical = missing;
+
+        // Cohort-2 Optional-MCQ-only path keeps its own concise banner.
+        if (data.cohort2_optional_import_only && !data.error) {
+            var c2m = data.cohort2_optional_mcq_sheet || {};
+            var detected = data.detected_sheet_name;
+            var rows = data.detected_sheet_rows != null ? data.detected_sheet_rows : 0;
+            var htmlC2 = '<strong><i class="fas fa-check-circle text-success"></i> Cohort 2 — Optional MCQ import only</strong><br>' +
+                'Required sheet <strong>&quot;' + escapeHtml(detected || c2m.sheet_name || '') + '&quot;</strong> (14.MCQ … Optional) found with <strong>' + (rows || c2m.rows || 0).toLocaleString() + '</strong> row(s).';
+            htmlC2 += _renderMissingCriticalBanner(missing);
+            htmlC2 += _renderSheetMappingTable(mapping);
+            previewResultEl.innerHTML = htmlC2;
+        } else if (data.error) {
+            var html = '<strong><i class="fas fa-info-circle"></i> ' + count + ' subsheet(s) found.</strong><br>' +
+                '<span class="text-warning">' + escapeHtml(data.error) + '</span>';
+            html += _renderMissingCriticalBanner(missing);
+            html += _renderSheetMappingTable(mapping);
+            previewResultEl.innerHTML = html;
         } else {
-            var html = '<strong><i class="fas fa-check-circle text-success"></i> ' + count + ' subsheet(s) detected.</strong><br>' +
-                'Sheet <strong>&quot;' + escapeHtml(detected || '') + '&quot;</strong> (Share your Google Skills Pu) detected with <strong>' + (rows || 0).toLocaleString() + '</strong> row(s).';
-            if (subSheet) {
-                html += '<br><i class="fas fa-check-circle text-success"></i> Sheet <strong>&quot;' + escapeHtml(subSheet) + '&quot;</strong> (Skill Lab Submissions) detected with <strong>' + (subRows || 0).toLocaleString() + '</strong> row(s).';
+            var detectedCount = mapping.filter(function(r) { return r && r.status === 'detected'; }).length;
+            var unrecognisedCount = mapping.filter(function(r) { return r && r.status === 'unrecognised'; }).length;
+            var html = '<strong><i class="fas fa-check-circle text-success"></i> ' + count + ' tab(s) found</strong> ' +
+                '(<span style="color:#22c55e;">' + detectedCount + ' detected</span>, ' +
+                '<span style="color:#94a3b8;">' + unrecognisedCount + ' ignored</span>).';
+            if (data.action_center_profile_sheet_missing) {
+                html += '<br><span class="text-muted" style="display:inline-block;margin-top:4px;"><i class="fas fa-info-circle"></i> No Google Skills profile sheet; other recognised subsheets (e.g. Main MCQ) will still import.</span>';
             }
-            if (data.mcq_sheets && data.mcq_sheets.length > 0) {
-                data.mcq_sheets.forEach(function(m) {
-                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Optional MCQ Track ' + m.track + '</strong>: Sheet &quot;' + escapeHtml(m.sheet_name || '') + '&quot; with <strong>' + (m.rows || 0).toLocaleString() + '</strong> row(s).';
-                });
-            }
-            if (data.main_mcq_sheets && data.main_mcq_sheets.length > 0) {
-                data.main_mcq_sheets.forEach(function(m) {
-                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Main MCQ Track ' + m.track + '</strong>: Sheet &quot;' + escapeHtml(m.sheet_name || '') + '&quot; with <strong>' + (m.rows || 0).toLocaleString() + '</strong> row(s).';
-                });
-            }
-            if (data.lab_completion_sheets && data.lab_completion_sheets.length > 0) {
-                data.lab_completion_sheets.forEach(function(lc) {
-                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Lab Completion ' + lc.lab + ' Track ' + lc.track + '</strong>: Sheet &quot;' + escapeHtml(lc.sheet_name || '') + '&quot; with <strong>' + (lc.rows || 0).toLocaleString() + '</strong> row(s).';
-                });
-            }
-            if (data.project_submission_sheets && data.project_submission_sheets.length > 0) {
-                data.project_submission_sheets.forEach(function(ps) {
-                    html += '<br><i class="fas fa-check-circle text-success"></i> <strong>Project Submission Track ' + ps.track + '</strong>: Sheet &quot;' + escapeHtml(ps.sheet_name || '') + '&quot; with <strong>' + (ps.rows || 0).toLocaleString() + '</strong> row(s).';
-                });
-            }
+            html += _renderMissingCriticalBanner(missing);
+            html += _renderSheetMappingTable(mapping);
             previewResultEl.innerHTML = html;
         }
+
         previewResultEl.style.display = 'block';
+
+        if (missing && missing.length > 0) {
+            window.skillboostPreviewState.requiresConfirmation = true;
+            window.skillboostPreviewState.confirmed = false;
+            _setSkillboostUploadEnabled(false);
+            var cb = document.getElementById('skillboostConfirmMissing');
+            if (cb) {
+                cb.addEventListener('change', function() {
+                    window.skillboostPreviewState.confirmed = !!cb.checked;
+                    _setSkillboostUploadEnabled(!!cb.checked);
+                });
+            }
+        } else {
+            window.skillboostPreviewState.requiresConfirmation = false;
+            window.skillboostPreviewState.confirmed = true;
+            _setSkillboostUploadEnabled(true);
+        }
     } catch (err) {
         if (previewResultEl) { previewResultEl.innerHTML = '<span class="text-danger">' + escapeHtml(err.message || 'Request failed') + '</span>'; previewResultEl.style.display = 'block'; }
     }
@@ -678,16 +887,24 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
     if (errorEl) errorEl.style.display = 'none';
     if (successEl) successEl.style.display = 'none';
     if (errorsListEl) errorsListEl.style.display = 'none';
+    var perSheetEl = document.getElementById('skillboostPerSheetErrors');
+    if (perSheetEl) { perSheetEl.innerHTML = ''; perSheetEl.style.display = 'none'; }
     if (!file) {
         if (errorEl) { errorEl.textContent = 'Please select an XLSX file'; errorEl.style.display = 'block'; }
         return;
     }
+    var preview = window.skillboostPreviewState || {};
+    if (preview.requiresConfirmation && !preview.confirmed) {
+        if (errorEl) {
+            errorEl.textContent = 'Some expected sheets are missing. Tick "Import anyway" in the preview banner to continue.';
+            errorEl.style.display = 'block';
+        }
+        return;
+    }
     const formData = new FormData();
     formData.append('skillboost_file', file);
-    const token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
-    if (!token) {
-        if (errorEl) { errorEl.textContent = 'Not authenticated'; errorEl.style.display = 'block'; }
-        return;
+    if (preview.requiresConfirmation && preview.confirmed) {
+        formData.append('confirm_missing_modules', 'true');
     }
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing (large files may take several minutes)...'; }
     const skillboostImportTimeoutMs = 25 * 60 * 1000;
@@ -698,11 +915,12 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
     try {
         const fetchOpts = {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token },
+            headers: _importAuthHeaders(),
+            credentials: 'same-origin',
             body: formData
         };
         if (skillboostController) fetchOpts.signal = skillboostController.signal;
-        const response = await fetch('/api/import/skillboost', fetchOpts);
+        const response = await fetch(_importFetchUrl(cohortApiUrl('/api/import/skillboost')), fetchOpts);
         if (skillboostTimeoutId) clearTimeout(skillboostTimeoutId);
         const data = await response.json().catch(function() { return {}; });
         if (!response.ok) {
@@ -773,8 +991,10 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
             successEl.innerHTML = msgHtml;
             successEl.style.display = 'block';
         }
-        // Combine profile errors, submission errors, and MCQ errors
-        var allErrors = (data.errors || []).slice();
+        // Combine profile errors, submission errors, and MCQ errors (exclude expected skips)
+        var allErrors = (data.errors || []).slice().filter(function(e) {
+            return !_isInformationalSkillboostProfileErrorLine(e);
+        });
         if (data.submission && data.submission.errors && data.submission.errors.length > 0) {
             allErrors = allErrors.concat(data.submission.errors.map(function(e) { return '[Submission] ' + e; }));
         }
@@ -818,6 +1038,7 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
             errorsListEl.innerHTML = '';
             errorsListEl.style.display = 'none';
         }
+        try { renderPerSheetErrorsPanel(data.per_sheet_errors || []); } catch (e) { /* ignore */ }
         fileInput.value = '';
         const zone = document.getElementById('skillboostFileUploadZone');
         const fileNameDisplay = document.getElementById('skillboostFileNameDisplay');
@@ -849,19 +1070,15 @@ document.getElementById('skillboostVerifyBtn').addEventListener('click', async f
     const errorEl = document.getElementById('skillboostVerifyError');
     if (errorEl) errorEl.style.display = 'none';
     if (statsEl) statsEl.style.display = 'none';
-    const token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
-    if (!token) {
-        if (errorEl) { errorEl.textContent = 'Not authenticated'; errorEl.style.display = 'block'; }
-        return;
-    }
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...'; }
     if (progressEl) { progressEl.style.display = 'block'; progressEl.style.visibility = 'visible'; }
     if (progressBar) progressBar.style.width = '0%';
     if (progressText) progressText.textContent = 'Verifying... 0 / 0';
     try {
-        const response = await fetch('/api/import/skillboost/verify?pending_only=1', {
+        const response = await fetch(_importFetchUrl(cohortApiUrl('/api/import/skillboost/verify?pending_only=1')), {
             method: 'POST',
-            headers: { 'Authorization': 'Bearer ' + token }
+            headers: _importAuthHeaders(),
+            credentials: 'same-origin'
         });
         if (!response.ok) {
             const data = await response.json().catch(function() { return {}; });
@@ -924,3 +1141,101 @@ document.getElementById('skillboostVerifyBtn').addEventListener('click', async f
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-check-circle"></i> Verify profiles'; }
     }
 });
+
+// Skill Lab / Code Lab: verify badge submission URLs (SSE + optional min completion date)
+var skillboostVerifySubmissionBtn = document.getElementById('skillboostVerifySubmissionBtn');
+if (skillboostVerifySubmissionBtn) {
+    skillboostVerifySubmissionBtn.addEventListener('click', async function() {
+        var btn = document.getElementById('skillboostVerifySubmissionBtn');
+        var progressEl = document.getElementById('skillboostVerifySubmissionProgress');
+        var progressBar = document.getElementById('skillboostVerifySubmissionProgressBar');
+        var progressText = document.getElementById('skillboostVerifySubmissionProgressText');
+        var statsEl = document.getElementById('skillboostVerifySubmissionStats');
+        var errorEl = document.getElementById('skillboostVerifySubmissionError');
+        var minDateEl = document.getElementById('skillboostVerifyMinDate');
+        if (errorEl) errorEl.style.display = 'none';
+        if (statsEl) statsEl.style.display = 'none';
+        var params = ['pending_only=1'];
+        var minD = minDateEl && minDateEl.value ? String(minDateEl.value).trim() : '';
+        if (minD) params.push('min_date=' + encodeURIComponent(minD));
+        var reqUrl = cohortApiUrl('/api/import/submission/verify?' + params.join('&'));
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Verifying...'; }
+        if (progressEl) { progressEl.style.display = 'block'; progressEl.style.visibility = 'visible'; }
+        if (progressBar) progressBar.style.width = '0%';
+        if (progressText) progressText.textContent = 'Verifying submissions... 0 / 0';
+        try {
+            var response = await fetch(_importFetchUrl(reqUrl), {
+                method: 'POST',
+                headers: _importAuthHeaders(),
+                credentials: 'same-origin'
+            });
+            if (!response.ok) {
+                var errData = await response.json().catch(function() { return {}; });
+                throw new Error(errData.error || 'Verification failed');
+            }
+            var reader = response.body.getReader();
+            var decoder = new TextDecoder();
+            var buffer = '';
+            var result = null;
+            function processChunk(str) {
+                var parts = str.split('\n\n');
+                for (var i = 0; i < parts.length; i++) {
+                    var line = parts[i].trim();
+                    if (!line.startsWith('data:')) continue;
+                    var payload = line.replace(/^data:\s*/, '').trim();
+                    if (!payload) continue;
+                    try {
+                        var data = JSON.parse(payload);
+                        if (data.done) {
+                            result = data;
+                            return;
+                        }
+                        var total = data.total || 0;
+                        var current = data.current || 0;
+                        var pct = total > 0 ? Math.round((current / total) * 100) : 0;
+                        if (progressBar) progressBar.style.width = pct + '%';
+                        var ok = data.verified_ok || 0;
+                        var fail = data.verified_fail || 0;
+                        var pend = data.pending != null ? data.pending : 0;
+                        if (progressText) {
+                            progressText.textContent = 'Verifying submissions... ' + (current || 0).toLocaleString() + ' / ' + (total || 0).toLocaleString() +
+                                ' (Verified: ' + ok + ', Failed: ' + fail + ', Pending: ' + pend + ')';
+                        }
+                    } catch (e) { /* skip */ }
+                }
+            }
+            while (true) {
+                var readResult = await reader.read();
+                if (readResult.done) break;
+                buffer += decoder.decode(readResult.value, { stream: true });
+                var idx = buffer.lastIndexOf('\n\n');
+                if (idx !== -1) {
+                    processChunk(buffer.substring(0, idx + 2));
+                    buffer = buffer.substring(idx + 2);
+                }
+                if (result) break;
+            }
+            if (buffer && !result) processChunk(buffer);
+            if (progressEl) progressEl.style.display = 'none';
+            if (result && statsEl) {
+                var total = result.total || 0;
+                var ok = result.verified_ok || 0;
+                var fail = result.verified_fail || 0;
+                var pend = result.pending != null ? result.pending : 0;
+                statsEl.innerHTML = '<strong><i class="fas fa-check-circle text-success"></i> Submission verification complete</strong><br>' +
+                    '<div style="margin-top: 8px;">' +
+                    '<span>Total: <strong>' + total.toLocaleString() + '</strong></span> &nbsp;|&nbsp; ' +
+                    '<span class="text-success">Verified: <strong>' + ok.toLocaleString() + '</strong></span> &nbsp;|&nbsp; ' +
+                    '<span class="text-danger">Failed: <strong>' + fail.toLocaleString() + '</strong></span> &nbsp;|&nbsp; ' +
+                    '<span style="color:#38bdf8;">Pending: <strong>' + pend.toLocaleString() + '</strong></span>' +
+                    '</div>';
+                statsEl.style.display = 'block';
+            }
+        } catch (err) {
+            if (progressEl) progressEl.style.display = 'none';
+            if (errorEl) { errorEl.textContent = err.message || 'Verification failed'; errorEl.style.display = 'block'; }
+        } finally {
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-award"></i> Verify Submission'; }
+        }
+    });
+}

@@ -26,6 +26,7 @@ instance/
 
 # Uploads
 uploads/
+import_file_archive/
 *.xlsx
 *.xls
 

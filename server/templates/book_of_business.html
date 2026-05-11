@@ -318,10 +318,10 @@
         organizations.forEach(function(o) { params.append('organization', o); });
         designations.forEach(function(d) { params.append('designation', d); });
         industries.forEach(function(i) { params.append('industry', i); });
-        var url = '/api/book-of-business/list?' + params.toString();
+        var url = cohortApiUrl('/api/book-of-business/list?' + params.toString());
         var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
         if (!token) {
-            window.location.href = '/login';
+            window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login');
             return;
         }
         fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
@@ -490,7 +490,7 @@
     function loadFilterOptions() {
         var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
         if (!token) return Promise.resolve();
-        return fetch('/api/book-of-business/filters', { headers: { 'Authorization': 'Bearer ' + token } })
+        return fetch(cohortApiUrl('/api/book-of-business/filters'), { headers: { 'Authorization': 'Bearer ' + token } })
             .then(function(res) {
                 if (!res.ok) return null;
                 return res.json();
@@ -552,7 +552,7 @@
         organizations.forEach(function(o) { params.append('organization', o); });
         designations.forEach(function(d) { params.append('designation', d); });
         industries.forEach(function(i) { params.append('industry', i); });
-        var url = '/api/book-of-business/stats' + (params.toString() ? '?' + params.toString() : '');
+        var url = cohortApiUrl('/api/book-of-business/stats' + (params.toString() ? '?' + params.toString() : ''));
         fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
             .then(function(res) {
                 if (!res.ok) return null;
@@ -613,7 +613,7 @@
 
     window.downloadCSV = function(mode) {
         var token = typeof getAuthToken === 'function' ? getAuthToken() : localStorage.getItem('token');
-        if (!token) { window.location.href = '/login'; return; }
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
 
         var btnId = mode === 'all' ? 'btnDownloadAll' : 'btnDownloadFiltered';
         var btn = document.getElementById(btnId);
@@ -638,7 +638,7 @@
             industries.forEach(function(i) { params.append('industry', i); });
         }
 
-        var url = '/api/book-of-business/download' + (params.toString() ? '?' + params.toString() : '');
+        var url = cohortApiUrl('/api/book-of-business/download' + (params.toString() ? '?' + params.toString() : ''));
         fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed.'); return null; }

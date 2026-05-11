@@ -136,7 +136,6 @@
 
 <script>
 (function() {
-    var API_BASE = '/api/import-user-pii-injected';
     var currentStep = 1;
     var excelData = null;
     var fieldMappings = {};
@@ -265,7 +264,8 @@
         var formData = new FormData();
         formData.append('file', file);
         try {
-            var res = await fetch(API_BASE + '/preview', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData });
+            var _u = (typeof cohortApiUrl === 'function' ? cohortApiUrl('/api/import-user-pii-injected/preview') : '/api/import-user-pii-injected/preview');
+            var res = await fetch((typeof appUrl === 'function' ? appUrl(_u) : _u), { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData, credentials: 'same-origin' });
             var data = await res.json().catch(function() { return {}; });
             if (!res.ok) throw new Error(data.error || 'Upload failed');
             excelData = data;
@@ -295,7 +295,8 @@
         if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importing...'; }
         setProgressStats(0, 0, 0);
         try {
-            var response = await fetch(API_BASE + '/execute?stream=1', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData });
+            var _u2 = (typeof cohortApiUrl === 'function' ? cohortApiUrl('/api/import-user-pii-injected/execute?stream=1') : '/api/import-user-pii-injected/execute?stream=1');
+            var response = await fetch((typeof appUrl === 'function' ? appUrl(_u2) : _u2), { method: 'POST', headers: { 'Authorization': 'Bearer ' + token }, body: formData, credentials: 'same-origin' });
             if (!response.ok) {
                 var err = await response.json().catch(function() { return {}; });
                 throw new Error(err.error || 'Import failed');

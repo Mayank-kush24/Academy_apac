@@ -7,23 +7,26 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>{% block title %}Gen AI Academy APAC{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/styles.css?v={{ v }}">
-    <link rel="stylesheet" href="/static/css/dashboard-enterprise.css?v={{ v }}">
-    <link rel="stylesheet" href="/static/css/dashboard-boutiq.css?v={{ v }}">
-    <link rel="stylesheet" href="/static/css/dashboard-premium.css?v={{ v }}">
-    <link rel="stylesheet" href="/static/css/liquid-glass.css?v={{ v }}">
+    <link rel="icon" href="{{ url_for('static_files', filename='images/hero-panels.png') }}?v={{ v }}" type="image/png">
+    <link rel="apple-touch-icon" href="{{ url_for('static_files', filename='images/hero-panels.png') }}?v={{ v }}">
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='css/styles.css') }}?v={{ v }}">
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='css/dashboard-enterprise.css') }}?v={{ v }}">
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='css/dashboard-boutiq.css') }}?v={{ v }}">
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='css/dashboard-premium.css') }}?v={{ v }}">
+    <link rel="stylesheet" href="{{ url_for('static_files', filename='css/liquid-glass.css') }}?v={{ v }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;600;700&family=Google+Sans+Display:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}"{% if cohort_id %} data-cohort-id="{{ cohort_id }}"{% endif %}>
     <div class="app-container">
         <!-- Sidebar Overlay -->
         <div class="sidebar-overlay" id="sidebarOverlay" onclick="closeSidebar()"></div>
         
         <!-- Sidebar -->
+        {% set cohort_prefix = cohort_path_prefix %}
         <aside class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h1>
@@ -34,76 +37,82 @@
             </div>
             
             <nav class="sidebar-nav">
-                <!-- CORE Section -->
                 <div class="nav-section">
                     <div class="nav-category">CORE</div>
-                    <a href="/" class="nav-item" id="navHome" data-page-id="home" style="display: none;">
+                    <a href="{{ url_for('home') }}" class="nav-item" id="navHome" data-page-id="home" style="display: none;">
                         <i class="nav-icon fas fa-home"></i>
                         <span>Home</span>
                     </a>
-                    <a href="/dashboard" class="nav-item" id="navDashboard" data-page-id="dashboard" style="display: none;">
+                    {% if cohort_id %}
+                    <a href="{{ cohort_prefix }}/dashboard" class="nav-item" id="navDashboard" data-page-id="dashboard" style="display: none;">
                         <i class="nav-icon fas fa-chart-line"></i>
                         <span>Dashboard</span>
                     </a>
+                    {% endif %}
                 </div>
                 
-                <!-- DATA Section -->
+                {% if cohort_id %}
                 <div class="nav-section">
                     <div class="nav-category">DATA</div>
-                    <a href="/profiles" class="nav-item" id="navProfiles" data-page-id="profiles" style="display: none;">
+                    <a href="{{ cohort_prefix }}/profiles" class="nav-item" id="navProfiles" data-page-id="profiles" style="display: none;">
                         <i class="nav-icon fas fa-user-circle"></i>
                         <span>Profiles</span>
                     </a>
-                    <a href="/skill-lab-credits" class="nav-item" id="navSkillLabCredits" data-page-id="skill_lab_credits" style="display: none;">
+                    {% if 'skill-lab-credits' not in cohort_disabled_pages %}
+                    <a href="{{ cohort_prefix }}/skill-lab-credits" class="nav-item" id="navSkillLabCredits" data-page-id="skill_lab_credits" style="display: none;">
                         <i class="nav-icon fas fa-award"></i>
                         <span>Skill Lab credits</span>
                     </a>
-                    <a href="/book-of-business" class="nav-item" id="navBookOfBusiness" data-page-id="book_of_business" style="display: none;">
+                    {% endif %}
+                    <a href="{{ cohort_prefix }}/book-of-business" class="nav-item" id="navBookOfBusiness" data-page-id="book_of_business" style="display: none;">
                         <i class="nav-icon fas fa-book-open"></i>
                         <span>Book of Business Registrations</span>
                     </a>
-                    <a href="/users-registrations" class="nav-item" id="navUsersRegistrations" data-page-id="users_registrations" style="display: none;">
+                    <a href="{{ cohort_prefix }}/users-registrations" class="nav-item" id="navUsersRegistrations" data-page-id="users_registrations" style="display: none;">
                         <i class="nav-icon fas fa-user-friends"></i>
                         <span>Users</span>
                     </a>
-                    <a href="/skilllab-submission" class="nav-item" id="navSkillLabSubmission" data-page-id="skilllab_submission" style="display: none;">
+                    {% if 'skilllab-submission' not in cohort_disabled_pages %}
+                    <a href="{{ cohort_prefix }}/skilllab-submission" class="nav-item" id="navSkillLabSubmission" data-page-id="skilllab_submission" style="display: none;">
                         <i class="nav-icon fas fa-clipboard-check"></i>
                         <span>Skill Lab Submissions</span>
                     </a>
-                    <a href="/codelab-submission" class="nav-item" id="navCodeLabSubmission" data-page-id="codelab_submission" style="display: none;">
+                    {% endif %}
+                    <a href="{{ cohort_prefix }}/codelab-submission" class="nav-item" id="navCodeLabSubmission" data-page-id="codelab_submission" style="display: none;">
                         <i class="nav-icon fas fa-code"></i>
                         <span>Code Lab Submissions</span>
                     </a>
-                    <a href="/project-submission" class="nav-item" id="navProjectSubmission" data-page-id="project_submission" style="display: none;">
+                    {% if 'project-submission' not in cohort_disabled_pages %}
+                    <a href="{{ cohort_prefix }}/project-submission" class="nav-item" id="navProjectSubmission" data-page-id="project_submission" style="display: none;">
                         <i class="nav-icon fas fa-folder-open"></i>
                         <span>Project Submissions</span>
                     </a>
-                    <a href="/optional-mcq-verification" class="nav-item" id="navOptionalMcqVerification" data-page-id="optional_mcq_verification" style="display: none;">
+                    {% endif %}
+                    {% if 'optional-mcq-verification' not in cohort_disabled_pages %}
+                    <a href="{{ cohort_prefix }}/optional-mcq-verification" class="nav-item" id="navOptionalMcqVerification" data-page-id="optional_mcq_verification" style="display: none;">
                         <i class="nav-icon fas fa-tasks"></i>
                         <span>Optional MCQ Verification</span>
                     </a>
-                    <a href="/mcq-verification" class="nav-item" id="navMcqVerification" data-page-id="mcq_verification" style="display: none;">
+                    {% endif %}
+                    {% if 'mcq-verification' not in cohort_disabled_pages %}
+                    <a href="{{ cohort_prefix }}/mcq-verification" class="nav-item" id="navMcqVerification" data-page-id="mcq_verification" style="display: none;">
                         <i class="nav-icon fas fa-clipboard-check"></i>
                         <span>MCQ Verification</span>
                     </a>
-                    <a href="/track-progress-query" class="nav-item" id="navTrackProgressQuery" data-page-id="track_progress_query" style="display: none;">
+                    {% endif %}
+                    {% if 'track-progress-query' not in cohort_disabled_pages %}
+                    <a href="{{ cohort_prefix }}/track-progress-query" class="nav-item" id="navTrackProgressQuery" data-page-id="track_progress_query" style="display: none;">
                         <i class="nav-icon fas fa-filter"></i>
                         <span>Track Progress Query</span>
                     </a>
-                    <a href="/import" class="nav-item" id="navImport" data-page-id="import" style="display: none;">
+                    {% endif %}
+                    <a href="{{ cohort_prefix }}/import" class="nav-item" id="navImport" data-page-id="import" style="display: none;">
                         <i class="nav-icon fas fa-file-upload"></i>
                         <span>Import Data</span>
                     </a>
                 </div>
+                {% endif %}
                 
-                <!-- ADMIN Section -->
-                <div class="nav-section">
-                    <div class="nav-category">ADMIN</div>
-                    <a href="/users" class="nav-item" id="navUsers" data-page-id="users" style="display: none;">
-                        <i class="nav-icon fas fa-users-cog"></i>
-                        <span>User Management</span>
-                    </a>
-                </div>
             </nav>
         </aside>
         
@@ -112,12 +121,17 @@
             <!-- Top Bar (shown when authenticated) -->
             <header class="top-bar" id="topBar">
                 <div class="top-bar-content">
-                    <button class="sidebar-toggle" onclick="toggleSidebar()">
+                    <button type="button" class="sidebar-toggle" id="sidebarToggleBtn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
                         <i class="fas fa-bars"></i>
                     </button>
-                    <div class="top-bar-right">
-                        <span class="user-info" id="userInfo">Loading...</span>
-                        <button class="btn btn-sm btn-secondary" onclick="logout()">
+                    <div class="top-bar-right" style="display:flex;align-items:center;gap:10px;flex-wrap:nowrap;min-width:0;">
+                        {% if cdi_enabled and cdi_portal_dashboard_url %}
+                        <a href="{{ cdi_portal_dashboard_url }}" class="btn btn-sm btn-secondary" id="btnBackToCdi" style="flex-shrink:0;text-decoration:none;" title="Return to the Hack2skill CDI portal">
+                            <i class="fas fa-th-large"></i> Back to CDI
+                        </a>
+                        {% endif %}
+                        <span class="user-info" id="userInfo" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">Loading...</span>
+                        <button class="btn btn-sm btn-secondary" onclick="logout()" style="flex-shrink:0;">
                             <i class="fas fa-sign-out-alt"></i> Logout
                         </button>
                     </div>
@@ -132,9 +146,16 @@
                         <span>Gen AI Academy</span>
                         <span class="badge" style="margin-left: 8px;">APAC Edition</span>
                     </div>
-                    <a href="/login" class="btn btn-primary">
-                        <i class="fas fa-sign-in-alt"></i> Login
-                    </a>
+                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                        {% if cdi_enabled and cdi_portal_dashboard_url %}
+                        <a href="{{ cdi_portal_dashboard_url }}" class="btn btn-secondary" title="Return to the Hack2skill CDI portal">
+                            <i class="fas fa-th-large"></i> Back to CDI
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('login_page') }}" class="btn btn-primary">
+                            <i class="fas fa-sign-in-alt"></i> Login
+                        </a>
+                    </div>
                 </div>
             </header>
             
@@ -154,7 +175,12 @@
         </main>
     </div>
     
-    <script src="/static/js/auth.js?v={{ v }}"></script>
+    <script>window.__APP_SCRIPT_ROOT__ = {{ (request.script_root or '') | tojson }};</script>
+    <script>window.__H2S_CDI_ENABLED__ = {{ cdi_enabled | tojson }};</script>
+    <script>window.__CDI_PORTAL_LOGIN_URL__ = {{ cdi_portal_login_url | tojson }};</script>
+    <script>window.__CDI_PORTAL_DASHBOARD_URL__ = {{ (cdi_portal_dashboard_url or '') | tojson }};</script>
+    <script src="{{ url_for('static_files', filename='js/auth.js') }}?v={{ v }}"></script>
+    <script src="{{ url_for('static_files', filename='js/cohort.js') }}?v={{ v }}"></script>
     <script>
         // Initialize mobile sidebar state
         function initMobileSidebar() {
@@ -174,74 +200,82 @@
             }
         }
         
-        // Check authentication and role on page load
+        function isModuleHomePath(path) {
+            var p = path || '';
+            var root = (window.__APP_SCRIPT_ROOT__ || '').replace(/\/$/, '');
+            if (!root) return p === '/' || p === '';
+            return p === root || p === root + '/';
+        }
+        function isPublicShellPath(path) {
+            return path === '/login' || isModuleHomePath(path);
+        }
+
+        // Check authentication and role on page load (Bearer and/or CDI cookie)
         document.addEventListener('DOMContentLoaded', function() {
-            // Initialize mobile sidebar
-            initMobileSidebar();
-            
-            const user = getCurrentUser();
             const token = getAuthToken();
             const currentPath = window.location.pathname;
-            
-            // Public pages that don't require authentication
-            const publicPages = ['/login', '/'];
-            
-            // If no user or token, redirect to login (but not if on public pages)
-            if (!user || !token) {
-                if (!publicPages.includes(currentPath)) {
-                    window.location.href = '/login';
-                    return;
-                } else {
-                    // On public pages, hide authenticated UI elements and show public header
+            initMobileSidebar();
+
+            const meHeaders = {};
+            if (token) {
+                meHeaders['Authorization'] = 'Bearer ' + token;
+            }
+
+            fetch({{ auth_me_url | tojson }}, { headers: meHeaders, credentials: 'same-origin' })
+            .then(function(response) {
+                if (response.ok) {
+                    return response.json().then(function(data) { return { ok: true, data: data }; });
+                }
+                return { ok: false };
+            })
+            .then(function(result) {
+                if (!result.ok) {
+                    if (!isPublicShellPath(currentPath)) {
+                        window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login');
+                        return;
+                    }
                     const sidebar = document.getElementById('sidebar');
                     const topBar = document.getElementById('topBar');
                     const publicHeader = document.getElementById('publicHeader');
                     if (sidebar) sidebar.style.display = 'none';
                     if (topBar) topBar.style.display = 'none';
-                    if (publicHeader && currentPath === '/') {
+                    if (publicHeader && isModuleHomePath(currentPath)) {
                         publicHeader.style.display = 'block';
                     }
-                    // Adjust main content margin for full-width on home page
                     const mainContent = document.querySelector('.main-content');
-                    if (mainContent && currentPath === '/') {
+                    if (mainContent && isModuleHomePath(currentPath)) {
                         mainContent.style.marginLeft = '0';
                     }
                     return;
                 }
-            } else {
-                // Hide public header when authenticated
+
+                const data = result.data;
                 const publicHeader = document.getElementById('publicHeader');
                 if (publicHeader) publicHeader.style.display = 'none';
-            }
-            
-            // Verify token is still valid by calling /api/auth/me
-            fetch('/api/auth/me', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-            .then(response => {
-                if (!response.ok) {
-                    // Token invalid, redirect to login (unless on public page)
-                    if (!publicPages.includes(currentPath)) {
-                        logout();
-                    }
-                    throw new Error('Session expired');
-                }
-                return response.json();
-            })
-            .then(data => {
-                // Keep localStorage in sync so getCurrentUser() is up to date (role, allowed_pages)
+
                 if (data.user) {
                     try { localStorage.setItem('user', JSON.stringify(data.user)); } catch (e) {}
                 }
-                // Update user info
+                if (isModuleHomePath(currentPath) && typeof window.refreshHomeCohortVisibility === 'function') {
+                    window.refreshHomeCohortVisibility();
+                }
+                const mCohort = currentPath.match(/\/c\/(\d+)(?:\/|$)/);
+                if (!window.__H2S_CDI_ENABLED__ && mCohort && data.user && data.user.role !== 'admin') {
+                    const rawC = data.user.allowed_cohort_ids;
+                    if (rawC != null && Array.isArray(rawC) && rawC.length > 0) {
+                        const urlCid = parseInt(mCohort[1], 10);
+                        const allowed = rawC.map(function (x) { return parseInt(x, 10); });
+                        if (allowed.indexOf(urlCid) === -1) {
+                            window.location.href = (typeof appUrl === 'function' ? appUrl('/') : '/');
+                            return;
+                        }
+                    }
+                }
                 const userInfoEl = document.getElementById('userInfo');
-                if (userInfoEl) {
+                if (userInfoEl && data.user) {
                     userInfoEl.textContent = data.user.name + ' (' + data.user.role + ')';
                 }
-                
-                // Show/hide menu items based on allowed_pages (or role if not set)
+
                 const allowed = data.user.allowed_pages;
                 const role = data.user.role;
                 document.querySelectorAll('.nav-item[data-page-id]').forEach(function(el) {
@@ -252,17 +286,29 @@
                     } else {
                         if (pageId === 'home' || pageId === 'dashboard' || pageId === 'profiles' || pageId === 'skill_lab_credits' || pageId === 'book_of_business' || pageId === 'users_registrations' || pageId === 'skilllab_submission' || pageId === 'codelab_submission' || pageId === 'project_submission' || pageId === 'optional_mcq_verification' || pageId === 'mcq_verification' || pageId === 'track_progress_query') show = true;
                         if (pageId === 'import' && (role === 'admin' || role === 'editor')) show = true;
-                        if (pageId === 'users' && role === 'admin') show = true;
                     }
                     el.style.display = show ? 'block' : 'none';
                 });
-            })
-            .catch(error => {
-                console.error('Auth check failed:', error);
-                // Only redirect if not on a public page
-                if (!publicPages.includes(currentPath)) {
-                    // Already handled by logout() in catch
+
+                const hubOnly = isModuleHomePath(currentPath) && (token || (window.__H2S_CDI_ENABLED__ && data.user));
+                const sidebarEl = document.getElementById('sidebar');
+                const toggleBtn = document.getElementById('sidebarToggleBtn');
+                const mainContentEl = document.querySelector('.main-content');
+                if (hubOnly && sidebarEl) {
+                    sidebarEl.style.display = 'none';
+                    if (toggleBtn) toggleBtn.style.display = 'none';
+                    if (mainContentEl) mainContentEl.style.marginLeft = '0';
+                } else if (sidebarEl) {
+                    sidebarEl.style.display = '';
+                    if (toggleBtn) toggleBtn.style.display = '';
                 }
+                document.querySelectorAll('.nav-item').forEach(function(item) {
+                    const href = item.getAttribute('href');
+                    if (href && href === currentPath) item.classList.add('active');
+                });
+            })
+            .catch(function(error) {
+                console.error('Auth check failed:', error);
             });
         });
         
@@ -326,6 +372,9 @@
         
         // Handle window resize
         window.addEventListener('resize', function() {
+            if (window.location.pathname === '/' && localStorage.getItem('user')) {
+                return;
+            }
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebarOverlay');
             const isMobile = window.innerWidth <= 640;

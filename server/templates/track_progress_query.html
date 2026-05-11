@@ -165,6 +165,11 @@
                     <button type="button" class="btn btn-secondary" onclick="tpqClear()">
                         <i class="fas fa-times"></i> Clear All
                     </button>
+                    <span class="tpq-combo-btns" style="display: inline-flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-left: 0.25rem;">
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="tpqApplyCombo(1)" title="Track 1: Main MCQ, Project, or Skill Lab submitted — and Code Lab not submitted (no submission)">Track 1</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="tpqApplyCombo(2)" title="Track 2: Main MCQ, Project, or Skill Lab submitted — and Code Lab not submitted (no submission)">Track 2</button>
+                        <button type="button" class="btn btn-outline-primary btn-sm" onclick="tpqApplyCombo(3)" title="Track 3: Main MCQ, Project, or Skill Lab submitted — and Code Lab not submitted (no submission)">Track 3</button>
+                    </span>
                     <button type="button" class="btn btn-secondary" onclick="tpqDownload()" style="margin-left: auto;">
                         <i class="fas fa-download"></i> Download CSV
                     </button>
@@ -245,6 +250,18 @@
         'f_skilllab_t1': 'skilllab_t1', 'f_skilllab_t2': 'skilllab_t2', 'f_skilllab_t3': 'skilllab_t3',
     };
 
+    /** When set, sends combo_tN=1 and omits per-track filters that combo replaces or that contradict it */
+    var _tpqComboTrack = null;
+
+    function _tpqSkipFilterForCombo(fid) {
+        if (!_tpqComboTrack) return false;
+        var suffix = '_t' + _tpqComboTrack;
+        if (fid.slice(-suffix.length) !== suffix) return false;
+        return fid.indexOf('f_webinar_') === 0 || fid.indexOf('f_opt_mcq_') === 0 ||
+            fid.indexOf('f_main_mcq_') === 0 || fid.indexOf('f_codelab_') === 0 ||
+            fid.indexOf('f_project_') === 0 || fid.indexOf('f_skilllab_') === 0;
+    }
+
     function escapeHtml(s) {
         if (s == null || s === undefined) return '';
         var div = document.createElement('div');
@@ -261,11 +278,15 @@
             params.set('per_page', '20');
         }
         FILTER_IDS.forEach(function(fid) {
+            if (_tpqSkipFilterForCombo(fid)) return;
             var el = document.getElementById(fid);
             if (el && el.value) {
                 params.set(PARAM_MAP[fid], el.value);
             }
         });
+        if (_tpqComboTrack) {
+            params.set('combo_t' + _tpqComboTrack, '1');
+        }
         return params;
     }
 
@@ -351,12 +372,12 @@
 
     window.tpqLoadPage = function(page) {
         page = page || 1;
-        if (!token) { window.location.href = '/login'; return; }
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
 
         var params = buildParams(page);
         document.getElementById('tpqTableBody').innerHTML = '<tr><td colspan="21" class="text-center">Loading...</td></tr>';
 
-        fetch('/api/track-progress/query?' + params.toString(), { headers: headers })
+        fetch(cohortApiUrl('/api/track-progress/query?' + params.toString()), { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
@@ -377,7 +398,23 @@
         tpqLoadPage(1);
     };
 
+    window.tpqApplyCombo = function(trackNum) {
+        _tpqComboTrack = trackNum;
+        var prefixes = ['f_main_mcq_t', 'f_codelab_t', 'f_project_t', 'f_skilllab_t'];
+        prefixes.forEach(function(p) {
+            var el = document.getElementById(p + trackNum);
+            if (el) el.value = '';
+        });
+        /* Webinar / Opt MCQ can contradict combo (e.g. webinar Valid = has code lab) — reset for this track */
+        var w = document.getElementById('f_webinar_t' + trackNum);
+        if (w) w.value = '';
+        var o = document.getElementById('f_opt_mcq_t' + trackNum);
+        if (o) o.value = '';
+        tpqApply();
+    };
+
     window.tpqClear = function() {
+        _tpqComboTrack = null;
         document.getElementById('tpqSearch').value = '';
         FILTER_IDS.forEach(function(fid) {
             var el = document.getElementById(fid);
@@ -390,7 +427,7 @@
 
     window.tpqDownload = function() {
         var params = buildParams();
-        var url = '/api/track-progress/download?' + params.toString();
+        var url = cohortApiUrl('/api/track-progress/download?' + params.toString());
         var a = document.createElement('a');
         a.href = url;
         a.style.display = 'none';
@@ -417,6 +454,17 @@
 
     document.getElementById('tpqSearch').addEventListener('keydown', function(e) {
         if (e.key === 'Enter') tpqApply();
+    });
+
+    [1, 2, 3].forEach(function(t) {
+        ['f_webinar_t', 'f_opt_mcq_t', 'f_main_mcq_t', 'f_codelab_t', 'f_project_t', 'f_skilllab_t'].forEach(function(prefix) {
+            var el = document.getElementById(prefix + t);
+            if (el) {
+                el.addEventListener('change', function() {
+                    if (_tpqComboTrack === t && el.value) _tpqComboTrack = null;
+                });
+            }
+        });
     });
 })();
 </script>

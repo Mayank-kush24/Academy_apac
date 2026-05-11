@@ -8,7 +8,9 @@ from typing import Optional
 # Valid question IDs and options for validation (internal key format: Q1..Q10)
 VALID_QUESTION_IDS = frozenset(f"Q{i}" for i in range(1, 11))
 VALID_OPTIONS = frozenset("ABCD")
-VALID_TRACKS = frozenset({1, 2, 3})
+# Track 4 = Cohort 2 single optional MCQ sheet (scores from Action Center export, not auto key).
+OPTIONAL_MCQ_COHORT2_TRACK = 4
+VALID_TRACKS = frozenset({1, 2, 3, OPTIONAL_MCQ_COHORT2_TRACK})
 
 # Map DB column names (question_1..question_10) and Q1..Q10 to canonical Q1..Q10 (keys lowercase for lookup)
 QUESTION_ID_ALIASES = {}
@@ -62,6 +64,18 @@ TRACK_QUESTIONS = {
         "Q9. Which outcome best represents how AlloyDB directly powers AI features in applications?",
         "Q10. Why does the lab include steps to deploy AlloyDB using Google Cloud Console and Cloud Shell?",
     ],
+    OPTIONAL_MCQ_COHORT2_TRACK: [
+        "Q1. In BigQuery Continuous Queries, which type of processing is supported?",
+        "Q2. Which operation is commonly used in Continuous Queries to write processed results?",
+        "Q3. In an event-driven pipeline using BigQuery, what typically triggers processing?",
+        "Q4. In the ADK-based Data Analyst Agent, what defines the agent's behavior?",
+        "Q5. Why does a schema-aware agent produce more reliable SQL queries?",
+        "Q6. What is the primary advantage of connecting an AI agent to BigQuery instead of using static datasets?",
+        "Q7. In the multimodal workflow, what is the role of feature extraction from images?",
+        "Q8. In BigQuery ML, what is the purpose of using K-means clustering?",
+        "Q9. In a vector-based search system, how are similarity results typically determined?",
+        "Q10. When using generative AI to create a data science model from a prompt, what is the key benefit?",
+    ],
 }
 
 ANSWER_KEY = {
@@ -101,6 +115,8 @@ ANSWER_KEY = {
         "Q9": "C",
         "Q10": "B",
     },
+    # Not used for auto-scoring when rows are imported with score from the sheet (Cohort 2).
+    OPTIONAL_MCQ_COHORT2_TRACK: {f"Q{i}": "A" for i in range(1, 11)},
 }
 
 
@@ -227,6 +243,19 @@ def score_submission(
         "score_display": f"{correct_count}/10",
         "results": results,
     }
+
+
+def optional_mcq_pass_threshold(track_number: int) -> int:
+    """Minimum points (out of 10) to count as auto-pass: 60% for Cohort 2 optional (track 4), else 8/10."""
+    if track_number == OPTIONAL_MCQ_COHORT2_TRACK:
+        return 6
+    return 8
+
+
+def optional_mcq_row_passes(response_obj) -> bool:
+    auto = get_response_score(response_obj)
+    t = getattr(response_obj, "track_number", 1) or 1
+    return int(auto.get("correct_count", 0)) >= optional_mcq_pass_threshold(t)
 
 
 def get_response_score(response_obj) -> dict:

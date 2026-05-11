@@ -3,13 +3,11 @@ Import page for user_pii_injected table only.
 Not on nav/tracker; accessible only via URL path /import-user-pii-injected.
 Accepts Excel (.xlsx, .xls) and CSV files.
 """
-import os
 import json
 import queue
 import threading
 import pandas as pd
 from flask import Blueprint, request, jsonify, Response, stream_with_context, current_app
-from werkzeug.utils import secure_filename
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_role
 from server.utils.excel_parser import (
@@ -19,6 +17,8 @@ from server.utils.excel_parser import (
     import_data_injected,
 )
 from server.utils.cache import clear_cache
+from server.utils.cohort_participant_models import apply_cohort_globals, snapshot_cohort_globals
+from server.utils.import_file_archive import archive_upload, ImportArchiveError
 
 bp = Blueprint('import_pii_injected', __name__)
 
@@ -50,21 +50,16 @@ def preview():
         if not allowed_file(file.filename):
             return jsonify({'error': 'Only Excel (.xlsx, .xls) or CSV files are allowed'}), 400
 
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        file_path = os.path.join(upload_folder, secure_filename(file.filename))
-        file.save(file_path)
+        try:
+            file_path = archive_upload(file, kind="pii_injected_preview")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
 
         df = _load_dataframe(file_path)
         excel_columns = list(df.columns)
         auto_mappings = auto_map_fields(excel_columns)
         preview_rows = df.head(5).fillna('').to_dict('records')
         db_fields = get_db_fields()
-
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
 
         return jsonify({
             'excel_columns': excel_columns,
@@ -97,22 +92,24 @@ def execute():
         if mode not in ('create', 'create_update', 'update_only'):
             return jsonify({'error': 'Invalid import mode'}), 400
 
-        upload_folder = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'uploads')
-        os.makedirs(upload_folder, exist_ok=True)
-        filename = secure_filename(file.filename)
-        file_path = os.path.join(upload_folder, filename)
-        file.save(file_path)
+        try:
+            file_path = archive_upload(file, kind="pii_injected")
+        except ImportArchiveError as e:
+            return jsonify({'error': str(e)}), 503
+
         df = _load_dataframe(file_path)
 
         if request.args.get('stream') == '1':
             progress_queue = queue.Queue()
             app = current_app._get_current_object()
+            cohort_snap = snapshot_cohort_globals()
 
             def progress_callback(created, updated, skipped):
                 progress_queue.put({'created': created, 'updated': updated, 'skipped': skipped})
 
             def run_import():
                 with app.app_context():
+                    apply_cohort_globals(cohort_snap[0], cohort_snap[1])
                     try:
                         res = import_data_injected(df, mappings, mode, progress_callback=progress_callback)
                         try:
@@ -122,11 +119,6 @@ def execute():
                         progress_queue.put({'done': True, 'result': res})
                     except Exception as e:
                         progress_queue.put({'done': True, 'error': str(e)})
-                    finally:
-                        try:
-                            os.remove(file_path)
-                        except Exception:
-                            pass
 
             threading.Thread(target=run_import).start()
 
@@ -154,10 +146,6 @@ def execute():
         result = import_data_injected(df, mappings, mode)
         try:
             clear_cache()
-        except Exception:
-            pass
-        try:
-            os.remove(file_path)
         except Exception:
             pass
         return jsonify(result), 200

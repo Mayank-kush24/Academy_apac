@@ -168,7 +168,7 @@
     }
 
     function loadStats() {
-        fetch('/api/mcq-verification/main/stats', { headers: headers })
+        fetch(cohortApiUrl('/api/mcq-verification/main/stats'), { headers: headers })
             .then(function(res) {
                 if (!res.ok) return null;
                 return res.json();
@@ -281,8 +281,8 @@
         params.set('per_page', '20');
         if (search) params.set('search', search);
         if (trackF) params.set('track', trackF);
-        if (!token) { window.location.href = '/login'; return; }
-        fetch('/api/mcq-verification/main/responses/list?' + params.toString(), { headers: headers })
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
+        fetch(cohortApiUrl('/api/mcq-verification/main/responses/list?' + params.toString()), { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
@@ -311,8 +311,8 @@
     };
 
     window.downloadMainMcqCsv = function(passedOnly) {
-        if (!token) { window.location.href = '/login'; return; }
-        var url = '/api/mcq-verification/main/export?' + (passedOnly ? 'passed_only=1' : '');
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
+        var url = cohortApiUrl('/api/mcq-verification/main/export?' + (passedOnly ? 'passed_only=1' : ''));
         fetch(url, { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed.'); return null; }

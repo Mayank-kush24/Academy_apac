@@ -1,7 +1,9 @@
 """
 Flask application initialization for Gen AI Academy APAC Edition
 """
-from flask import Flask, render_template, send_from_directory, request, jsonify, redirect
+import re
+
+from flask import Flask, render_template, send_from_directory, request, jsonify, redirect, g, has_request_context, make_response, url_for
 from flask_cors import CORS
 from flask_compress import Compress
 import os
@@ -16,7 +18,67 @@ if __name__ == '__main__':
 
 from server.config import Config
 from server.models import db, ActivityLog  # ActivityLog ensures activity_logs table is created
-from server.routes import auth, users, import_data, dashboard, profiles, audit, skilllab, book_of_business, users_registrations, skilllab_submission, codelab_submission, project_submission, mcq_verification, import_pii_injected, track_progress
+from server.routes import auth, import_data, dashboard, profiles, skilllab, book_of_business, users_registrations, skilllab_submission, codelab_submission, project_submission, mcq_verification, import_pii_injected, track_progress
+from server.cohort_config import (
+    cohort_list_for_template,
+    cohort_disabled_pages,
+    get_cohort_entry,
+    is_cohort_html_page_disabled,
+)
+from server.utils.cohort_context import register_cohort_context
+from server.utils.user_pii_combined_view import ensure_user_pii_combined_views
+
+# URL slug (under /c/<id>/) -> Jinja template name
+def _current_cohort_page_slug(path):
+    m = re.match(r"^/c/\d+/(.+)$", path or "")
+    return m.group(1) if m else None
+
+
+class _StripPathPrefixMiddleware:
+    """
+    Some reverse proxies forward the full browser path as PATH_INFO (e.g. /apacacademy/)
+    while Flask routes are mounted at /. Strip one physical prefix and set SCRIPT_NAME.
+    """
+
+    def __init__(self, wsgi_app, prefix: str):
+        self.wsgi_app = wsgi_app
+        self.prefix = (prefix or "").strip().rstrip("/")
+
+    def __call__(self, environ, start_response):
+        pfx = self.prefix
+        if not pfx:
+            return self.wsgi_app(environ, start_response)
+        if not pfx.startswith("/"):
+            pfx = "/" + pfx
+        pi = environ.get("PATH_INFO") or "/"
+        if pi != pfx and not pi.startswith(pfx + "/"):
+            return self.wsgi_app(environ, start_response)
+        rest = pi[len(pfx) :] or "/"
+        if not rest.startswith("/"):
+            rest = "/" + rest
+        sn = (environ.get("SCRIPT_NAME") or "").rstrip("/")
+        environ["SCRIPT_NAME"] = (sn + pfx) if sn else pfx
+        if not environ["SCRIPT_NAME"].startswith("/"):
+            environ["SCRIPT_NAME"] = "/" + environ["SCRIPT_NAME"].lstrip("/")
+        environ["PATH_INFO"] = rest
+        return self.wsgi_app(environ, start_response)
+
+
+COHORT_PAGE_REGISTRY = {
+    'dashboard': 'dashboard.html',
+    'import': 'import.html',
+    'import-user-pii-injected': 'import_user_pii_injected.html',
+    'profiles': 'profiles.html',
+    'skill-lab-credits': 'skill_lab_credits.html',
+    'book-of-business': 'book_of_business.html',
+    'users-registrations': 'users_registrations.html',
+    'skilllab-submission': 'skilllab_submission.html',
+    'codelab-submission': 'codelab_submission.html',
+    'project-submission': 'project_submission.html',
+    'optional-mcq-verification': 'optional_mcq_verification.html',
+    'mcq-verification': 'mcq_verification.html',
+    'track-progress-query': 'track_progress_query.html',
+}
 
 def create_app():
     """Create and configure Flask application"""
@@ -25,6 +87,70 @@ def create_app():
     app = Flask(__name__, 
                 template_folder=os.path.join(base_dir, 'templates'),
                 static_folder=os.path.join(base_dir, 'static'))
+
+    from server.cdi_integration import (
+        assert_cdi_auth_configured,
+        build_cdi_path_page_rules,
+        build_module_pages_for_portal,
+        cdi_public_path_prefixes,
+    )
+    from server.h2s_cdi_auth import register_h2s_cdi_auth, register_with_portal, get_portal_url
+
+    assert_cdi_auth_configured()
+
+    _mount_pfx = ""
+    _ar = (os.environ.get("APPLICATION_ROOT") or "").strip()
+    if _ar:
+        _mount_pfx = (_ar if _ar.startswith("/") else "/" + _ar).rstrip("/")
+    else:
+        _mid = (os.environ.get("H2S_CDI_MODULE_ID") or os.environ.get("JARVIS_MODULE_ID") or "").strip()
+        if _mid:
+            _mount_pfx = "/" + _mid.lower().replace(" ", "")
+
+    from werkzeug.middleware.proxy_fix import ProxyFix
+
+    _inner = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+    if _mount_pfx:
+        app.wsgi_app = _StripPathPrefixMiddleware(_inner, _mount_pfx)
+    else:
+        app.wsgi_app = _inner
+
+    @app.before_request
+    def _apply_mount_script_name():
+        prefix = request.environ.get("HTTP_X_FORWARDED_PREFIX", "").strip().rstrip("/")
+        if prefix and not prefix.startswith("/"):
+            prefix = "/" + prefix
+        if not prefix and _mount_pfx:
+            prefix = _mount_pfx
+        if prefix:
+            request.environ["SCRIPT_NAME"] = prefix
+
+    register_h2s_cdi_auth(
+        app,
+        public_paths=cdi_public_path_prefixes(),
+        path_page_rules=build_cdi_path_page_rules(),
+        default_page=None,
+    )
+
+    @app.context_processor
+    def inject_cdi_flags():
+        try:
+            from server.h2s_cdi_auth import get_portal_dashboard_url
+
+            pu = get_portal_url().rstrip("/")
+            return {
+                "cdi_enabled": True,
+                "cdi_portal_url": pu,
+                "cdi_portal_login_url": f"{pu}/login" if pu else "",
+                "cdi_portal_dashboard_url": get_portal_dashboard_url(),
+            }
+        except Exception:
+            return {
+                "cdi_enabled": True,
+                "cdi_portal_url": "",
+                "cdi_portal_login_url": "",
+                "cdi_portal_dashboard_url": "",
+            }
     
     # Load configuration
     app.config.from_object(Config)
@@ -41,7 +167,31 @@ def create_app():
 
     @app.context_processor
     def inject_asset_version():
-        return {'v': _asset_version}
+        cid = getattr(g, 'cohort_id', None) if has_request_context() else None
+        entry = get_cohort_entry(cid) if cid is not None else None
+        cslug = _current_cohort_page_slug(request.path) if has_request_context() else None
+        sr = ''
+        auth_me_url = '/api/auth/me'
+        if has_request_context():
+            sr = (request.script_root or '').rstrip('/')
+            try:
+                auth_me_url = url_for('auth.get_current_user_info')
+            except Exception:
+                auth_me_url = '/api/auth/me'
+        cohort_path_prefix = f'{sr}/c/{cid}' if cid is not None else ''
+        cohort_base_cohort1 = f'{sr}/c/1' if sr else '/c/1'
+        return {
+            'v': _asset_version,
+            'cohort_id': cid,
+            'cohort_label': (entry or {}).get('label') if entry else None,
+            'cohorts_hub': cohort_list_for_template(),
+            'current_cohort_page_slug': cslug,
+            'app_path_prefix': sr,
+            'cohort_path_prefix': cohort_path_prefix,
+            'cohort_base_cohort1': cohort_base_cohort1,
+            'auth_me_url': auth_me_url,
+            'cohort_disabled_pages': cohort_disabled_pages(cid),
+        }
     
     # Initialize database with connection pooling
     # Engine options are set in Config.init_app() via app.config['SQLALCHEMY_ENGINE_OPTIONS']
@@ -71,34 +221,10 @@ def create_app():
         except Exception as e:
             print(f"[WARNING] Could not create database tables: {str(e)}")
             print("  Run 'python init_database.py' to initialize the database manually")
-        # Ensure user_pii_combined is a VIEW (not a table left over from create_all)
         try:
-            from sqlalchemy import text as _text
-            inspector = db.inspect(db.engine)
-            _all_tables = inspector.get_table_names()
-            if 'user_pii_injected' in _all_tables:
-                with db.engine.connect() as conn:
-                    conn.execute(_text("DROP VIEW IF EXISTS user_pii_combined CASCADE"))
-                    conn.execute(_text("DROP TABLE IF EXISTS user_pii_combined CASCADE"))
-                    conn.execute(_text("""
-                        CREATE VIEW user_pii_combined AS
-                        SELECT id, registered_at, organization_name, class_stream, domain, designation, name, email,
-                               mobile_number, country, state, city, date_of_birth, gender, occupation,
-                               github_url, linkedin_url, utm_medium, bob_match, industry, persona, created_at, updated_at,
-                               'user_pii' AS source
-                        FROM user_pii
-                        UNION ALL
-                        SELECT id, registered_at, organization_name, class_stream, domain, designation, name, email,
-                               mobile_number, country, state, city, date_of_birth, gender, occupation,
-                               github_url, linkedin_url, utm_medium, bob_match, industry, persona, created_at, updated_at,
-                               'user_pii_injected' AS source
-                        FROM user_pii_injected i
-                        WHERE NOT EXISTS (SELECT 1 FROM user_pii u WHERE u.email = i.email)
-                    """))
-                    conn.commit()
-                print("[OK] user_pii_combined view created")
+            ensure_user_pii_combined_views(db.engine)
         except Exception as e:
-            print(f"[WARNING] Could not create user_pii_combined view: {e}")
+            print(f"[WARNING] user_pii_combined views: {e}")
         # Register activity log listeners (create/update/delete on UserPII, User)
         try:
             from server.utils.activity_log import register_activity_listeners
@@ -107,8 +233,10 @@ def create_app():
         except Exception as e:
             print(f"[WARNING] Activity log listeners: {e}")
     
+    # Cohort search_path must run before any ORM / audit DB access on this connection.
+    register_cohort_context(app)
+
     # Set PostgreSQL session variables for master_logs (changed_by, optional additional_info)
-    # so triggers can record who made the change. Run before first DB use in request.
     @app.before_request
     def set_audit_context():
         try:
@@ -119,11 +247,9 @@ def create_app():
 
     # Register blueprints
     app.register_blueprint(auth.bp, url_prefix='/api/auth')
-    app.register_blueprint(users.bp, url_prefix='/api/users')
     app.register_blueprint(import_data.bp, url_prefix='/api/import')
     app.register_blueprint(dashboard.bp, url_prefix='/api/dashboard')
     app.register_blueprint(profiles.bp, url_prefix='/api/profiles')
-    app.register_blueprint(audit.bp, url_prefix='/api/admin')
     app.register_blueprint(skilllab.bp, url_prefix='/api/skilllab')
     app.register_blueprint(book_of_business.bp, url_prefix='/api/book-of-business')
     app.register_blueprint(users_registrations.bp, url_prefix='/api/users-registrations')
@@ -153,128 +279,108 @@ def create_app():
                 pass
         return resp
     
-    # Home page
+    # Home page (both / and /home; CDI portal redirects to /home by convention)
     @app.route('/')
+    @app.route('/home')
     def home():
         """Home page"""
         return render_template('home.html')
-    
-    # Login page (GET = show form, POST = accept form/JSON and return same as API for compatibility)
+
+    @app.route('/health')
+    def health():
+        return {
+            "status": "ok",
+            "module": os.environ.get("H2S_CDI_MODULE_ID", os.environ.get("JARVIS_MODULE_ID", "")),
+        }, 200
+
+    @app.route('/logout')
+    def logout_page():
+        r = make_response(redirect(get_portal_url().rstrip("/") + "/dashboard"))
+        r.delete_cookie("h2s_cdi_session", path="/")
+        return r
+
     @app.route('/login', methods=['GET', 'POST'])
     def login_page():
-        if request.method != 'POST':
-            return render_template('login.html')
-        # POST: same logic as API so form or AJAX to /login works
-        try:
-            data = request.get_json(silent=True) or {}
-            if not data:
-                data = {'email': (request.form.get('email') or '').strip(), 'password': request.form.get('password') or ''}
-            email = data.get('email') or ''
-            password = data.get('password') or ''
-            if not email or not password:
-                return jsonify({'error': 'Email and password are required'}), 400
-            from server.models import User
-            import bcrypt
-            from server.utils.auth import generate_token
-            user = User.query.filter_by(email=email).first()
-            if not user:
-                return jsonify({'error': 'Invalid credentials'}), 401
-            if user.status != 'active':
-                return jsonify({'error': 'User account is inactive'}), 403
-            pw_hash = user.password_hash
-            if isinstance(pw_hash, str):
-                pw_hash = pw_hash.encode('utf-8')
-            if not bcrypt.checkpw(password.encode('utf-8'), pw_hash):
-                return jsonify({'error': 'Invalid credentials'}), 401
-            token = generate_token(user)
-            return jsonify({'token': token, 'user': user.to_dict()}), 200
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+        if request.method == 'GET':
+            return redirect(get_portal_url().rstrip('/') + '/login')
+        return jsonify({'error': 'Sign in through the CDI portal.'}), 403
     
-    # Dashboard page
+    @app.route('/c/<int:cohort_id>/<path:page_slug>')
+    def cohort_workspace_page(cohort_id, page_slug):
+        """Cohort-scoped UI pages (sidebar + data for that cohort)."""
+        from flask import abort
+        from server.cohort_config import ALLOWED_COHORT_IDS, is_cohort_enabled
+
+        if cohort_id not in ALLOWED_COHORT_IDS or not is_cohort_enabled(cohort_id):
+            abort(404)
+        if is_cohort_html_page_disabled(cohort_id, page_slug):
+            abort(404)
+        template_name = COHORT_PAGE_REGISTRY.get(page_slug)
+        if not template_name:
+            abort(404)
+        return render_template(template_name)
+
+    # Legacy flat URLs → module home (so portals launching `…/dashboard` still land on home).
     @app.route('/dashboard')
-    def dashboard_page():
-        """Dashboard page"""
-        return render_template('dashboard.html')
-    
-    # Import page
+    def legacy_dashboard():
+        return redirect(url_for('home'), code=302)
+
     @app.route('/import')
-    def import_page():
-        """Import data page"""
-        return render_template('import.html')
+    def legacy_import():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='import'), code=302)
 
-    # Import User PII Injected (not on nav; access via URL only)
     @app.route('/import-user-pii-injected')
-    def import_user_pii_injected_page():
-        """Import into user_pii_injected table (no nav link)"""
-        return render_template('import_user_pii_injected.html')
-    
-    # Users page (admin only - frontend will check)
-    @app.route('/users')
-    def users_page():
-        """Users management page"""
-        return render_template('users.html')
-    
-    # Profiles page (view user_pii data)
+    def legacy_import_pii_injected():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='import-user-pii-injected'), code=302)
+
     @app.route('/profiles')
-    def profiles_page():
-        """User profiles page"""
-        return render_template('profiles.html')
+    def legacy_profiles():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='profiles'), code=302)
 
-    # Skill Lab credits page
     @app.route('/skill-lab-credits')
-    def skill_lab_credits_page():
-        """Skill Lab credits page (Skill Lab / Skillboost profiles)"""
-        return render_template('skill_lab_credits.html')
+    def legacy_skill_lab_credits():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='skill-lab-credits'), code=302)
 
-    # Book of Business Registrations page
     @app.route('/book-of-business')
-    def book_of_business_page():
-        """Book of Business Registrations (users with BOB match)"""
-        return render_template('book_of_business.html')
+    def legacy_book_of_business():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='book-of-business'), code=302)
 
-    # Users (Registrations) page
     @app.route('/users-registrations')
-    def users_registrations_page():
-        """Users - all registered users (same stats/filters/columns as BOB)"""
-        return render_template('users_registrations.html')
+    def legacy_users_registrations():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='users-registrations'), code=302)
 
-    # Skill Lab Submission Verification page
     @app.route('/skilllab-submission')
-    def skilllab_submission_page():
-        """Skill Lab Submission Verification (manual intern verification)"""
-        return render_template('skilllab_submission.html')
+    def legacy_skilllab_submission():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='skilllab-submission'), code=302)
 
-    # Code Lab Submission Verification page
     @app.route('/codelab-submission')
-    def codelab_submission_page():
-        """Code Lab Submission Verification (manual intern verification)"""
-        return render_template('codelab_submission.html')
+    def legacy_codelab_submission():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='codelab-submission'), code=302)
 
-    # Project Submission Verification page
     @app.route('/project-submission')
-    def project_submission_page():
-        """Project Submission Verification (final project per track)"""
-        return render_template('project_submission.html')
+    def legacy_project_submission():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='project-submission'), code=302)
 
-    # Optional MCQ Verification page
     @app.route('/optional-mcq-verification')
-    def optional_mcq_verification_page():
-        """Optional MCQ Verification (manual verification of participant MCQ)"""
-        return render_template('optional_mcq_verification.html')
+    def legacy_optional_mcq():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='optional-mcq-verification'), code=302)
 
-    # MCQ Verification (main MCQ) page
     @app.route('/mcq-verification')
-    def mcq_verification_page():
-        """MCQ Verification — main MCQ completion by track (auto-scored, no manual verification)"""
-        return render_template('mcq_verification.html')
+    def legacy_mcq_verification():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='mcq-verification'), code=302)
 
-    # Track Progress Query page
     @app.route('/track-progress-query')
-    def track_progress_query_page():
-        """Track Progress Query (filter users by grid status)"""
-        return render_template('track_progress_query.html')
-    
+    def legacy_track_progress_query():
+        return redirect(url_for('cohort_workspace_page', cohort_id=1, page_slug='track-progress-query'), code=302)
+
+    _port = int(os.environ.get('PORT', '3002'))
+    _base = (os.environ.get('BASE_URL') or f'http://127.0.0.1:{_port}').rstrip('/')
+    register_with_portal(
+        build_module_pages_for_portal(),
+        module_name=os.environ.get('MODULE_NAME', 'Gen AI Academy APAC'),
+        base_url=_base,
+    )
+
     return app
 
 

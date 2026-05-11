@@ -1,84 +1,43 @@
 /**
- * Authentication JavaScript
- * Note: "runtime.lastError: The message port closed" in console is from a browser
- * extension (e.g. password manager), not this app — safe to ignore.
+ * Authentication — CDI portal cookie only (no app JWT / password login).
  */
 
-// Check if user is already logged in (only on login page — avoid duplicate auth/me on / which base.html already does)
+/** Prefix absolute app paths with WSGI SCRIPT_NAME (e.g. /apacacademy). */
+function appUrl(path) {
+    if (!path) return '/';
+    if (path.indexOf('http://') === 0 || path.indexOf('https://') === 0) return path;
+    var root = (window.__APP_SCRIPT_ROOT__ || '').replace(/\/$/, '');
+    if (!root) return path;
+    if (path === root || path.indexOf(root + '/') === 0) return path;
+    if (path.charAt(0) !== '/') return root + '/' + path;
+    return root + path;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     if (window.location.pathname !== '/login') return;
-    const token = localStorage.getItem('token');
-    if (token) {
-        // Verify token is still valid and redirect away from login
-        fetch('/api/auth/me', {
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                }
-            })
-            .then(response => {
-                if (response.ok) {
-                    return response.json();
-                }
-                throw new Error('Invalid token');
-            })
-            .then(data => {
-                // Redirect based on role (only if on login/home page)
-                redirectByRole(data.user.role);
-            })
-            .catch(() => {
-                // Token invalid, clear it
-                localStorage.removeItem('token');
-                localStorage.removeItem('user');
-            });
+    var portalLogin = window.__CDI_PORTAL_LOGIN_URL__ || '';
+    if (portalLogin) {
+        window.location.replace(portalLogin);
     }
 });
 
-// Shared login logic (called by form submit and button click)
 function doLogin() {
-    const emailEl = document.getElementById('email');
-    const passwordEl = document.getElementById('password');
-    const errorMessage = document.getElementById('errorMessage');
-    if (!emailEl || !passwordEl || !errorMessage) return;
-    const email = (emailEl.value || '').trim();
-    const password = passwordEl.value || '';
-    errorMessage.style.display = 'none';
-    errorMessage.textContent = '';
-    if (!email || !password) {
-        errorMessage.textContent = 'Email and password are required';
-        errorMessage.style.display = 'block';
+    var portalLogin = window.__CDI_PORTAL_LOGIN_URL__ || '';
+    if (portalLogin) {
+        window.location.href = portalLogin;
         return;
     }
-    (async function() {
-        try {
-            const response = await fetch('/api/auth/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password })
-            });
-            const contentType = response.headers.get('content-type');
-            const isJson = contentType && contentType.indexOf('application/json') !== -1;
-            const data = isJson ? await response.json() : {};
-            if (!response.ok) {
-                throw new Error(data.error || 'Login failed');
-            }
-            if (!data.token || !data.user) {
-                throw new Error('Invalid response from server');
-            }
-            localStorage.setItem('token', data.token);
-            localStorage.setItem('user', JSON.stringify(data.user));
-            redirectByRole(data.user.role);
-        } catch (err) {
-            errorMessage.textContent = err.message || 'Login failed';
-            errorMessage.style.display = 'block';
-        }
-    })();
+    var errorMessage = document.getElementById('errorMessage');
+    if (errorMessage) {
+        errorMessage.textContent = 'Sign in through the CDI portal.';
+        errorMessage.style.display = 'block';
+    }
 }
 
-// Attach login handler: button click + form submit (Enter key) + run on load and DOMContentLoaded
 function initLoginForm() {
     if (window.location.pathname !== '/login') return;
-    const loginForm = document.getElementById('loginForm');
-    const loginBtn = document.getElementById('loginSubmitBtn');
+    var loginForm = document.getElementById('loginForm');
+    var loginBtn = document.getElementById('loginSubmitBtn');
     if (!loginForm) return;
     function runLogin(e) {
         if (e) { e.preventDefault(); e.stopPropagation(); }
@@ -100,74 +59,41 @@ if (document.readyState === 'loading') {
 }
 window.addEventListener('load', runInitWhenReady);
 
-/**
- * Redirect user based on their role
- */
-function redirectByRole(role) {
-    switch(role) {
-        case 'admin':
-            window.location.href = '/dashboard';
-            break;
-        case 'editor':
-            window.location.href = '/dashboard';
-            break;
-        case 'viewer':
-            window.location.href = '/dashboard';
-            break;
-        default:
-            window.location.href = '/';
-    }
+function redirectByRole() {
+    window.location.href = appUrl('/');
 }
 
-/**
- * Get current auth token
- */
 function getAuthToken() {
     return localStorage.getItem('token');
 }
 
-/**
- * Get current user info
- */
 function getCurrentUser() {
-    const userStr = localStorage.getItem('user');
+    var userStr = localStorage.getItem('user');
     return userStr ? JSON.parse(userStr) : null;
 }
 
-/**
- * Logout function
- */
 function logout() {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    window.location.href = '/login';
+    window.location.href = appUrl('/logout');
 }
 
-/**
- * Make authenticated API request
- */
-async function authenticatedFetch(url, options = {}) {
-    const token = getAuthToken();
-    if (!token) {
-        throw new Error('Not authenticated');
+async function authenticatedFetch(url, options) {
+    if (options === undefined) options = {};
+    var token = getAuthToken();
+    var headers = Object.assign({ 'Content-Type': 'application/json' }, options.headers || {});
+    if (token) {
+        headers['Authorization'] = 'Bearer ' + token;
     }
-    
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...options.headers
-    };
-    
-    const response = await fetch(url, {
-        ...options,
-        headers
-    });
-    
+    var resolved = typeof cohortApiUrl === 'function' ? cohortApiUrl(url) : url;
+    var finalUrl = appUrl(resolved);
+    var response = await fetch(finalUrl, Object.assign({}, options, {
+        headers: headers,
+        credentials: 'same-origin'
+    }));
     if (response.status === 401) {
-        // Token expired or invalid
         logout();
         throw new Error('Session expired');
     }
-    
     return response;
 }

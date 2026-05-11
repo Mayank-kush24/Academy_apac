@@ -201,7 +201,7 @@
 
     /* ---------- Stats ---------- */
     function loadStats() {
-        fetch('/api/codelab-submission/stats', { headers: headers })
+        fetch(cohortApiUrl('/api/codelab-submission/stats'), { headers: headers })
             .then(function(res) { return res.ok ? res.json() : null; })
             .then(function(data) {
                 if (!data) return;
@@ -220,7 +220,7 @@
 
     /* ---------- Filter options ---------- */
     function loadFilterOptions() {
-        fetch('/api/codelab-submission/filters', { headers: headers })
+        fetch(cohortApiUrl('/api/codelab-submission/filters'), { headers: headers })
             .then(function(res) { return res.ok ? res.json() : null; })
             .then(function(data) {
                 if (!data) return;
@@ -319,9 +319,9 @@
         if (problemF) params.set('problem_statement', problemF);
         if (track) params.set('track', track);
 
-        if (!token) { window.location.href = '/login'; return; }
+        if (!token) { window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login'); return; }
 
-        fetch('/api/codelab-submission/list?' + params.toString(), { headers: headers })
+        fetch(cohortApiUrl('/api/codelab-submission/list?' + params.toString()), { headers: headers })
             .then(function(res) {
                 if (res.status === 403) { alert('Access not allowed to this page.'); return null; }
                 if (!res.ok) return res.json().then(function(b) { throw new Error(b.error || 'Failed to load'); });
@@ -368,7 +368,7 @@
         btn.disabled = true;
         btn.textContent = 'Saving...';
 
-        fetch('/api/codelab-submission/' + id + '/verify', {
+        fetch(cohortApiUrl('/api/codelab-submission/' + id + '/verify'), {
             method: 'PUT',
             headers: Object.assign({}, headers, { 'Content-Type': 'application/json' }),
             body: JSON.stringify({ valid: valid, remark: remark })

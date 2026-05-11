@@ -4,9 +4,10 @@ Interns access this page to manually verify team submissions,
 toggling the 'valid' checkbox and adding remarks.
 """
 from datetime import datetime
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, g
 from sqlalchemy import or_, and_, func
 from server.models import db, SkillLabSubmission
+from server.utils.cohort_participant_models import participant_model
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
@@ -15,20 +16,25 @@ from server.utils.cache import cache_result
 bp = Blueprint('skilllab_submission', __name__)
 
 
+def _SL():
+    """Return SkillLabSubmission model for the current cohort."""
+    return participant_model(SkillLabSubmission)
+
+
 @cache_result(ttl=900)
-def _get_skilllab_submission_stats_cached():
-    """Cached stats (15 min). Cleared on import.
+def _get_skilllab_submission_stats_cached(table_prefix=''):
+    """Cached stats (15 min) keyed by cohort table_prefix.
     Submissions with a remark are considered reviewed and not pending.
     """
-    total = SkillLabSubmission.query.count() or 0
-    verified = SkillLabSubmission.query.filter(SkillLabSubmission.valid == True).count() or 0
-    # Reviewed = valid=True OR has non-empty remark (so not pending)
-    reviewed = SkillLabSubmission.query.filter(
+    SL = participant_model(SkillLabSubmission)
+    total = SL.query.count() or 0
+    verified = SL.query.filter(SL.valid == True).count() or 0
+    reviewed = SL.query.filter(
         or_(
-            SkillLabSubmission.valid == True,
+            SL.valid == True,
             and_(
-                SkillLabSubmission.remark.isnot(None),
-                SkillLabSubmission.remark != '',
+                SL.remark.isnot(None),
+                SL.remark != '',
             ),
         )
     ).count() or 0
@@ -47,7 +53,7 @@ def _get_skilllab_submission_stats_cached():
 def get_stats():
     """Return aggregate stats for Skill Lab submissions (cached 2 min)."""
     try:
-        data = _get_skilllab_submission_stats_cached()
+        data = _get_skilllab_submission_stats_cached(table_prefix=getattr(g, 'table_prefix', ''))
         return jsonify(data), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -68,33 +74,33 @@ def list_submissions():
         per_page = request.args.get('per_page', 20, type=int)
         per_page = min(per_page, 100)
 
-        query = SkillLabSubmission.query
+        SL = _SL()
+        query = SL.query
 
         if search:
             query = query.filter(
                 or_(
-                    SkillLabSubmission.team_name.ilike(f'%{search}%'),
-                    SkillLabSubmission.leader_name.ilike(f'%{search}%'),
-                    SkillLabSubmission.leader_email.ilike(f'%{search}%'),
+                    SL.team_name.ilike(f'%{search}%'),
+                    SL.leader_name.ilike(f'%{search}%'),
+                    SL.leader_email.ilike(f'%{search}%'),
                 )
             )
 
         if valid_filter == 'true':
-            query = query.filter(SkillLabSubmission.valid == True)
+            query = query.filter(SL.valid == True)
         elif valid_filter == 'false':
-            # Pending = not reviewed: valid=False and no remark
             query = query.filter(
-                SkillLabSubmission.valid == False,
+                SL.valid == False,
                 or_(
-                    SkillLabSubmission.remark.is_(None),
-                    SkillLabSubmission.remark == '',
+                    SL.remark.is_(None),
+                    SL.remark == '',
                 ),
             )
 
         if problem_filter:
-            query = query.filter(SkillLabSubmission.problem_statement.ilike(f'%{problem_filter}%'))
+            query = query.filter(SL.problem_statement.ilike(f'%{problem_filter}%'))
 
-        query = query.order_by(SkillLabSubmission.created_at.desc())
+        query = query.order_by(SL.created_at.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
         rows = [row.to_dict() for row in pagination.items]
@@ -124,13 +130,13 @@ def verify_submission(submission_id):
     Once reviewed, only admin users can edit.
     """
     try:
-        submission = SkillLabSubmission.query.filter_by(id=submission_id).first()
+        SL = _SL()
+        submission = SL.query.filter_by(id=submission_id).first()
         if not submission:
             return jsonify({'error': 'Submission not found'}), 404
 
         user = get_current_user()
 
-        # If already reviewed, only admin can edit
         if _is_reviewed(submission):
             if not user or user.role != 'admin':
                 return jsonify({'error': 'This submission has already been reviewed. Only admin users can modify it.'}), 403
@@ -141,7 +147,6 @@ def verify_submission(submission_id):
         if 'remark' in data:
             submission.remark = (data['remark'] or '').strip() or None
 
-        # Record who verified
         if user:
             submission.updated_by_name = user.name
             submission.updated_by_email = user.email
@@ -161,14 +166,15 @@ def verify_submission(submission_id):
 def get_filter_options():
     """Return distinct problem statements for filter dropdown."""
     try:
+        SL = _SL()
         problem_statements = [
-            r[0] for r in db.session.query(SkillLabSubmission.problem_statement)
+            r[0] for r in db.session.query(SL.problem_statement)
             .filter(
-                SkillLabSubmission.problem_statement.isnot(None),
-                SkillLabSubmission.problem_statement != ''
+                SL.problem_statement.isnot(None),
+                SL.problem_statement != ''
             )
             .distinct()
-            .order_by(SkillLabSubmission.problem_statement)
+            .order_by(SL.problem_statement)
             .all()
             if r[0]
         ]

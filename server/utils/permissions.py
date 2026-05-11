@@ -2,25 +2,34 @@
 Role-Based Access Control (RBAC) and page-level access decorators
 """
 from functools import wraps
-from flask import jsonify
+from flask import g, jsonify
+from server.h2s_cdi_auth import get_module_pages
 from server.utils.auth import get_current_user
 
-# Page ids used in nav and allowed_pages. When allowed_pages is set, user sees only these pages.
+
+def _portal_jwt_is_admin() -> bool:
+    u = getattr(g, "user", None)
+    return isinstance(u, dict) and bool(u.get("isAdmin"))
+
+
+def _portal_jwt_active() -> bool:
+    return isinstance(getattr(g, "user", None), dict)
+
+# Page ids used in nav and allowed_pages. Slug is the path segment under /c/<cohort_id>/...
 PAGES = [
-    {'id': 'home', 'path': '/', 'label': 'Home'},
-    {'id': 'dashboard', 'path': '/dashboard', 'label': 'Dashboard'},
-    {'id': 'profiles', 'path': '/profiles', 'label': 'Profiles'},
-    {'id': 'skill_lab_credits', 'path': '/skill-lab-credits', 'label': 'Skill Lab credits'},
-    {'id': 'book_of_business', 'path': '/book-of-business', 'label': 'Book of Business Registrations'},
-    {'id': 'users_registrations', 'path': '/users-registrations', 'label': 'Users'},
-    {'id': 'skilllab_submission', 'path': '/skilllab-submission', 'label': 'Skill Lab Submissions'},
-    {'id': 'codelab_submission', 'path': '/codelab-submission', 'label': 'Code Lab Submissions'},
-    {'id': 'project_submission', 'path': '/project-submission', 'label': 'Project Submissions'},
-    {'id': 'optional_mcq_verification', 'path': '/optional-mcq-verification', 'label': 'Optional MCQ Verification'},
-    {'id': 'mcq_verification', 'path': '/mcq-verification', 'label': 'MCQ Verification'},
-    {'id': 'track_progress_query', 'path': '/track-progress-query', 'label': 'Track Progress Query'},
-    {'id': 'import', 'path': '/import', 'label': 'Import Data'},
-    {'id': 'users', 'path': '/users', 'label': 'User Management'},
+    {'id': 'home', 'slug': None, 'path': '/', 'label': 'Home'},
+    {'id': 'dashboard', 'slug': 'dashboard', 'path': '/c/<cohort>/dashboard', 'label': 'Dashboard'},
+    {'id': 'profiles', 'slug': 'profiles', 'path': '/c/<cohort>/profiles', 'label': 'Profiles'},
+    {'id': 'skill_lab_credits', 'slug': 'skill-lab-credits', 'path': '/c/<cohort>/skill-lab-credits', 'label': 'Skill Lab credits'},
+    {'id': 'book_of_business', 'slug': 'book-of-business', 'path': '/c/<cohort>/book-of-business', 'label': 'Book of Business Registrations'},
+    {'id': 'users_registrations', 'slug': 'users-registrations', 'path': '/c/<cohort>/users-registrations', 'label': 'Users'},
+    {'id': 'skilllab_submission', 'slug': 'skilllab-submission', 'path': '/c/<cohort>/skilllab-submission', 'label': 'Skill Lab Submissions'},
+    {'id': 'codelab_submission', 'slug': 'codelab-submission', 'path': '/c/<cohort>/codelab-submission', 'label': 'Code Lab Submissions'},
+    {'id': 'project_submission', 'slug': 'project-submission', 'path': '/c/<cohort>/project-submission', 'label': 'Project Submissions'},
+    {'id': 'optional_mcq_verification', 'slug': 'optional-mcq-verification', 'path': '/c/<cohort>/optional-mcq-verification', 'label': 'Optional MCQ Verification'},
+    {'id': 'mcq_verification', 'slug': 'mcq-verification', 'path': '/c/<cohort>/mcq-verification', 'label': 'MCQ Verification'},
+    {'id': 'track_progress_query', 'slug': 'track-progress-query', 'path': '/c/<cohort>/track-progress-query', 'label': 'Track Progress Query'},
+    {'id': 'import', 'slug': 'import', 'path': '/c/<cohort>/import', 'label': 'Import Data'},
 ]
 
 # Default roles that can access each page when allowed_pages is not set
@@ -39,12 +48,24 @@ DEFAULT_PAGE_ROLES = {
     'mcq_verification': ['viewer', 'editor', 'admin'],
     'track_progress_query': ['viewer', 'editor', 'admin'],
     'import': ['editor', 'admin'],
-    'users': ['admin'],
 }
 
 
 def can_access_page(user, page_id):
     """Return True if user is allowed to access the given page (by allowed_pages or role)."""
+    if _portal_jwt_is_admin():
+        return True
+    if _portal_jwt_active():
+        mod_pages = get_module_pages()
+        if mod_pages is not None:
+            if len(mod_pages) == 0:
+                return False
+            if page_id in mod_pages:
+                return True
+            from server.cdi_integration import portal_allowlist_allows_logical_page
+
+            return portal_allowlist_allows_logical_page(mod_pages, page_id)
+        return True
     if not user or user.status != 'active':
         return False
     if user.allowed_pages is not None and len(user.allowed_pages) > 0:
@@ -64,6 +85,8 @@ def require_role(*allowed_roles):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            if _portal_jwt_is_admin():
+                return f(*args, **kwargs)
             user = get_current_user()
             if not user:
                 return jsonify({'error': 'Authentication required'}), 401
@@ -87,6 +110,8 @@ def require_page_access(page_id):
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            if _portal_jwt_is_admin():
+                return f(*args, **kwargs)
             user = get_current_user()
             if not user:
                 return jsonify({'error': 'Authentication required'}), 401

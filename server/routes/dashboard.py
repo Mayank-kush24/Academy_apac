@@ -1,9 +1,11 @@
 """
 Dashboard analytics routes
 """
+import logging
+import os
 from collections import defaultdict
-from flask import Blueprint, jsonify, request, current_app
-from sqlalchemy import func, desc, case, or_, and_
+from flask import Blueprint, jsonify, request, current_app, g
+from sqlalchemy import func, desc, case, or_, and_, text
 from datetime import datetime, timedelta, date
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from server.models import db, UserPIICombined, SkillboostProfile, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqResponse, MainMcqResponse
@@ -11,6 +13,11 @@ from server.utils.auth import get_current_user
 from server.utils.mcq_answer_key import score_submission, get_response_score
 from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
+from server.config import Config
+from server.utils.dashboard_gemini_insights import (
+    build_insights_context,
+    generate_dashboard_insights,
+)
 from server.utils.state_normalize import normalize_state, merge_state_count_rows
 from server.utils.country_normalize import (
     country_column_matches_canonical,
@@ -18,6 +25,25 @@ from server.utils.country_normalize import (
     merge_country_count_rows,
     normalize_country,
 )
+
+logger = logging.getLogger(__name__)
+
+# Gemini insights cache. Successful responses kept long (data only changes on import); rate-limit
+# responses cooled-off process-wide; previously-good ("stale") insights served while rate-limited
+# instead of falling back to rule-based bullets.
+_AI_INSIGHTS_FRESH_TTL_SEC = int(os.environ.get("GEMINI_INSIGHTS_FRESH_TTL_SEC", "3600"))
+_AI_INSIGHTS_STALE_MAX_AGE_SEC = int(os.environ.get("GEMINI_INSIGHTS_STALE_MAX_AGE_SEC", "86400"))
+_AI_INSIGHTS_RATE_LIMIT_COOLDOWN_SEC = int(
+    os.environ.get("GEMINI_INSIGHTS_RATE_LIMIT_COOLDOWN_SEC", "600")
+)
+
+_ai_insights_success_store: dict = {}
+_ai_insights_rate_limit_until = None  # type: datetime | None
+
+
+def _is_rate_limit_message(msg: str) -> bool:
+    upper = (msg or "").upper()
+    return "429" in upper and ("RESOURCE_EXHAUSTED" in upper or "RATE" in upper or "QUOTA" in upper)
 
 # Canonical APAC names for filters (aliases like "Asia Pacific" roll up via "APAC" in country map)
 APAC_COUNTRIES_CANONICAL = [
@@ -33,19 +59,25 @@ APAC_FOR_MAP_EXCL_INDIA = APAC_COUNTRIES_CANONICAL
 bp = Blueprint('dashboard', __name__)
 
 from server.utils.industry_map import INDUSTRY_DOMAIN_MAP, _DOMAIN_INDUSTRY_LOOKUP, get_industry
+from server.utils.persona_map import get_persona
 
 # Module-level cached combined dashboard (summary + charts) - one cache entry per period
 @cache_result(ttl=900)
-def _get_dashboard_data_cached(period):
-    """Fetch summary and charts in parallel; cached for 15 min (invalidated on import)."""
+def _get_dashboard_data_cached(period, table_prefix=''):
+    """Fetch summary and charts in parallel; cached per (period, cohort prefix) for 15 min."""
+    from server.utils.cohort_participant_models import apply_cohort_globals
+
     app = current_app._get_current_object()
+    cohort_id = getattr(g, 'cohort_id', None)
 
     def _run_summary():
         with app.app_context():
+            apply_cohort_globals(table_prefix, cohort_id)
             return _fetch_summary_data(period)
 
     def _run_charts():
         with app.app_context():
+            apply_cohort_globals(table_prefix, cohort_id)
             return _fetch_charts_data(period)
 
     with ThreadPoolExecutor(max_workers=2) as pool:
@@ -57,13 +89,576 @@ def _get_dashboard_data_cached(period):
     return {'summary': summary, 'charts': charts}
 
 
+def _safe_scalar(sql: str, params: dict = None) -> int:
+    """Execute a scalar SQL query; return 0 on any error (e.g. table does not exist)."""
+    try:
+        result = db.session.execute(text(sql), params or {})
+        val = result.scalar()
+        return int(val) if val is not None else 0
+    except Exception:
+        db.session.rollback()
+        return 0
+
+
+def _safe_rows(sql: str, params: dict = None) -> list:
+    """Execute a row-returning SQL query; return [] on any error."""
+    try:
+        result = db.session.execute(text(sql), params or {})
+        return result.fetchall()
+    except Exception:
+        db.session.rollback()
+        return []
+
+
+def _period_sql_filter(period: str, ts_col: str = "registered_at") -> tuple[str, dict]:
+    """Return (WHERE clause fragment, params dict) for the given period."""
+    if not period or period == "all":
+        return "", {}
+    now = datetime.now()
+    if period == "month":
+        cutoff = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    elif period == "7d":
+        cutoff = now - timedelta(days=7)
+    elif period == "30d":
+        cutoff = now - timedelta(days=30)
+    elif period == "90d":
+        cutoff = now - timedelta(days=90)
+    else:
+        return "", {}
+    return f" AND {ts_col} >= :cutoff", {"cutoff": cutoff}
+
+
+def _prefixed_persona_distribution(pii: str, date_frag: str, date_params: dict) -> list:
+    """
+    Personas for cohort-prefixed combined PII: count stored persona when present; for rows
+    with empty persona, bucket by get_persona(designation, occupation) — same mapping as imports.
+    """
+    agg = defaultdict(int)
+
+    rows_p = _safe_rows(
+        f"""SELECT persona, COUNT(*) AS n FROM {pii}
+            WHERE persona IS NOT NULL AND TRIM(persona) != ''{date_frag}
+            GROUP BY persona""",
+        date_params,
+    )
+    for row in rows_p:
+        pname, n = row[0], row[1]
+        if pname and n is not None:
+            agg[pname] += int(n)
+
+    rows_d = _safe_rows(
+        f"""SELECT designation, occupation, COUNT(*) AS n FROM {pii}
+            WHERE (persona IS NULL OR TRIM(persona) = '')
+              AND designation IS NOT NULL AND TRIM(designation) != ''{date_frag}
+            GROUP BY designation, occupation""",
+        date_params,
+    )
+    for desig, occ, n in rows_d:
+        if n is None:
+            continue
+        agg[get_persona(desig, occupation=occ)] += int(n)
+
+    out = [{"label": k, "value": v} for k, v in agg.items()]
+    out.sort(key=lambda x: -x["value"])
+    return out
+
+
+def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
+    """
+    Raw-SQL dashboard data for cohort-prefixed tables (Cohort 2+).
+    Returns the same structure as _get_dashboard_data_cached().
+    Gracefully returns zeros/empty arrays when tables have no data or don't exist.
+    """
+    pii   = f"{prefix}user_pii_combined"
+    sb    = f"{prefix}skillboost_profile"
+    sl    = f"{prefix}skilllab_submission"
+    cl    = f"{prefix}codelab_submission"
+    proj  = f"{prefix}project_submission"
+    omcq  = f"{prefix}optional_mcq_response"
+    mmcq  = f"{prefix}main_mcq_response"
+
+    date_frag, date_params = _period_sql_filter(period)
+
+    # --- Summary ---
+    total_users = _safe_scalar(f"SELECT COUNT(*) FROM {pii} WHERE 1=1{date_frag}", date_params)
+
+    india_count = _safe_scalar(
+        f"SELECT COUNT(*) FROM {pii} WHERE LOWER(country) = 'india'{date_frag}", date_params
+    )
+    apac_excl_india = _safe_scalar(
+        f"""SELECT COUNT(*) FROM {pii}
+            WHERE country IS NOT NULL AND country != ''
+              AND LOWER(country) != 'india'{date_frag}""",
+        date_params,
+    )
+
+    top_india_state = None
+    top_india_state_count = None
+    row = _safe_rows(
+        f"""SELECT state, COUNT(*) AS n FROM {pii}
+            WHERE LOWER(country) = 'india' AND state IS NOT NULL AND state != ''{date_frag}
+            GROUP BY state ORDER BY n DESC LIMIT 1""",
+        date_params,
+    )
+    if row:
+        top_india_state, top_india_state_count = row[0][0], int(row[0][1])
+
+    top_india_city = None
+    top_india_city_count = None
+    row = _safe_rows(
+        f"""SELECT city, COUNT(*) AS n FROM {pii}
+            WHERE LOWER(country) = 'india' AND city IS NOT NULL AND city != ''{date_frag}
+            GROUP BY city ORDER BY n DESC LIMIT 1""",
+        date_params,
+    )
+    if row:
+        top_india_city, top_india_city_count = row[0][0], int(row[0][1])
+
+    top_apac_country = None
+    top_apac_country_count = None
+    row = _safe_rows(
+        f"""SELECT country, COUNT(*) AS n FROM {pii}
+            WHERE country IS NOT NULL AND country != '' AND LOWER(country) != 'india'{date_frag}
+            GROUP BY country ORDER BY n DESC LIMIT 1""",
+        date_params,
+    )
+    if row:
+        top_apac_country, top_apac_country_count = row[0][0], int(row[0][1])
+
+    bob_count = _safe_scalar(
+        f"SELECT COUNT(*) FROM {pii} WHERE bob_match = TRUE{date_frag}", date_params
+    )
+
+    # Cohort 2 only: distinct users (email) present in Cohort 1 combined PII and in this cohort's PII
+    users_in_cohort1_and_cohort2 = 0
+    if prefix == "cohort_2_":
+        c1_pii = "user_pii_combined"
+        overlap_date = ""
+        if date_frag:
+            overlap_date = " AND c2.registered_at >= :cutoff"
+        users_in_cohort1_and_cohort2 = _safe_scalar(
+            f"""SELECT COUNT(DISTINCT LOWER(TRIM(c2.email))) FROM {pii} c2
+                WHERE c2.email IS NOT NULL AND TRIM(c2.email) <> ''{overlap_date}
+                  AND EXISTS (
+                    SELECT 1 FROM {c1_pii} c1
+                    WHERE c1.email IS NOT NULL AND TRIM(c1.email) <> ''
+                      AND LOWER(TRIM(c1.email)) = LOWER(TRIM(c2.email))
+                  )""",
+            date_params,
+        )
+
+    # --- Regional counts (SEA, ANZ, Greater China, Korea) ---
+    _SEA = ('brunei','cambodia','indonesia','laos','malaysia','myanmar',
+            'philippines','singapore','thailand','timor-leste','vietnam')
+    _ANZ = ('australia','new zealand')
+    _GC  = ('china','hong kong','taiwan','mongolia')
+    _KR  = ('south korea','north korea')
+
+    def _region_count(canonical_tuple: tuple) -> int:
+        placeholders = ','.join(f':c{i}' for i in range(len(canonical_tuple)))
+        params = {f'c{i}': v for i, v in enumerate(canonical_tuple)}
+        params.update(date_params)
+        return _safe_scalar(
+            f"SELECT COUNT(*) FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag}",
+            params,
+        )
+
+    def _region_top(canonical_tuple: tuple) -> str:
+        placeholders = ','.join(f':c{i}' for i in range(len(canonical_tuple)))
+        params = {f'c{i}': v for i, v in enumerate(canonical_tuple)}
+        params.update(date_params)
+        rows = _safe_rows(
+            f"SELECT country, COUNT(*) AS n FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag} GROUP BY country ORDER BY n DESC LIMIT 1",
+            params,
+        )
+        return rows[0][0] if rows else None
+
+    sea_registrations      = _region_count(_SEA)
+    sea_top_country        = _region_top(_SEA)
+    anz_registrations      = _region_count(_ANZ)
+    anz_top_country        = _region_top(_ANZ)
+    gc_registrations       = _region_count(_GC)
+    gc_top_country         = _region_top(_GC)
+    korea_registrations    = _region_count(_KR)
+    korea_top_country      = _region_top(_KR)
+
+    total_sb   = _safe_scalar(f"SELECT COUNT(*) FROM {sb}")
+    verified_sb = _safe_scalar(f"SELECT COUNT(*) FROM {sb} WHERE valid = TRUE")
+    sb_rate    = round(100.0 * verified_sb / total_sb, 1) if total_sb else None
+
+    total_sl   = _safe_scalar(f"SELECT COUNT(*) FROM {sl}")
+    verified_sl = _safe_scalar(f"SELECT COUNT(*) FROM {sl} WHERE valid = TRUE")
+    sl_rate    = round(100.0 * verified_sl / total_sl, 1) if total_sl else None
+
+    total_cl   = _safe_scalar(f"SELECT COUNT(*) FROM {cl}")
+    verified_cl = _safe_scalar(f"SELECT COUNT(*) FROM {cl} WHERE valid = TRUE")
+    cl_rate    = round(100.0 * verified_cl / total_cl, 1) if total_cl else None
+
+    total_proj   = _safe_scalar(f"SELECT COUNT(*) FROM {proj}")
+    verified_proj = _safe_scalar(f"SELECT COUNT(*) FROM {proj} WHERE valid = TRUE")
+    proj_rate    = round(100.0 * verified_proj / total_proj, 1) if total_proj else None
+
+    proj_by_track = []
+    for t in (1, 2, 3):
+        tot_t = _safe_scalar(f"SELECT COUNT(*) FROM {proj} WHERE track_number = :t", {"t": t})
+        ver_t = _safe_scalar(f"SELECT COUNT(*) FROM {proj} WHERE track_number = :t AND valid = TRUE", {"t": t})
+        proj_by_track.append({"track": t, "total": tot_t, "verified": ver_t})
+
+    if prefix == "cohort_2_":
+        tot_om = _safe_scalar(f"SELECT COUNT(*) FROM {omcq} WHERE track_number = 4", {})
+        pass_om = _safe_scalar(
+            f"SELECT COUNT(*) FROM {omcq} WHERE track_number = 4 AND score >= 6", {}
+        )
+        uniq_om = _safe_scalar(
+            f"""SELECT COUNT(DISTINCT LOWER(TRIM(email))) FROM {omcq}
+                WHERE track_number = 4 AND email IS NOT NULL AND TRIM(email) <> ''""",
+            {},
+        )
+        uniq_pass_om = _safe_scalar(
+            f"""SELECT COUNT(DISTINCT LOWER(TRIM(email))) FROM {omcq}
+                WHERE track_number = 4 AND score >= 6
+                  AND email IS NOT NULL AND TRIM(email) <> ''""",
+            {},
+        )
+        opt_mcq_by_track = [
+            {
+                "track": 4,
+                "total": tot_om,
+                "passed_6": pass_om,
+                "unique_users": uniq_om,
+                "unique_passed_6": uniq_pass_om,
+            }
+        ]
+    else:
+        opt_mcq_by_track = [{"track": t, "total": 0, "passed_6": 0} for t in (1, 2, 3)]
+        for i, t in enumerate((1, 2, 3)):
+            tot_t = _safe_scalar(f"SELECT COUNT(*) FROM {omcq} WHERE track_number = :t", {"t": t})
+            pass_t = _safe_scalar(
+                f"SELECT COUNT(*) FROM {omcq} WHERE track_number = :t AND score >= 6", {"t": t}
+            )
+            opt_mcq_by_track[i] = {"track": t, "total": tot_t, "passed_6": pass_t}
+
+    main_mcq_by_track = [{"track": t, "total": 0, "passed_6": 0} for t in (1, 2, 3)]
+    for i, t in enumerate((1, 2, 3)):
+        tot_t  = _safe_scalar(f"SELECT COUNT(*) FROM {mmcq} WHERE track_number = :t", {"t": t})
+        pass_t = _safe_scalar(f"SELECT COUNT(*) FROM {mmcq} WHERE track_number = :t AND score >= 6", {"t": t})
+        main_mcq_by_track[i] = {"track": t, "total": tot_t, "passed_6": pass_t}
+
+    # ── average age ──────────────────────────────────────────────────────────
+    avg_age_row = _safe_rows(
+        f"SELECT AVG(EXTRACT(year FROM age(NOW()::date, date_of_birth::date))) FROM {pii} WHERE date_of_birth IS NOT NULL",
+        {},
+    )
+    average_age = int(avg_age_row[0][0]) if avg_age_row and avg_age_row[0][0] else None
+
+    # ── top organization (professionals / startups / freelancers) ─────────
+    top_org_rows = _safe_rows(
+        f"""SELECT organization_name, COUNT(*) AS n FROM {pii}
+            WHERE organization_name IS NOT NULL AND organization_name != ''
+              AND (LOWER(occupation) LIKE '%professional%'
+                   OR LOWER(occupation) LIKE '%startup%'
+                   OR LOWER(occupation) LIKE '%freelance%'){date_frag}
+            GROUP BY organization_name ORDER BY n DESC LIMIT 1""",
+        date_params,
+    )
+    top_organization = top_org_rows[0][0] if top_org_rows else "N/A"
+
+    # --- Charts (group-bys) ---
+    def _grp(col: str, limit: int = 20) -> list:
+        rows = _safe_rows(
+            f"SELECT {col}, COUNT(*) AS n FROM {pii} WHERE {col} IS NOT NULL AND {col} != ''{date_frag} GROUP BY {col} ORDER BY n DESC LIMIT {limit}",
+            date_params,
+        )
+        return [{"label": r[0], "value": int(r[1])} for r in rows]
+
+    gender_dist       = _grp("gender")
+    top_domains       = _grp("domain", 10)
+    top_cities        = _grp("city", 10)
+    persona_dist      = _prefixed_persona_distribution(pii, date_frag, date_params)
+    class_stream_dist = _grp("class_stream")
+
+    # States – normalise + merge (e.g. "Uttar Pradesh" / "UP")
+    raw_states = _safe_rows(
+        f"SELECT state, COUNT(*) AS n FROM {pii} WHERE state IS NOT NULL AND state != ''{date_frag} GROUP BY state ORDER BY n DESC",
+        date_params,
+    )
+    top_states = [{"label": lbl, "value": val}
+                  for lbl, val in merge_state_count_rows([(r[0], int(r[1])) for r in raw_states])[:10]]
+
+    # Country distribution – normalise + merge aliases
+    raw_countries = _safe_rows(
+        f"SELECT country, COUNT(*) AS n FROM {pii} WHERE country IS NOT NULL AND country != ''{date_frag} GROUP BY country ORDER BY n DESC",
+        date_params,
+    )
+    country_dist = [{"label": lbl, "value": val}
+                    for lbl, val in merge_country_count_rows([(r[0], int(r[1])) for r in raw_countries])[:10]]
+
+    # Industry (user segmentation) – skip "Other"
+    raw_ind = _safe_rows(
+        f"SELECT industry, COUNT(*) AS n FROM {pii} WHERE industry IS NOT NULL AND industry != ''{date_frag} GROUP BY industry ORDER BY n DESC",
+        date_params,
+    )
+    industry_list = []
+    for ind_name, cnt in raw_ind:
+        if not ind_name or ind_name == "Other":
+            continue
+        label = "Information Technology" if ind_name == "Technology" else ind_name
+        industry_list.append({"label": label, "value": int(cnt)})
+    industry_list.sort(key=lambda x: -x["value"])
+
+    # Designation (top 10)
+    designation_dist = _grp("designation", 10)
+
+    # Registration source via UTM
+    utm_rows = _safe_rows(
+        f"SELECT utm_medium, COUNT(*) AS n FROM {pii}{(' WHERE 1=1' + date_frag) if date_frag else ''} GROUP BY utm_medium",
+        date_params,
+    )
+    agg_src = {"Google": 0, "Outreach": 0, "Marketing": 0, "Ads": 0, "Hack2skill": 0, "Other": 0}
+    for utm_val, cnt in utm_rows:
+        agg_src[_utm_to_registration_source(utm_val)] += int(cnt or 0)
+    reg_src = [{"label": k, "value": v} for k, v in agg_src.items()]
+
+    # Occupation distribution (4 buckets)
+    occ_rows = _safe_rows(
+        f"SELECT occupation, COUNT(*) AS n FROM {pii} WHERE occupation IS NOT NULL AND occupation != ''{date_frag} GROUP BY occupation",
+        date_params,
+    )
+    occ_agg = {"Professional": 0, "Student": 0, "Startup": 0, "Freelance": 0}
+    for raw_occ, cnt in occ_rows:
+        occ_agg[_normalize_occupation(raw_occ)] += int(cnt or 0)
+    occ_dist = [{"label": k, "value": v} for k, v in occ_agg.items()]
+
+    # Age groups via SQL CASE
+    today_str = date.today().isoformat()
+    age_rows = _safe_rows(
+        f"""SELECT
+              CASE
+                WHEN EXTRACT(year FROM age('{today_str}'::date, date_of_birth::date)) BETWEEN 18 AND 25 THEN '18-25'
+                WHEN EXTRACT(year FROM age('{today_str}'::date, date_of_birth::date)) BETWEEN 26 AND 35 THEN '26-35'
+                WHEN EXTRACT(year FROM age('{today_str}'::date, date_of_birth::date)) BETWEEN 36 AND 45 THEN '36-45'
+                WHEN EXTRACT(year FROM age('{today_str}'::date, date_of_birth::date)) BETWEEN 46 AND 55 THEN '46-55'
+                WHEN EXTRACT(year FROM age('{today_str}'::date, date_of_birth::date)) > 55  THEN '56+'
+              END AS grp,
+              COUNT(*) AS n
+            FROM {pii}
+            WHERE date_of_birth IS NOT NULL
+              AND EXTRACT(year FROM age('{today_str}'::date, date_of_birth::date)) >= 18
+            GROUP BY grp ORDER BY grp""",
+        {},
+    )
+    age_groups = [{"label": r[0], "value": int(r[1])} for r in age_rows if r[0]]
+
+    # Social media presence (GitHub / LinkedIn)
+    github_count   = _safe_scalar(f"SELECT COUNT(*) FROM {pii} WHERE github_url   IS NOT NULL AND github_url   != ''{date_frag}", date_params)
+    linkedin_count = _safe_scalar(f"SELECT COUNT(*) FROM {pii} WHERE linkedin_url IS NOT NULL AND linkedin_url != ''{date_frag}", date_params)
+    both_count     = _safe_scalar(
+        f"SELECT COUNT(*) FROM {pii} WHERE github_url IS NOT NULL AND github_url != '' AND linkedin_url IS NOT NULL AND linkedin_url != ''{date_frag}",
+        date_params,
+    )
+    neither_count  = max(0, total_users - github_count - linkedin_count + both_count)
+    social_media = [
+        {"label": "GitHub Only",   "value": max(0, github_count - both_count)},
+        {"label": "LinkedIn Only", "value": max(0, linkedin_count - both_count)},
+        {"label": "Both",          "value": both_count},
+        {"label": "Neither",       "value": neither_count},
+    ]
+    social_media = [item for item in social_media if item["value"] > 0]
+
+    # Top cities outside India ("City (Country)")
+    city_outside_rows = _safe_rows(
+        f"""SELECT city, country, COUNT(*) AS n FROM {pii}
+            WHERE city IS NOT NULL AND city != ''
+              AND country IS NOT NULL AND country != ''
+              AND LOWER(TRIM(country)) != 'india'{date_frag}
+            GROUP BY city, country ORDER BY n DESC""",
+        date_params,
+    )
+    _out = defaultdict(int)
+    for city, raw_cty, cnt in city_outside_rows:
+        cty = normalize_country(raw_cty) or (raw_cty or "")
+        _out[(city, cty)] += int(cnt or 0)
+    top_cities_outside_india = [
+        {"label": f"{k[0]} ({k[1]})", "value": v}
+        for k, v in sorted(_out.items(), key=lambda x: -x[1])[:10]
+    ]
+
+    # Top organizations (professionals / startups / freelancers, merged)
+    from server.utils.org_normalize import merge_org_counts
+    org_rows = _safe_rows(
+        f"""SELECT organization_name, COUNT(*) AS n FROM {pii}
+            WHERE organization_name IS NOT NULL AND organization_name != ''
+              AND (LOWER(occupation) LIKE '%professional%'
+                   OR LOWER(occupation) LIKE '%startup%'
+                   OR LOWER(occupation) LIKE '%freelance%'){date_frag}
+            GROUP BY organization_name ORDER BY n DESC""",
+        date_params,
+    )
+    top_organizations = merge_org_counts([(r[0], int(r[1])) for r in org_rows])[:20]
+
+    # India state-wise (for heatmap)
+    india_state_rows = _safe_rows(
+        f"""SELECT state, COUNT(*) AS n FROM {pii}
+            WHERE LOWER(TRIM(country)) = 'india'
+              AND state IS NOT NULL AND state != ''{date_frag}
+            GROUP BY state ORDER BY n DESC""",
+        date_params,
+    )
+    india_state_registrations = [
+        {"state": lbl, "value": val}
+        for lbl, val in merge_state_count_rows([(r[0], int(r[1])) for r in india_state_rows])
+    ]
+
+    # APAC country-wise (for map) – outside India
+    apac_lc = tuple(c.lower() for c in APAC_FOR_MAP_EXCL_INDIA)
+    apac_ph = ",".join(f":apac{i}" for i in range(len(apac_lc)))
+    apac_params = {f"apac{i}": v for i, v in enumerate(apac_lc)}
+    apac_params.update(date_params)
+    apac_country_rows = _safe_rows(
+        f"""SELECT country, COUNT(*) AS n FROM {pii}
+            WHERE country IS NOT NULL AND country != ''
+              AND LOWER(TRIM(country)) != 'india'
+              AND LOWER(TRIM(country)) IN ({apac_ph}){date_frag}
+            GROUP BY country ORDER BY n DESC""",
+        apac_params,
+    )
+    apac_country_registrations = [
+        {"country": lbl, "value": val}
+        for lbl, val in merge_country_count_rows([(r[0], int(r[1])) for r in apac_country_rows])
+    ]
+
+    # Registration trends (daily, complete series with zero-fill)
+    trend_rows = _safe_rows(
+        f"""SELECT DATE_TRUNC('day', registered_at)::date AS d, COUNT(*) AS n
+            FROM {pii} WHERE registered_at IS NOT NULL GROUP BY d ORDER BY d""",
+        {},
+    )
+    now = datetime.now()
+    if "cutoff" in date_params:
+        _co = date_params["cutoff"]
+        start_date = _co.date() if hasattr(_co, "date") else datetime.fromisoformat(str(_co)).date()
+    else:
+        start_date = date(now.year, 1, 15)
+        if start_date > date.today():
+            start_date = date(now.year - 1, 1, 15)
+    date_dict = {}
+    for r in trend_rows:
+        dk = r[0] if isinstance(r[0], type(date.today())) else (r[0].date() if hasattr(r[0], "date") else r[0])
+        date_dict[dk] = int(r[1])
+    reg_trends = []
+    cur = start_date
+    today_d = date.today()
+    while cur <= today_d:
+        reg_trends.append({"label": cur.strftime("%b %d"), "value": date_dict.get(cur, 0), "date": cur.isoformat()})
+        cur += timedelta(days=1)
+
+    summary = {
+        "total_users": total_users,
+        "unique_organizations": _safe_scalar(
+            f"SELECT COUNT(DISTINCT organization_name) FROM {pii} WHERE organization_name IS NOT NULL AND organization_name != ''{date_frag}",
+            date_params,
+        ),
+        "unique_countries": _safe_scalar(
+            f"SELECT COUNT(DISTINCT country) FROM {pii} WHERE country IS NOT NULL AND country != ''{date_frag}",
+            date_params,
+        ),
+        "top_domain":       (top_domains[0]["label"] if top_domains else "N/A"),
+        "top_city":         (top_cities[0]["label"]  if top_cities  else "N/A"),
+        "top_organization": top_organization,
+        "users_with_github": _safe_scalar(
+            f"SELECT COUNT(*) FROM {pii} WHERE github_url IS NOT NULL AND github_url != ''{date_frag}", date_params
+        ),
+        "users_with_linkedin": _safe_scalar(
+            f"SELECT COUNT(*) FROM {pii} WHERE linkedin_url IS NOT NULL AND linkedin_url != ''{date_frag}", date_params
+        ),
+        "average_age": average_age,
+        "apac_except_india_users": apac_excl_india,
+        "top_india_state":       top_india_state or "N/A",
+        "top_india_city":        top_india_city  or "N/A",
+        "top_india_state_count": top_india_state_count,
+        "top_india_city_count":  top_india_city_count,
+        "top_india_location_count": top_india_city_count or top_india_state_count,
+        "top_apac_country":       top_apac_country or "N/A",
+        "top_apac_country_count": top_apac_country_count,
+        "sea_registrations":           sea_registrations,      "sea_top_country":           sea_top_country    or "N/A",
+        "anz_registrations":           anz_registrations,      "anz_top_country":           anz_top_country    or "N/A",
+        "greater_china_registrations": gc_registrations,       "greater_china_top_country": gc_top_country     or "N/A",
+        "korea_registrations":         korea_registrations,    "korea_top_country":         korea_top_country  or "N/A",
+        "india_registrations": india_count,
+        "book_of_business_registrations": bob_count,
+        "total_skillboost_profiles":    total_sb,
+        "verified_skillboost_profiles": verified_sb,
+        "skillboost_verification_rate": sb_rate,
+        "skillboost_credits_allocated": _safe_scalar(
+            f"SELECT COUNT(*) FROM {sb} WHERE valid = TRUE AND credit_link_id IS NOT NULL"
+        ),
+        "skillboost_credits_not_sent": _safe_scalar(
+            f"SELECT COUNT(*) FROM {sb} WHERE valid = TRUE AND credit_link_id IS NOT NULL AND email_sent_at IS NULL"
+        ),
+        "skillboost_credits_sent": _safe_scalar(
+            f"SELECT COUNT(*) FROM {sb} WHERE valid = TRUE AND credit_link_id IS NOT NULL AND email_sent_at IS NOT NULL"
+        ),
+        "total_skilllab_submissions":          total_sl,
+        "verified_skilllab_submissions":       verified_sl,
+        "skilllab_submission_verification_rate": sl_rate,
+        "total_codelab_submissions":           total_cl,
+        "verified_codelab_submissions":        verified_cl,
+        "codelab_submission_verification_rate": cl_rate,
+        "total_project_submissions":           total_proj,
+        "verified_project_submissions":        verified_proj,
+        "project_submission_verification_rate": proj_rate,
+        "project_submission_program_target": 15000,
+        "project_submission_track_target":   5000,
+        "project_submission_by_track": proj_by_track,
+        "optional_mcq_by_track":  opt_mcq_by_track,
+        "main_mcq_by_track":      main_mcq_by_track,
+        "optional_mcq_top5_winners": [],
+        "previous_period_total_users":   None,
+        "previous_period_apac_users":    None,
+        "previous_period_average_age":   None,
+        "users_in_cohort1_and_cohort2": users_in_cohort1_and_cohort2,
+        "net_new_registrations": (
+            max(0, int(total_users or 0) - int(users_in_cohort1_and_cohort2 or 0))
+            if prefix == "cohort_2_"
+            else None
+        ),
+    }
+
+    charts = {
+        "gender_distribution":            gender_dist,
+        "registration_source_bifurcation": reg_src,
+        "top_domains":                    top_domains,
+        "user_segmentation":              {"industries": industry_list},
+        "top_cities":                     top_cities,
+        "top_cities_outside_india":       top_cities_outside_india,
+        "top_states":                     top_states,
+        "country_distribution":           country_dist,
+        "top_organizations":              top_organizations,
+        "class_stream_distribution":      class_stream_dist,
+        "designation_distribution":       designation_dist,
+        "persona_distribution":           persona_dist,
+        "occupation_distribution":        occ_dist,
+        "age_groups":                     age_groups,
+        "registration_trends":            reg_trends,
+        "social_media":                   social_media,
+        "india_state_registrations":      india_state_registrations,
+        "apac_country_registrations":     apac_country_registrations,
+    }
+
+    return {"summary": summary, "charts": charts}
+
+
 @bp.route('/data', methods=['GET'])
 @require_page_access('dashboard')
 def get_dashboard_data():
     """Combined dashboard summary + charts (single request, cached)."""
     try:
         period = request.args.get('period', 'all')
-        result = _get_dashboard_data_cached(period)
+        prefix = getattr(g, 'table_prefix', '')
+        if prefix:
+            result = _fetch_prefixed_dashboard(prefix, period)
+            return jsonify(result), 200
+        result = _get_dashboard_data_cached(period, getattr(g, 'table_prefix', ''))
         return jsonify(result), 200
     except Exception:
         return jsonify({
@@ -86,12 +681,181 @@ def get_dashboard_data():
         }), 200
 
 
+def _dashboard_ai_insights_compute(period: str, table_prefix: str, cohort_id: int | None) -> dict:
+    """
+    Load dashboard summary+charts, call Gemini, return a JSON-serializable dict.
+    Successful responses are cached at the route layer (see _get_cached_ai_insights_success).
+    """
+    global _ai_insights_rate_limit_until
+
+    api_key = (os.getenv("GEMINI_API_KEY") or "").strip() or Config.GEMINI_API_KEY
+    if not api_key:
+        return {
+            "insights": [],
+            "source": "disabled",
+            "message": "GEMINI_API_KEY is not set; configure AI Studio key in environment.",
+        }
+
+    if _ai_insights_rate_limit_until and datetime.now() < _ai_insights_rate_limit_until:
+        seconds = int((_ai_insights_rate_limit_until - datetime.now()).total_seconds())
+        return {
+            "insights": [],
+            "source": "rate_limited",
+            "message": f"Gemini quota exhausted; try again in ~{seconds}s.",
+            "retry_after_seconds": max(seconds, 1),
+        }
+
+    if table_prefix:
+        blob = _fetch_prefixed_dashboard(table_prefix, period)
+    else:
+        blob = _get_dashboard_data_cached(period, table_prefix)
+    summary = blob.get("summary") or {}
+    charts = blob.get("charts") or {}
+    ctx = build_insights_context(summary, charts, period, cohort_id)
+    model = (os.getenv("GEMINI_DASHBOARD_MODEL") or "").strip() or Config.GEMINI_DASHBOARD_MODEL
+    # Release DB pool connection before slow external Gemini call (retries used to block /data).
+    try:
+        db.session.remove()
+    except Exception:
+        pass
+    try:
+        insights = generate_dashboard_insights(api_key, model, ctx)
+        logger.info(
+            "Dashboard AI insights: %d strings (period=%s cohort=%s prefix=%r)",
+            len(insights),
+            period,
+            cohort_id,
+            table_prefix,
+        )
+        return {"insights": insights, "source": "gemini", "message": None}
+    except Exception as e:
+        msg = str(e)
+        if _is_rate_limit_message(msg):
+            _ai_insights_rate_limit_until = datetime.now() + timedelta(
+                seconds=_AI_INSIGHTS_RATE_LIMIT_COOLDOWN_SEC
+            )
+            logger.warning(
+                "Dashboard AI insights rate-limited; cooling off for %ss",
+                _AI_INSIGHTS_RATE_LIMIT_COOLDOWN_SEC,
+            )
+            return {
+                "insights": [],
+                "source": "rate_limited",
+                "message": f"Gemini quota exhausted; try again in ~{_AI_INSIGHTS_RATE_LIMIT_COOLDOWN_SEC}s.",
+                "retry_after_seconds": _AI_INSIGHTS_RATE_LIMIT_COOLDOWN_SEC,
+            }
+        logger.warning("Dashboard AI insights failed: %s", e)
+        return {"insights": [], "source": "error", "message": msg[:500]}
+
+
+def _ai_insights_cache_key(period: str, table_prefix: str, cohort_id: int | None) -> tuple:
+    return (period or "all", table_prefix or "", cohort_id)
+
+
+def _get_cached_ai_insights_entry(period: str, table_prefix: str, cohort_id: int | None):
+    """Return (age_seconds, body) for any stored Gemini success, even if past fresh TTL."""
+    key = _ai_insights_cache_key(period, table_prefix, cohort_id)
+    entry = _ai_insights_success_store.get(key)
+    if not entry:
+        return None
+    ts, body = entry
+    if not (body.get("source") == "gemini" and body.get("insights")):
+        _ai_insights_success_store.pop(key, None)
+        return None
+    age = (datetime.now() - ts).total_seconds()
+    if age > _AI_INSIGHTS_STALE_MAX_AGE_SEC:
+        _ai_insights_success_store.pop(key, None)
+        return None
+    return age, body
+
+
+def _set_cached_ai_insights_success(period: str, table_prefix: str, cohort_id: int | None, body: dict) -> None:
+    if body.get("source") == "gemini" and body.get("insights"):
+        key = _ai_insights_cache_key(period, table_prefix, cohort_id)
+        _ai_insights_success_store[key] = (datetime.now(), body)
+
+
+def _serve_stale_with_status(body: dict, age: float, cohort_id: int | None, period: str, reason: str, retry_after: int | None = None) -> dict:
+    out = dict(body)
+    out["source"] = "gemini_stale"
+    out["stale_age_seconds"] = int(age)
+    out["stale_reason"] = reason
+    if retry_after is not None:
+        out["retry_after_seconds"] = retry_after
+    logger.info(
+        "Dashboard AI insights: serving stale (%ss old, reason=%s, period=%s cohort=%s)",
+        int(age),
+        reason,
+        period,
+        cohort_id,
+    )
+    return out
+
+
+@bp.route('/ai-insights', methods=['GET'])
+@require_page_access('dashboard')
+def get_dashboard_ai_insights():
+    """
+    Gemini narrative insights from aggregate dashboard metrics.
+
+    Caching strategy:
+      * Fresh cache (default 1h, GEMINI_INSIGHTS_FRESH_TTL_SEC) — return immediately.
+      * Stale cache up to 24h (GEMINI_INSIGHTS_STALE_MAX_AGE_SEC) — returned when Gemini is
+        rate-limited or fails, so users keep seeing real AI text while quota recovers.
+      * refresh=1 bypasses the fresh cache (still falls back to stale on failure).
+    """
+    try:
+        period = request.args.get('period', 'all')
+        prefix = getattr(g, 'table_prefix', '')
+        cohort_id = getattr(g, 'cohort_id', None)
+        refresh_raw = (request.args.get('refresh') or '').strip().lower()
+        force_refresh = refresh_raw in ('1', 'true', 'yes')
+
+        if not ((os.getenv("GEMINI_API_KEY") or "").strip() or Config.GEMINI_API_KEY):
+            return jsonify(
+                {
+                    "insights": [],
+                    "source": "disabled",
+                    "message": "GEMINI_API_KEY is not set; configure AI Studio key in environment.",
+                }
+            ), 200
+
+        cached = _get_cached_ai_insights_entry(period, prefix, cohort_id)
+        if cached is not None and not force_refresh:
+            age, body = cached
+            if age <= _AI_INSIGHTS_FRESH_TTL_SEC:
+                return jsonify(body), 200
+
+        body = _dashboard_ai_insights_compute(period, prefix, cohort_id)
+
+        if body.get("source") == "gemini" and body.get("insights"):
+            _set_cached_ai_insights_success(period, prefix, cohort_id, body)
+            return jsonify(body), 200
+
+        if cached is not None:
+            age, stale_body = cached
+            reason = body.get("source") or "error"
+            retry_after = body.get("retry_after_seconds")
+            return jsonify(
+                _serve_stale_with_status(stale_body, age, cohort_id, period, reason, retry_after)
+            ), 200
+
+        return jsonify(body), 200
+    except Exception as e:
+        logger.warning("get_dashboard_ai_insights: %s", e)
+        return jsonify({"insights": [], "source": "error", "message": str(e)[:500]}), 200
+
+
 @bp.route('/summary', methods=['GET'])
 @require_page_access('dashboard')
 def get_summary():
     """Get dashboard summary statistics. Prefer GET /data for single round-trip + cache."""
     try:
         period = request.args.get('period', 'all')
+        prefix = getattr(g, 'table_prefix', '')
+        if prefix:
+            result = _fetch_prefixed_dashboard(prefix, period)
+            return jsonify(result['summary']), 200
         result = _fetch_summary_data(period)
         return jsonify(result), 200
     except Exception:
@@ -170,6 +934,38 @@ def get_region_breakdown():
     period = request.args.get('period', 'all')
     if region not in ('sea', 'anz', 'greater_china', 'korea', 'india'):
         return jsonify({'error': 'Invalid region'}), 400
+    prefix = getattr(g, 'table_prefix', '')
+    if prefix:
+        # Raw-SQL path for cohort-prefixed tables
+        pii = f"{prefix}user_pii_combined"
+        date_frag, date_params = _period_sql_filter(period)
+        SEA = ('brunei','cambodia','indonesia','laos','malaysia','myanmar','philippines','singapore','thailand','timor-leste','vietnam')
+        ANZ = ('australia','new zealand')
+        GC  = ('china','hong kong','taiwan','mongolia')
+        KR  = ('south korea','north korea')
+        region_map = {'sea': ('SEA (Southeast Asia)', SEA), 'anz': ('ANZ (Australia & New Zealand)', ANZ), 'greater_china': ('Greater China', GC), 'korea': ('Korea', KR)}
+        try:
+            if region == 'india':
+                rows = _safe_rows(
+                    f"SELECT state, COUNT(*) AS n FROM {pii} WHERE LOWER(TRIM(country))='india' AND state IS NOT NULL AND state != ''{date_frag} GROUP BY state ORDER BY n DESC",
+                    date_params)
+                from server.utils.state_normalize import merge_state_count_rows
+                merged = merge_state_count_rows([(r[0], int(r[1])) for r in rows])
+                items = [{'name': k, 'count': v} for k, v in merged]
+                return jsonify({'region': region, 'label': 'India', 'items': items, 'total': sum(i['count'] for i in items)}), 200
+            label, countries = region_map[region]
+            placeholders = ','.join(f':rc{i}' for i in range(len(countries)))
+            rc_params = {f'rc{i}': v for i, v in enumerate(countries)}
+            rc_params.update(date_params)
+            rows = _safe_rows(
+                f"SELECT country, COUNT(*) AS n FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag} GROUP BY country ORDER BY n DESC",
+                rc_params)
+            from server.utils.country_normalize import merge_country_count_rows
+            merged = merge_country_count_rows([(r[0], int(r[1])) for r in rows])
+            items = [{'name': k, 'count': v} for k, v in merged]
+            return jsonify({'region': region, 'label': label, 'items': items, 'total': sum(i['count'] for i in items)}), 200
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
     try:
         data = _get_region_breakdown_cached(region, period)
         return jsonify(data), 200
@@ -903,21 +1699,18 @@ def _fetch_summary_data(period):
 def get_widget_stats():
     """Get lightweight stats for iOS widget"""
     try:
-        # Get today's signups
+        prefix = getattr(g, 'table_prefix', '')
         today = datetime.now().date()
-        today_signups = UserPIICombined.query.filter(
-            func.date(UserPIICombined.registered_at) == today
-        ).count() or 0
-        
-        # Get total users
-        total_users = UserPIICombined.query.count() or 0
-        
-        # Get active users (registered in last 30 days)
         active_cutoff = datetime.now() - timedelta(days=30)
-        active_users = UserPIICombined.query.filter(
-            UserPIICombined.registered_at >= active_cutoff
-        ).count() or 0
-        
+        if prefix:
+            pii = f"{prefix}user_pii_combined"
+            total_users   = _safe_scalar(f"SELECT COUNT(*) FROM {pii}")
+            today_signups = _safe_scalar(f"SELECT COUNT(*) FROM {pii} WHERE registered_at::date = :d", {"d": today})
+            active_users  = _safe_scalar(f"SELECT COUNT(*) FROM {pii} WHERE registered_at >= :c", {"c": active_cutoff})
+        else:
+            today_signups = UserPIICombined.query.filter(func.date(UserPIICombined.registered_at) == today).count() or 0
+            total_users   = UserPIICombined.query.count() or 0
+            active_users  = UserPIICombined.query.filter(UserPIICombined.registered_at >= active_cutoff).count() or 0
         return jsonify({
             'total_users': total_users,
             'today_signups': today_signups,
@@ -938,14 +1731,18 @@ def get_widget_stats():
 def get_charts():
     """Get chart data for dashboard (cached)"""
     from server.utils.cache import cache_result
-    
+
     @cache_result(ttl=900)
     def _get_charts(period):
         """Internal function to fetch charts (cached 15 min)"""
         return _fetch_charts_data(period)
-    
+
     try:
         period = request.args.get('period', 'all')
+        prefix = getattr(g, 'table_prefix', '')
+        if prefix:
+            result = _fetch_prefixed_dashboard(prefix, period)
+            return jsonify(result['charts']), 200
         result = _get_charts(period)
         return jsonify(result), 200
     except Exception as e:

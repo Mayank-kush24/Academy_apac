@@ -8,42 +8,19 @@ let totalPages = 1;
 let filterOptions = {};
 let currentFilters = {};
 
-// Helper function for authenticated requests (fallback if auth.js not loaded)
-function authenticatedFetch(url, options = {}) {
-    const token = localStorage.getItem('token');
-    if (!token) {
-        return Promise.reject(new Error('Not authenticated'));
-    }
-    
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...(options.headers || {})
-    };
-    
-    return fetch(url, {
-        ...options,
-        headers
-    }).then(response => {
-        if (response.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
-            throw new Error('Session expired');
-        }
-        return response;
-    });
-}
-
-// Make it globally available
-window.authenticatedFetch = authenticatedFetch;
-
 // Helper functions (must be defined before use)
 function escapeHtml(text) {
     if (!text) return '';
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+/** Hide Track Progress grid on profile detail for Cohort 2 (see base.html data-cohort-id). */
+function hideProfileTrackProgressForCurrentCohort() {
+    var raw = document.body && document.body.getAttribute('data-cohort-id');
+    if (raw == null || raw === '') return false;
+    return parseInt(raw, 10) === 2;
 }
 
 /**
@@ -202,15 +179,8 @@ function formatDateTime(dateString) {
 async function loadProfileLogs(profileId) {
     const container = document.getElementById('profileActivityLogList');
     if (!container) return;
-    const token = localStorage.getItem('token');
-    if (!token) {
-        container.innerHTML = '<p class="activity-log-empty">Sign in to view activity log.</p>';
-        return;
-    }
     try {
-        const response = await fetch(`/api/profiles/${profileId}/logs?per_page=20`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+        const response = await authenticatedFetch(`/api/profiles/${profileId}/logs?per_page=20`);
         if (!response.ok) {
             container.innerHTML = '<p class="activity-log-empty">Unable to load activity log.</p>';
             return;
@@ -250,25 +220,12 @@ async function loadProfileLogs(profileId) {
 window.viewProfileDetails = function(profileId) {
     console.log('viewProfileDetails called with ID:', profileId);
     
-    // Get token
-    const token = localStorage.getItem('token');
-    if (!token) {
-        alert('Please login to view profile details');
-        window.location.href = '/login';
-        return;
-    }
-    
     const url = `/api/profiles/${profileId}`;
     console.log('Fetching profile from:', url);
     
     // Make authenticated request
     console.log('Starting fetch request...');
-    fetch(url, {
-        headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-        }
-    })
+    authenticatedFetch(url)
     .then(response => {
         console.log('Fetch completed, response received');
         console.log('Response status:', response.status, response.statusText);
@@ -277,7 +234,7 @@ window.viewProfileDetails = function(profileId) {
         if (response.status === 401) {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
-            window.location.href = '/login';
+            window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login');
             return Promise.reject(new Error('Session expired'));
         }
         
@@ -338,6 +295,30 @@ window.viewProfileDetails = function(profileId) {
             alert('Modal not found. Please refresh the page.');
             return;
         }
+
+        const trackProgressSectionHtml = hideProfileTrackProgressForCurrentCohort() ? '' : `
+                <div class="detail-section profile-cohort-grid-section">
+                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
+                        <thead>
+                            <tr>
+                                <th>COHORT 1</th>
+                                <th>Track 1</th>
+                                <th>Track 2</th>
+                                <th>Track 3</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+        `;
         
         console.log('Populating modal body...');
         modalBody.innerHTML = `
@@ -481,27 +462,7 @@ window.viewProfileDetails = function(profileId) {
                     </div>
                 </div>
                 
-                <div class="detail-section profile-cohort-grid-section">
-                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
-                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
-                        <thead>
-                            <tr>
-                                <th>COHORT 1</th>
-                                <th>Track 1</th>
-                                <th>Track 2</th>
-                                <th>Track 3</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+                ${trackProgressSectionHtml}
                 
                 <div class="detail-section detail-section-logs">
                     <h4><i class="fas fa-history"></i> Activity Log</h4>
@@ -600,14 +561,7 @@ document.addEventListener('DOMContentLoaded', function() {
  */
 async function loadFilterOptions() {
     try {
-        const token = localStorage.getItem('token');
-        if (!token) return;
-        
-        const response = await fetch('/api/profiles/filters', {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await authenticatedFetch('/api/profiles/filters');
         
         if (response.ok) {
             filterOptions = await response.json();
@@ -744,12 +698,6 @@ function initProfileSearchableSelects() {
  */
 async function loadProfiles() {
     try {
-        const token = localStorage.getItem('token');
-        if (!token) {
-            window.location.href = '/login';
-            return;
-        }
-        
         const params = new URLSearchParams();
         params.set('page', currentPage);
         params.set('per_page', perPage);
@@ -763,15 +711,11 @@ async function loadProfiles() {
             }
         });
         
-        const response = await fetch(`/api/profiles?${params.toString()}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        });
+        const response = await authenticatedFetch(`/api/profiles?${params.toString()}`);
         
         if (response.status === 401) {
             localStorage.removeItem('token');
-            window.location.href = '/login';
+            window.location.href = (typeof appUrl === 'function' ? appUrl('/login') : '/login');
             return;
         }
         
@@ -891,31 +835,11 @@ async function viewProfileDetails(profileId) {
     console.log('viewProfileDetails called with ID:', profileId);
     
     try {
-        // Get token
-        const token = localStorage.getItem('token');
-        if (!token) {
-            alert('Please login to view profile details');
-            window.location.href = '/login';
-            return;
-        }
-        
         const url = `/api/profiles/${profileId}`;
         console.log('Fetching profile from:', url);
         
         // Make authenticated request
-        const response = await fetch(url, {
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            }
-        });
-        
-        if (response.status === 401) {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/login';
-            return;
-        }
+        const response = await authenticatedFetch(url);
         
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
@@ -931,6 +855,7 @@ async function viewProfileDetails(profileId) {
         const codelab_submissions = data.codelab_submissions || [];
         const project_submissions = data.project_submissions || [];
         const optional_mcq_scores = data.optional_mcq_scores || [];
+        const main_mcq_scores = data.main_mcq_scores || [];
         
         if (!profile) {
             throw new Error('Profile not found in response');
@@ -950,6 +875,30 @@ async function viewProfileDetails(profileId) {
             alert('Modal not found. Please refresh the page.');
             return;
         }
+
+        const trackProgressSectionHtml = hideProfileTrackProgressForCurrentCohort() ? '' : `
+                <div class="detail-section profile-cohort-grid-section">
+                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
+                        <thead>
+                            <tr>
+                                <th>COHORT 1</th>
+                                <th>Track 1</th>
+                                <th>Track 2</th>
+                                <th>Track 3</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+        `;
         
         modalBody.innerHTML = `
             <div class="profile-detail-grid">
@@ -1092,27 +1041,7 @@ async function viewProfileDetails(profileId) {
                     </div>
                 </div>
                 
-                <div class="detail-section profile-cohort-grid-section">
-                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
-                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
-                        <thead>
-                            <tr>
-                                <th>COHORT 1</th>
-                                <th>Track 1</th>
-                                <th>Track 2</th>
-                                <th>Track 3</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
-                        </tbody>
-                    </table>
-                </div>
+                ${trackProgressSectionHtml}
                 
                 <div class="detail-section detail-section-logs">
                     <h4><i class="fas fa-history"></i> Activity Log</h4>
