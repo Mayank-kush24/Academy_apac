@@ -133,7 +133,7 @@ def _decode_token(token: str) -> dict | None:
 def get_session_payload_from_request() -> dict | None:
     """
     Return verified portal JWT dict from the h2s_cdi_session cookie, or None.
-    Does not redirect; for mapping the portal user to an app-local User (API auth).
+    Does not redirect; used by API auth helpers to derive a portal user view.
     """
     if not _JWT_SECRET:
         return None

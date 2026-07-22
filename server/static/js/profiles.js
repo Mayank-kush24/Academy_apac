@@ -16,11 +16,36 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-/** Hide Track Progress grid on profile detail for Cohort 2 (see base.html data-cohort-id). */
-function hideProfileTrackProgressForCurrentCohort() {
+/** Active cohort from base.html data-cohort-id (defaults to 1). */
+function getProfileCohortId() {
     var raw = document.body && document.body.getAttribute('data-cohort-id');
-    if (raw == null || raw === '') return false;
-    return parseInt(raw, 10) === 2;
+    if (raw == null || raw === '') return 1;
+    var n = parseInt(raw, 10);
+    return isNaN(n) ? 1 : n;
+}
+
+function getProfileCohortLabel() {
+    return 'COHORT ' + getProfileCohortId();
+}
+
+function trackLabelToNumber(trackLabel) {
+    return trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+}
+
+function isStudentTrackCodelabSubmission(submission) {
+    var ps = (submission.problem_statement || '').toLowerCase();
+    return ps.indexOf('student track') >= 0;
+}
+
+/** Match codelab rows to profile grid columns (Cohort 2 Track 3 = Student track sheet). */
+function codelabSubmissionMatchesTrack(submission, trackLabel, cohortId) {
+    var trackNum = trackLabelToNumber(trackLabel);
+    if (!trackNum) return false;
+    cohortId = cohortId != null ? cohortId : getProfileCohortId();
+    if (cohortId === 2 && trackLabel === 'Track 3') {
+        return isStudentTrackCodelabSubmission(submission);
+    }
+    return submission.track_number === trackNum;
 }
 
 /**
@@ -28,12 +53,40 @@ function hideProfileTrackProgressForCurrentCohort() {
  * Searches skilllab_submissions for a submission whose problem_statement contains the trackLabel.
  * Returns valid/not-valid markup with remark if applicable.
  */
+function skillLabProblemMatchesTrack(problemStatement, trackLabel) {
+    var ps = (problemStatement || '').toLowerCase();
+    var label = (trackLabel || '').toLowerCase();
+    if (label === 'track 1') {
+        return ps.indexOf('conversational analytics with bigquery agents') >= 0
+            || (ps.indexOf('professional') >= 0 && ps.indexOf('track 1') >= 0)
+            || (ps.indexOf('track 1') >= 0 && ps.indexOf('professional') < 0 && ps.indexOf('student') < 0);
+    }
+    if (label === 'track 2') {
+        return ps.indexOf('ai-assisted data science with bigquery') >= 0
+            || (ps.indexOf('professional') >= 0 && ps.indexOf('track 2') >= 0)
+            || (ps.indexOf('track 2') >= 0 && ps.indexOf('professional') < 0);
+    }
+    if (label === 'track 3') {
+        return ps.indexOf('building ai agents with adk') >= 0
+            || (ps.indexOf('[student]') >= 0 && ps.indexOf('track') >= 0)
+            || (ps.indexOf('track 3') >= 0 && ps.indexOf('professional') < 0 && ps.indexOf('student') < 0);
+    }
+    return ps.indexOf(label) >= 0;
+}
+
 function getSkillLabTrackCell(submissions, trackLabel) {
     if (!submissions || submissions.length === 0) return '';
-    // Find a submission whose problem_statement contains the track label (case-insensitive)
-    var match = submissions.find(function(s) {
-        return s.problem_statement && s.problem_statement.toLowerCase().includes(trackLabel.toLowerCase());
+    var forTrack = submissions.filter(function(s) {
+        return skillLabProblemMatchesTrack(s.problem_statement, trackLabel);
     });
+    if (forTrack.length === 0) return '';
+    forTrack.sort(function(a, b) {
+        var ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        var tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+    });
+    var validRows = forTrack.filter(function(s) { return s.valid; });
+    var match = validRows.length ? validRows[0] : forTrack[0];
     if (!match) return '';
     // Not yet reviewed (no valid flag set and no remark)
     if (!match.valid && (!match.remark || !match.remark.trim())) {
@@ -55,11 +108,14 @@ function getSkillLabTrackCell(submissions, trackLabel) {
  * Uses track_number (int) to group submissions per track.
  * Shows aggregated status across labs within that track.
  */
-function getCodeLabTrackCell(submissions, trackLabel) {
+function getCodeLabTrackCell(submissions, trackLabel, cohortId) {
     if (!submissions || submissions.length === 0) return '';
-    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    cohortId = cohortId != null ? cohortId : getProfileCohortId();
+    var trackNum = trackLabelToNumber(trackLabel);
     if (!trackNum) return '';
-    var matches = submissions.filter(function(s) { return s.track_number === trackNum; });
+    var matches = submissions.filter(function(s) {
+        return codelabSubmissionMatchesTrack(s, trackLabel, cohortId);
+    });
     if (matches.length === 0) return '';
     var validCount = matches.filter(function(s) { return s.valid; }).length;
     var invalidCount = matches.filter(function(s) { return !s.valid && s.remark && s.remark.trim(); }).length;
@@ -107,36 +163,99 @@ function getProjectTrackCell(submissions, trackLabel) {
 /**
  * Webinar is auto-valid for a track if any Code Lab submission exists for that track.
  */
-function getWebinarTrackCell(codelabSubmissions, trackLabel) {
+function getWebinarTrackCell(codelabSubmissions, trackLabel, cohortId) {
     if (!codelabSubmissions || codelabSubmissions.length === 0) return '';
-    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    cohortId = cohortId != null ? cohortId : getProfileCohortId();
+    var trackNum = trackLabelToNumber(trackLabel);
     if (!trackNum) return '';
-    var hasSubmission = codelabSubmissions.some(function(s) { return s.track_number === trackNum; });
+    var hasSubmission = codelabSubmissions.some(function(s) {
+        return codelabSubmissionMatchesTrack(s, trackLabel, cohortId);
+    });
     if (!hasSubmission) return '';
     return '<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> Valid</span>';
 }
 
-function getOptionalMcqTrackCell(scores, trackLabel) {
+function getOptionalMcqTrackCell(scores, trackLabel, cohortId) {
     if (!scores || scores.length === 0) return '';
-    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
-    if (!trackNum) return '';
-    var item = scores.find(function(s) { return s.track_number === trackNum; });
+    cohortId = cohortId != null ? cohortId : getProfileCohortId();
+    var item;
+    if (cohortId === 2) {
+        if (trackLabel !== 'Track 1') return '';
+        var track4Rows = scores.filter(function(s) { return s.track_number === 4; });
+        if (track4Rows.length === 0) return '';
+        track4Rows.sort(function(a, b) {
+            var ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+            var tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+            return tb - ta;
+        });
+        item = track4Rows[0];
+    } else {
+        var trackNum = trackLabelToNumber(trackLabel);
+        if (!trackNum) return '';
+        item = scores.find(function(s) { return s.track_number === trackNum; });
+    }
     if (!item || item.score_display == null) return '';
     var scoreDisplay = String(item.score_display);
     var score = typeof item.score === 'number' ? item.score : parseInt(scoreDisplay.split('/')[0], 10);
     var isPass = !isNaN(score) && score >= 6;
     var label = isPass ? 'Verified' : 'Fail';
     var color = isPass ? '#16a34a' : '#dc2626';
-    return '<span style="color:' + color + ';font-weight:600;">' + escapeHtml(label) + '</span>';
+    var icon = isPass ? '<i class="fas fa-check-circle"></i> ' : '';
+    return '<span style="color:' + color + ';font-weight:600;">' + icon + escapeHtml(label) + '</span>';
 }
 
 /**
  * Generate HTML for a Main MCQ (MCQ Verification) track cell.
  * Shows Verified when score >= 6, Fail when submitted but < 6.
  */
+/**
+ * Build Track Progress table HTML for profile detail modal.
+ */
+function buildTrackProgressSectionHtml(data) {
+    var cohortId = getProfileCohortId();
+    var cohortLabel = getProfileCohortLabel();
+    var codelab_submissions = data.codelab_submissions || [];
+    var project_submissions = data.project_submissions || [];
+    var optional_mcq_scores = data.optional_mcq_scores || [];
+    var main_mcq_scores = data.main_mcq_scores || [];
+    var skilllab_submissions = data.skilllab_submissions || [];
+    function cell(fn, trackLabel) {
+        return fn(trackLabel);
+    }
+    function webinarCell(t) { return getWebinarTrackCell(codelab_submissions, t, cohortId); }
+    function mainMcqCell(t) { return getMainMcqTrackCell(main_mcq_scores, t); }
+    function optMcqCell(t) { return getOptionalMcqTrackCell(optional_mcq_scores, t, cohortId); }
+    function codeLabCell(t) { return getCodeLabTrackCell(codelab_submissions, t, cohortId); }
+    function projectCell(t) { return getProjectTrackCell(project_submissions, t); }
+    function skillLabCell(t) { return getSkillLabTrackCell(skilllab_submissions, t); }
+    return `
+                <div class="detail-section profile-cohort-grid-section">
+                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
+                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
+                        <thead>
+                            <tr>
+                                <th>${escapeHtml(cohortLabel)}</th>
+                                <th>Track 1</th>
+                                <th>Track 2</th>
+                                <th>Track 3</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr><td class="grid-row-label">WEBINAR</td><td>${cell(webinarCell, 'Track 1')}</td><td>${cell(webinarCell, 'Track 2')}</td><td>${cell(webinarCell, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">MCQ</td><td>${cell(mainMcqCell, 'Track 1')}</td><td>${cell(mainMcqCell, 'Track 2')}</td><td>${cell(mainMcqCell, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">Optional MCQ</td><td>${cell(optMcqCell, 'Track 1')}</td><td>${cell(optMcqCell, 'Track 2')}</td><td>${cell(optMcqCell, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">CODE LAB</td><td>${cell(codeLabCell, 'Track 1')}</td><td>${cell(codeLabCell, 'Track 2')}</td><td>${cell(codeLabCell, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${cell(projectCell, 'Track 1')}</td><td>${cell(projectCell, 'Track 2')}</td><td>${cell(projectCell, 'Track 3')}</td></tr>
+                            <tr><td class="grid-row-label">SKILL LAB</td><td>${cell(skillLabCell, 'Track 1')}</td><td>${cell(skillLabCell, 'Track 2')}</td><td>${cell(skillLabCell, 'Track 3')}</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+        `;
+}
+
 function getMainMcqTrackCell(scores, trackLabel) {
     if (!scores || scores.length === 0) return '';
-    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    var trackNum = trackLabelToNumber(trackLabel);
     if (!trackNum) return '';
     var item = scores.find(function(s) { return s.track_number === trackNum; });
     if (!item) return '';
@@ -296,29 +415,13 @@ window.viewProfileDetails = function(profileId) {
             return;
         }
 
-        const trackProgressSectionHtml = hideProfileTrackProgressForCurrentCohort() ? '' : `
-                <div class="detail-section profile-cohort-grid-section">
-                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
-                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
-                        <thead>
-                            <tr>
-                                <th>COHORT 1</th>
-                                <th>Track 1</th>
-                                <th>Track 2</th>
-                                <th>Track 3</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-        `;
+        const trackProgressSectionHtml = buildTrackProgressSectionHtml({
+            codelab_submissions: codelab_submissions,
+            project_submissions: project_submissions,
+            optional_mcq_scores: optional_mcq_scores,
+            main_mcq_scores: main_mcq_scores,
+            skilllab_submissions: skilllab_submissions
+        });
         
         console.log('Populating modal body...');
         modalBody.innerHTML = `
@@ -876,29 +979,13 @@ async function viewProfileDetails(profileId) {
             return;
         }
 
-        const trackProgressSectionHtml = hideProfileTrackProgressForCurrentCohort() ? '' : `
-                <div class="detail-section profile-cohort-grid-section">
-                    <h4><i class="fas fa-th-large"></i> Track Progress</h4>
-                    <table class="profile-cohort-grid" aria-label="Track progress by activity">
-                        <thead>
-                            <tr>
-                                <th>COHORT 1</th>
-                                <th>Track 1</th>
-                                <th>Track 2</th>
-                                <th>Track 3</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 1')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 2')}</td><td>${getWebinarTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 1')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 2')}</td><td>${getMainMcqTrackCell(main_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">Optional MCQ</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 1')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 2')}</td><td>${getOptionalMcqTrackCell(optional_mcq_scores, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 1')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 2')}</td><td>${getCodeLabTrackCell(codelab_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${getProjectTrackCell(project_submissions, 'Track 1')}</td><td>${getProjectTrackCell(project_submissions, 'Track 2')}</td><td>${getProjectTrackCell(project_submissions, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 1')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 2')}</td><td>${getSkillLabTrackCell(skilllab_submissions, 'Track 3')}</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-        `;
+        const trackProgressSectionHtml = buildTrackProgressSectionHtml({
+            codelab_submissions: codelab_submissions,
+            project_submissions: project_submissions,
+            optional_mcq_scores: optional_mcq_scores,
+            main_mcq_scores: main_mcq_scores,
+            skilllab_submissions: skilllab_submissions
+        });
         
         modalBody.innerHTML = `
             <div class="profile-detail-grid">

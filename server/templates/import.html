@@ -3,17 +3,56 @@
 {% block title %}Import Data - Gen AI Academy APAC{% endblock %}
 
 {% block content %}
-<div class="import-page theme-page">
+{% set is_c3_uts = (cohort_id == 3) %}
+<div class="import-page theme-page" {% if is_c3_uts %}data-uts-sync="1"{% endif %}>
     <div class="dashboard-header">
         <div class="header-content">
             <div>
                 <h1 class="page-title">Import Data</h1>
-                <p class="page-subtitle">Upload Excel and map fields to import user profiles</p>
+                <p class="page-subtitle" id="importPageSubtitle">
+                    {% if is_c3_uts %}
+                    Sync registrations and modules from Hack2Skill UTS APIs
+                    {% else %}
+                    Upload Excel and map fields to import user profiles
+                    {% endif %}
+                </p>
             </div>
         </div>
     </div>
 
-    <div class="import-wizard">
+    <!-- Cohort 3: UTS API sync (replaces Excel upload) — rendered server-side so it always shows -->
+    {% if is_c3_uts %}
+    <div id="utsSyncSection" class="glass-card import-step-card" style="margin-bottom: 24px;">
+        <div class="chart-header">
+            <h3 class="chart-title"><i class="fas fa-cloud-download-alt"></i> Hack2Skill UTS Sync</h3>
+            <p class="chart-subtitle">
+                Pull Cohort 3 registrations and submission modules from the Hack2Skill UTS APIs.
+                <strong>Sync Now</strong> uses the stored <code>start</code> watermark (incremental).
+                <strong>Sync all data</strong> omits <code>start</code> and fetches everything.
+            </p>
+        </div>
+        <div id="utsSyncStatusBox" style="margin-bottom: 16px; padding: 12px; border-radius: 8px; background: var(--glass-bg, rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.1); font-size: 0.95rem;">
+            <div><strong>Last sync:</strong> <span id="utsLastSyncAt">—</span></div>
+            <div><strong>Registration watermark:</strong> <span id="utsRegistrationStart">—</span></div>
+            <div><strong>Status:</strong> <span id="utsLastSyncStatus">—</span></div>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px;">
+            <button type="button" class="btn btn-primary" id="utsSyncNowBtn">
+                <i class="fas fa-sync-alt"></i> Sync Now
+            </button>
+            <button type="button" class="btn btn-secondary" id="utsSyncAllBtn">
+                <i class="fas fa-download"></i> Sync all data
+            </button>
+            <span id="utsSyncSpinner" style="display: none; color: var(--text-muted, #94a3b8);">
+                <i class="fas fa-spinner fa-spin"></i> Syncing… this may take a few minutes
+            </span>
+        </div>
+        <div id="utsSyncError" class="error-message" style="display: none;"></div>
+        <div id="utsSyncResult" style="display: none; margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--glass-bg, rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.1); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.85rem;"></div>
+    </div>
+    {% endif %}
+
+    <div id="excelImportWizard" class="import-wizard"{% if is_c3_uts %} style="display: none;"{% endif %}>
         <!-- Step 1: Upload -->
         <div id="step1" class="wizard-step active">
             <div class="glass-card import-step-card">
@@ -162,16 +201,28 @@
                 </div>
             </div>
         </div>
-    </div>
+    </div><!-- /excelImportWizard -->
 
     <!-- Skill Lab / Skillboost Profile (XLSX upload) -->
-    <div class="skillboost-import-section" style="margin-top: 32px;">
+    <div class="skillboost-import-section" id="skillboostImportSection" style="margin-top: 32px;">
         <div class="glass-card import-step-card">
             <div class="chart-header">
-                <h3 class="chart-title"><i class="fas fa-graduation-cap"></i> Skill Lab / Skillboost Profile</h3>
-                <p class="chart-subtitle">Upload an Action Center XLSX. Sheets are detected by <strong>name pattern</strong> (any leading number is ignored — &quot;15.MCQ Track 1&quot; and &quot;16.MCQ Track 1&quot; both map to <em>Main MCQ Track 1</em>). The preview lists every tab and flags missing critical modules; you must tick <em>Import anyway</em> to proceed if any are missing. Each row imports inside its own <strong>SAVEPOINT</strong>, so a single bad row never wipes out a 500-row batch, and missing leader emails are <strong>auto-inserted</strong> into <code>user_pii</code> from the leader name / email / phone columns. <strong>Cohort 1:</strong> the Skills profile sheet is optional if the workbook still includes other recognised subsheets (Main MCQ, Optional MCQ, Skill Lab, Code Lab, lab completion, project submission). Profile rows are never overwritten while <code>valid = TRUE</code>. <strong>Cohort 2:</strong> without a profile sheet, only Optional MCQ (<code>14.MCQ</code> + Optional) imports from this upload.</p>
+                <h3 class="chart-title">
+                    {% if is_c3_uts %}
+                    <i class="fas fa-check-double"></i> Post-sync verification
+                    {% else %}
+                    <i class="fas fa-graduation-cap"></i> Skill Lab / Skillboost Profile
+                    {% endif %}
+                </h3>
+                <p class="chart-subtitle">
+                    {% if is_c3_uts %}
+                    Verification tools for profiles and badge submissions after a UTS sync.
+                    {% else %}
+                    Upload an Action Center XLSX. Sheets are detected by <strong>name pattern</strong> (any leading number is ignored — &quot;15.MCQ Track 1&quot; and &quot;16.MCQ Track 1&quot; both map to <em>Main MCQ Track 1</em>). The preview lists every tab and flags missing critical modules; you must tick <em>Import anyway</em> to proceed if any are missing. Each row imports inside its own <strong>SAVEPOINT</strong>, so a single bad row never wipes out a 500-row batch, and missing leader emails are <strong>auto-inserted</strong> into <code>user_pii</code> from the leader name / email / phone columns. <strong>Cohort 1:</strong> the Skills profile sheet is optional if the workbook still includes other recognised subsheets (Main MCQ, Optional MCQ, Skill Lab, Code Lab, lab completion, project submission). Profile rows are never overwritten while <code>valid = TRUE</code>. <strong>Cohort 2:</strong> without a profile sheet, only Optional MCQ (<code>14.MCQ</code> + Optional) imports from this upload.
+                    {% endif %}
+                </p>
             </div>
-            <form id="skillboostUploadForm" enctype="multipart/form-data">
+            <form id="skillboostUploadForm" enctype="multipart/form-data"{% if is_c3_uts %} style="display: none;"{% endif %}>
                 <div class="form-group file-upload-group">
                     <label class="file-upload-label">Select XLSX File (Skill Lab / Skills Boost export)</label>
                     <div class="file-upload-zone skillboost-upload-zone" id="skillboostFileUploadZone" role="button" tabindex="0" aria-label="Select Skill Lab XLSX file">

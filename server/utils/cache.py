@@ -71,6 +71,14 @@ def clear_cache(pattern=None):
         _cache_timestamps.clear()
 
 
+def clear_dashboard_cache():
+    """Clear all cached dashboard payloads (every cohort/period) plus the cross-cohort
+    overlap cache. Call this whenever registration data changes (import / UTS sync)."""
+    clear_cache('_get_dashboard_data_cached')
+    clear_cache('_get_prior_cohort_overlap_cached')
+    clear_cache('_get_region_breakdown_cached')
+
+
 def get_cache_stats():
     """Get cache statistics"""
     return {

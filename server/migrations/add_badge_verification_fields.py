@@ -39,6 +39,8 @@ def run():
             "codelab_submission",
             "cohort_2_skilllab_submission",
             "cohort_2_codelab_submission",
+            "cohort_3_skilllab_submission",
+            "cohort_3_codelab_submission",
         ):
             _ensure_columns(tbl)
         db.session.commit()

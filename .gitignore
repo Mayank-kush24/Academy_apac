@@ -41,3 +41,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Client title reference data (large files)
+data/client_title_reference.csv
+data/title_index.pkl.gz
+data/title_index_conflicts.csv
+data/bob_companies.xlsx
+data/bob_companies.csv
+data/company_index.pkl.gz
+data/company_index_duplicates.csv

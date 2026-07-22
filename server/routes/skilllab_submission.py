@@ -12,6 +12,7 @@ from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 from server.utils.audit import set_audit_session_vars
 from server.utils.cache import cache_result
+from server.utils.skilllab_submission_selection import count_counted_valid_rows
 
 bp = Blueprint('skilllab_submission', __name__)
 
@@ -28,7 +29,8 @@ def _get_skilllab_submission_stats_cached(table_prefix=''):
     """
     SL = participant_model(SkillLabSubmission)
     total = SL.query.count() or 0
-    verified = SL.query.filter(SL.valid == True).count() or 0
+    all_rows = SL.query.all()
+    verified = count_counted_valid_rows(all_rows)
     reviewed = SL.query.filter(
         or_(
             SL.valid == True,

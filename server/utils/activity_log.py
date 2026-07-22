@@ -48,13 +48,22 @@ def _get_entity_info(mapper, instance):
 
 
 def _get_actor_user_id():
-    """Get current app user id if in request context."""
+    """
+    Return UUID id of the actor when available.
+
+    Portal-only users (no DB row) have ``user.id is None``; the ActivityLog
+    column is nullable so we just record None and rely on email/name in audit
+    triggers (master_logs) for cross-referencing actions.
+    """
     try:
         from flask import has_request_context
         if has_request_context():
             from server.utils.auth import get_current_user
             user = get_current_user()
-            return user.id if user else None
+            if user is None:
+                return None
+            uid = getattr(user, "id", None)
+            return uid
     except Exception:
         pass
     return None
@@ -161,9 +170,20 @@ def _after_delete(mapper, connection, target):
 
 
 def register_activity_listeners():
-    """Register SQLAlchemy event listeners for UserPII, User, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqVerification, OptionalMcqResponse (ActivityLog is skipped)."""
-    from server.models import UserPII, User, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqVerification, OptionalMcqResponse
-    for model in (UserPII, User, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqVerification, OptionalMcqResponse):
+    """
+    Register SQLAlchemy event listeners on data models so create/update/delete
+    operations emit activity_logs rows. The legacy ``User`` model is no longer
+    listened to (auth is JWT-only; there is no app-managed ``users`` write path).
+    """
+    from server.models import (
+        UserPII,
+        SkillLabSubmission,
+        CodeLabSubmission,
+        ProjectSubmission,
+        OptionalMcqVerification,
+        OptionalMcqResponse,
+    )
+    for model in (UserPII, SkillLabSubmission, CodeLabSubmission, ProjectSubmission, OptionalMcqVerification, OptionalMcqResponse):
         event.listen(model, 'after_insert', _after_insert)
         event.listen(model, 'after_update', _after_update)
         event.listen(model, 'after_delete', _after_delete)

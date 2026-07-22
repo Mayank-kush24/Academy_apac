@@ -307,7 +307,7 @@
                 for (var i = 1; i <= 5; i++) {
                     var link = list[i - 1] || {};
                     var url = (link.link_url || '').trim();
-                    var maxAlloc = link.max_allocations != null ? link.max_allocations : 3000;
+                    var maxAlloc = link.max_allocations != null ? link.max_allocations : 4000;
                     var current = link.current_allocations != null ? link.current_allocations : 0;
                     rows.push('<tr><td>Link ' + i + '</td><td><input type="text" class="filter-input" style="width:100%;" id="linkUrl' + i + '" value="' + escapeHtml(url) + '" placeholder="URL or identifier"></td><td><input type="number" class="filter-input" style="width:80px;" id="linkMax' + i + '" value="' + maxAlloc + '" min="1" max="100000"></td><td>' + current + ' / ' + maxAlloc + '</td></tr>');
                 }
@@ -325,7 +325,7 @@
             var maxEl = document.getElementById('linkMax' + i);
             if (!urlEl || !maxEl) continue;
             var url = (urlEl.value || '').trim();
-            var maxAlloc = parseInt(maxEl.value, 10) || 3000;
+            var maxAlloc = parseInt(maxEl.value, 10) || 4000;
             links.push({ link_url: url || null, display_order: i, max_allocations: Math.max(1, Math.min(100000, maxAlloc)) });
         }
         document.getElementById('saveCreditLinksBtn').disabled = true;

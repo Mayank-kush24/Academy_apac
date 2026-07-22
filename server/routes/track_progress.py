@@ -9,11 +9,13 @@ from concurrent.futures import ThreadPoolExecutor
 
 from flask import Blueprint, request, jsonify, Response, current_app
 from sqlalchemy import or_, and_, func
+from sqlalchemy.orm import aliased
 from sqlalchemy.orm import load_only, noload, sessionmaker
 from server.models import (
     db, UserPIICombined, CodeLabSubmission, SkillLabSubmission, ProjectSubmission, OptionalMcqResponse, MainMcqResponse,
 )
 from server.utils.cohort_participant_models import participant_model, snapshot_cohort_globals, apply_cohort_globals
+from server.utils.skilllab_submission_selection import display_submission_for_track
 from server.utils.auth import get_current_user
 from server.utils.permissions import require_page_access
 
@@ -45,7 +47,7 @@ def _build_codelab_exists(track, extra_filters=None):
     return db.session.query(CL.id).filter(*conditions).exists()
 
 
-def _build_skilllab_exists(track, extra_filters=None):
+def _build_skilllab_exists(track, extra_filters=None, latest_valid_only=False):
     """Return an EXISTS clause for SkillLabSubmission on a given track (via problem_statement)."""
     label = TRACK_LABELS[track]
     SL = participant_model(SkillLabSubmission)
@@ -54,7 +56,22 @@ def _build_skilllab_exists(track, extra_filters=None):
         func.lower(SL.leader_email) == func.lower(PII.email),
         SL.problem_statement.ilike(f'%{label}%'),
     ]
-    if extra_filters:
+    if latest_valid_only:
+        SL2 = aliased(SL)
+        latest_id = (
+            db.session.query(SL2.id)
+            .filter(
+                func.lower(SL2.leader_email) == func.lower(PII.email),
+                SL2.problem_statement.ilike(f'%{label}%'),
+                SL2.valid == True,
+            )
+            .order_by(SL2.created_at.desc(), SL2.id.desc())
+            .limit(1)
+            .correlate(PII)
+            .scalar_subquery()
+        )
+        conditions.extend([SL.valid == True, SL.id == latest_id])
+    elif extra_filters:
         conditions.extend(extra_filters)
     return db.session.query(SL.id).filter(*conditions).exists()
 
@@ -183,7 +200,7 @@ def _apply_track_filters(query, args):
         val = args.get(f'skilllab_t{t}', '').strip().lower()
         SL = participant_model(SkillLabSubmission)
         if val == 'valid':
-            query = query.filter(_build_skilllab_exists(t, [SL.valid == True]))
+            query = query.filter(_build_skilllab_exists(t, latest_valid_only=True))
         elif val == 'not_valid':
             query = query.filter(_build_skilllab_exists(t, [
                 SL.valid == False,
@@ -418,12 +435,8 @@ def _compute_grid_bulk(emails):
             else:
                 grid[f'codelab_t{t}'] = ''
 
-            # Skill Lab
-            sl_match = next(
-                (s for s in skilllab_map.get(email_key, [])
-                 if s.problem_statement and label.lower() in s.problem_statement.lower()),
-                None,
-            )
+            # Skill Lab (show counted valid if any, else newest submission for track)
+            sl_match = display_submission_for_track(skilllab_map.get(email_key, []), label)
             if sl_match:
                 if sl_match.valid:
                     grid[f'skilllab_t{t}'] = 'Valid'

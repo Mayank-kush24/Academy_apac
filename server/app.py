@@ -225,14 +225,49 @@ def create_app():
             ensure_user_pii_combined_views(db.engine)
         except Exception as e:
             print(f"[WARNING] user_pii_combined views: {e}")
-        # Register activity log listeners (create/update/delete on UserPII, User)
+        # Register activity log listeners (create/update/delete on cohort data tables)
         try:
             from server.utils.activity_log import register_activity_listeners
             register_activity_listeners()
             print("[OK] Activity log listeners registered")
         except Exception as e:
             print(f"[WARNING] Activity log listeners: {e}")
-    
+        # Pre-build dynamic cohort-bound model classes so concurrent first requests
+        # don't race on SQLAlchemy's declarative registry (see warm_cohort_models docstring).
+        try:
+            from server.utils.cohort_participant_models import warm_cohort_models
+            from server.models import (
+                UserPII,
+                UserPIICombined,
+                UserPIIInjected,
+                BobCompany,
+                CreditLink,
+                SkillboostProfile,
+                SkillLabSubmission,
+                CodeLabSubmission,
+                ProjectSubmission,
+                OptionalMcqVerification,
+                OptionalMcqResponse,
+                MainMcqResponse,
+            )
+            warm_cohort_models([
+                UserPII,
+                UserPIICombined,
+                UserPIIInjected,
+                BobCompany,
+                CreditLink,
+                SkillboostProfile,
+                SkillLabSubmission,
+                CodeLabSubmission,
+                ProjectSubmission,
+                OptionalMcqVerification,
+                OptionalMcqResponse,
+                MainMcqResponse,
+            ])
+            print("[OK] Cohort dynamic models pre-warmed")
+        except Exception as e:
+            print(f"[WARNING] warm_cohort_models: {e}")
+
     # Cohort search_path must run before any ORM / audit DB access on this connection.
     register_cohort_context(app)
 
@@ -244,6 +279,26 @@ def create_app():
             set_audit_session_vars()
         except Exception:
             pass
+
+    # Global error handler: log traceback for any *unhandled* exception so 500s
+    # are diagnosable in the terminal. Routes that catch and return their own
+    # ``jsonify({'error': str(e)})`` response are unaffected (the exception
+    # never propagates to here).
+    import traceback as _traceback
+    from werkzeug.exceptions import HTTPException
+
+    @app.errorhandler(Exception)
+    def _log_unhandled_exception(exc):
+        if isinstance(exc, HTTPException):
+            return exc  # 404/403/etc. should pass through unchanged
+        _traceback.print_exc()
+        path = request.path if request else ''
+        if path.startswith('/api/'):
+            return jsonify({'error': 'Internal server error', 'detail': str(exc)}), 500
+        if app.debug:
+            # Let werkzeug's interactive debugger handle it.
+            raise exc
+        return jsonify({'error': 'Internal server error'}), 500
 
     # Register blueprints
     app.register_blueprint(auth.bp, url_prefix='/api/auth')

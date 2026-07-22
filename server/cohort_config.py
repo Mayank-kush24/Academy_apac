@@ -8,7 +8,7 @@ Cohort 1 uses the original unqualified names (user_pii, user_pii_injected, …).
 table_prefix:
   ""       → Cohort 1: original tables, no prefix.
   "cohort_2_" → Cohort 2: all tables prefixed with cohort_2_.
-  "cohort_3_" → Cohort 3: all tables prefixed with cohort_3_ (future).
+  "cohort_3_" → Cohort 3: all tables prefixed with cohort_3_.
 
 Routes access the prefix via  flask.g.table_prefix  (set per-request).
 """
@@ -47,10 +47,21 @@ COHORTS: Dict[int, Dict[str, Any]] = {
     },
     3: {
         "label": "Cohort 3",
-        "table_prefix": "cohort_3_", # e.g. cohort_3_user_pii (future)
+        "table_prefix": "cohort_3_", # e.g. cohort_3_user_pii
         "schema": None,
-        "enabled": False,
-        "description": "Coming soon.",
+        "enabled": True,
+        "description": "Third program intake (UTS API sync).",
+        # Same module set as Cohort 2.
+        "disabled_pages": (
+            "project-submission",
+            "mcq-verification",
+            "track-progress-query",
+            "codelab-submission-dashboard",
+        ),
+        "disabled_api_prefixes": (
+            "/api/project-submission",
+            "/api/track-progress",
+        ),
     },
 }
 

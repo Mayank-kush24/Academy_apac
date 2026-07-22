@@ -29,7 +29,11 @@ def _ensure_column(table: str):
 def run():
     app = create_app()
     with app.app_context():
-        for tbl in ("optional_mcq_response", "cohort_2_optional_mcq_response"):
+        for tbl in (
+            "optional_mcq_response",
+            "cohort_2_optional_mcq_response",
+            "cohort_3_optional_mcq_response",
+        ):
             _ensure_column(tbl)
         db.session.commit()
         print("OK: team_name column ensured on optional_mcq_response tables.")

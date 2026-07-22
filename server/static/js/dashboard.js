@@ -227,11 +227,11 @@ async function loadDashboardData() {
                 main_mcq_by_track: [ { track: 1, total: 0, passed_6: 0 }, { track: 2, total: 0, passed_6: 0 }, { track: 3, total: 0, passed_6: 0 } ],
                 optional_mcq_top5_winners: [],
                 previous_period_total_users: null, previous_period_apac_users: null, previous_period_average_age: null,
-                net_new_registrations: null, users_in_cohort1_and_cohort2: null
+                net_new_registrations: null, users_in_cohort1_and_cohort2: null, users_also_in_prior_cohorts: null
             };
         }
         if (!chartsData) {
-            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], persona_distribution: [], top_domains: [], user_segmentation: { industries: [] }, top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
+            chartsData = { registration_trends: [], gender_distribution: [], registration_source_bifurcation: [], occupation_distribution: [], persona_distribution: [], broad_category_distribution: [], top_domains: [], user_segmentation: { industries: [] }, top_cities: [], top_cities_outside_india: [], top_organizations: [], india_state_registrations: [], apac_country_registrations: [] };
         }
         lastDashboardSummary = summary;
         lastDashboardCharts = chartsData;
@@ -296,6 +296,7 @@ async function loadDashboardData() {
             registration_source_bifurcation: [],
             occupation_distribution: [],
             persona_distribution: [],
+            broad_category_distribution: [],
             top_domains: [],
             top_cities: [],
             top_cities_outside_india: [],
@@ -405,7 +406,9 @@ function updateKPICards(summary, chartsData) {
     if (netNewHeroEl) {
         let nn = summary.net_new_registrations;
         if (nn === undefined || nn === null) {
-            const overlap = summary.users_in_cohort1_and_cohort2;
+            const overlap = (summary.users_also_in_prior_cohorts != null)
+                ? summary.users_also_in_prior_cohorts
+                : summary.users_in_cohort1_and_cohort2;
             const ovNum = typeof overlap === 'number' ? overlap : 0;
             nn = Math.max(0, totalUsers - ovNum);
         }
@@ -413,8 +416,22 @@ function updateKPICards(summary, chartsData) {
     }
     const netNewFooterStat = document.getElementById('netNewRegistrationsFooterStat');
     if (netNewFooterStat) {
-        const ov = summary.users_in_cohort1_and_cohort2;
-        if (ov !== undefined && ov !== null) {
+        const ov = (summary.users_also_in_prior_cohorts != null)
+            ? summary.users_also_in_prior_cohorts
+            : summary.users_in_cohort1_and_cohort2;
+        const cohortId = (typeof getAppCohortId === 'function' ? getAppCohortId() : '')
+            || (document.body && document.body.getAttribute('data-cohort-id'))
+            || '';
+        if (String(cohortId) === '3' && (summary.users_also_in_cohort1 != null || summary.users_also_in_cohort2 != null)) {
+            const c1 = typeof summary.users_also_in_cohort1 === 'number' ? summary.users_also_in_cohort1 : 0;
+            const c2 = typeof summary.users_also_in_cohort2 === 'number' ? summary.users_also_in_cohort2 : 0;
+            const totalReturning = typeof ov === 'number' ? ov : (c1 + c2);
+            netNewFooterStat.innerHTML =
+                '<span class="kpi-footer-stat-num">' + escapeHtml(String(formatNumber(totalReturning))) + '</span>' +
+                '<span class="kpi-footer-stat-label">returning · ' +
+                escapeHtml(String(formatNumber(c1))) + ' from C1 · ' +
+                escapeHtml(String(formatNumber(c2))) + ' from C2</span>';
+        } else if (ov !== undefined && ov !== null) {
             netNewFooterStat.innerHTML = '<span class="kpi-footer-stat-num">' + escapeHtml(String(formatNumber(ov))) + '</span><span class="kpi-footer-stat-label">returning (Cohort 1 user)</span>';
         } else {
             netNewFooterStat.innerHTML = '<span class="kpi-footer-stat-label">Overlap not available</span>';
@@ -469,6 +486,25 @@ function updateKPICards(summary, chartsData) {
     if (cohortOverlapEl) {
         const ov = summary.users_in_cohort1_and_cohort2;
         cohortOverlapEl.textContent = (ov !== undefined && ov !== null) ? formatNumber(ov) : '—';
+    }
+    const priorOverlapEl = document.getElementById('priorCohortsOverlapUsers');
+    if (priorOverlapEl) {
+        const ov = (summary.users_also_in_prior_cohorts != null)
+            ? summary.users_also_in_prior_cohorts
+            : summary.users_in_cohort1_and_cohort2;
+        priorOverlapEl.textContent = (ov !== undefined && ov !== null) ? formatNumber(ov) : '—';
+    }
+    const priorOverlapMeta = document.getElementById('priorCohortsOverlapMeta');
+    if (priorOverlapMeta) {
+        const c1 = summary.users_also_in_cohort1;
+        const c2 = summary.users_also_in_cohort2;
+        if (typeof c1 === 'number' || typeof c2 === 'number') {
+            priorOverlapMeta.textContent =
+                formatNumber(typeof c1 === 'number' ? c1 : 0) + ' also in Cohort 1 · ' +
+                formatNumber(typeof c2 === 'number' ? c2 : 0) + ' also in Cohort 2';
+        } else {
+            priorOverlapMeta.textContent = 'Users who registered in Cohort 1 or 2 and again in Cohort 3';
+        }
     }
 
     const bookOfBusinessEl = document.getElementById('bookOfBusinessRegistrations');
@@ -819,6 +855,16 @@ function renderCharts(data, summary = null) {
         }
     } else {
         showEmptyChart('personaChart', 'No persona data available');
+    }
+
+    // Broad Category (Cohort 2 drill-down bar chart)
+    var broadCanvas = document.getElementById('broadCategoryChart');
+    if (broadCanvas) {
+        if (data.broad_category_distribution && data.broad_category_distribution.length > 0) {
+            renderBroadCategoryChart(data.broad_category_distribution);
+        } else {
+            showEmptyChart('broadCategoryChart', 'No broad category data available');
+        }
     }
     
     // User Segmentation (drill-down bar chart)
@@ -1613,7 +1659,17 @@ window.exportData = async function exportData(event) {
             if (summary.net_new_registrations != null && summary.net_new_registrations !== undefined) {
                 csvContent += `Net new registrations,${summary.net_new_registrations}\n`;
             }
-            if (summary.users_in_cohort1_and_cohort2 != null && summary.users_in_cohort1_and_cohort2 !== undefined) {
+            if (summary.users_also_in_prior_cohorts != null && summary.users_also_in_prior_cohorts !== undefined) {
+                csvContent += `Also in prior cohorts (email overlap),${summary.users_also_in_prior_cohorts}\n`;
+            }
+            if (summary.users_also_in_cohort1 != null && summary.users_also_in_cohort1 !== undefined) {
+                csvContent += `Also in Cohort 1,${summary.users_also_in_cohort1}\n`;
+            }
+            if (summary.users_also_in_cohort2 != null && summary.users_also_in_cohort2 !== undefined) {
+                csvContent += `Also in Cohort 2,${summary.users_also_in_cohort2}\n`;
+            }
+            if (summary.users_in_cohort1_and_cohort2 != null && summary.users_in_cohort1_and_cohort2 !== undefined
+                && (summary.users_also_in_prior_cohorts == null || summary.users_also_in_prior_cohorts === undefined)) {
                 csvContent += `Also in Cohort 1 (email overlap),${summary.users_in_cohort1_and_cohort2}\n`;
             }
             csvContent += `APAC Users (Excl. India),${summary.apac_except_india_users || 0}\n`;
@@ -2041,6 +2097,173 @@ function renderSegmentationChart(segData) {
     showIndustries();
 }
 
+/* ── Broad Category drill-down (Broad → Sub Category) ── */
+
+function _renderBroadCategoryLevel(canvasId, items, onBarClick, seriesLabel) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+
+    const sorted = (items || []).slice().sort(function (a, b) { return b.value - a.value; });
+    const labels = sorted.map(function (d) { return d.label; });
+    const values = sorted.map(function (d) { return d.value; });
+
+    const brandAccent = '#ff7a18';
+    const grays = [
+        'rgba(229,231,235,0.9)', 'rgba(209,213,219,0.9)',
+        'rgba(156,163,175,0.9)', 'rgba(107,114,128,0.9)',
+        'rgba(75,85,99,0.9)', 'rgba(55,65,81,0.9)'
+    ];
+    const bgColors = values.map(function (_, i) {
+        return i === 0 ? brandAccent : grays[(i - 1) % grays.length];
+    });
+
+    if (charts[canvasId]) charts[canvasId].destroy();
+    if (Chart.getChart(canvas)) Chart.getChart(canvas).destroy();
+
+    const chartContainer = canvas.parentElement;
+    const msgEl = chartContainer ? chartContainer.querySelector('.empty-chart-message') : null;
+    if (msgEl) msgEl.remove();
+
+    // Responsive (auto-fit container) so re-renders on drill-down never distort.
+    if (chartContainer) {
+        chartContainer.style.overflowX = 'hidden';
+        chartContainer.style.overflowY = 'hidden';
+        chartContainer.style.height = '420px';
+        chartContainer.style.minHeight = '420px';
+        chartContainer.style.maxHeight = '420px';
+    }
+    canvas.style.display = 'block';
+    canvas.style.removeProperty('width');
+    canvas.style.removeProperty('min-width');
+    canvas.style.removeProperty('height');
+
+    var dataLabelsPlugin = {
+        id: 'broadCategoryVertLabels',
+        afterDatasetsDraw: function (chart) {
+            var ctx = chart.ctx;
+            var meta = chart.getDatasetMeta(0);
+            if (!meta || !meta.data) return;
+            ctx.save();
+            ctx.font = "500 11px 'Inter', sans-serif";
+            ctx.fillStyle = '#6B7280';
+            ctx.textAlign = 'center';
+            meta.data.forEach(function (bar, i) {
+                var val = chart.data.datasets[0].data[i];
+                if (val == null) return;
+                var text = typeof val === 'number' ? val.toLocaleString() : String(val);
+                ctx.fillText(text, bar.x, bar.y - 8);
+            });
+            ctx.restore();
+        }
+    };
+
+    var label = seriesLabel || 'Broad Category';
+    charts[canvasId] = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: label,
+                data: values,
+                backgroundColor: bgColors,
+                borderRadius: 6,
+                borderSkipped: false,
+                maxBarThickness: 56,
+                minBarLength: 4,
+                borderWidth: 0,
+                categoryPercentage: 0.85,
+                barPercentage: 0.9
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            layout: { padding: { top: 24, right: 12, bottom: 8, left: 8 } },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(255,255,255,0.98)',
+                    padding: 10,
+                    titleFont: { family: 'Inter', size: 12, weight: '600' },
+                    bodyFont: { family: 'Inter', size: 11, weight: '500' },
+                    borderColor: '#E5E7EB', borderWidth: 1, cornerRadius: 4,
+                    titleColor: '#1F2937', bodyColor: '#6B7280',
+                    displayColors: true,
+                    callbacks: {
+                        title: function (ctxArr) {
+                            // Show the full (untruncated) label in the tooltip.
+                            var i = ctxArr && ctxArr[0] ? ctxArr[0].dataIndex : -1;
+                            return (i >= 0 && i < labels.length) ? labels[i] : '';
+                        },
+                        label: function (ctx) { return ctx.parsed.y.toLocaleString() + ' users'; }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: { display: false, drawBorder: false },
+                    ticks: {
+                        font: { family: 'Inter', size: 10, weight: '500' },
+                        color: '#6B7280',
+                        maxRotation: 60, minRotation: 60,
+                        padding: 6, autoSkip: false,
+                        callback: function (value) {
+                            var lbl = this.getLabelForValue(value);
+                            return lbl.length > 18 ? lbl.slice(0, 17) + '…' : lbl;
+                        }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false, drawTicks: false },
+                    ticks: {
+                        font: { family: 'Inter', size: 11, weight: '500' },
+                        color: '#6B7280', padding: 8, maxTicksLimit: 6,
+                        callback: function (v) { return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v; }
+                    }
+                }
+            },
+            onClick: function (_event, elements) {
+                if (!onBarClick || !elements || !elements.length) return;
+                var idx = elements[0].index;
+                if (idx >= 0 && idx < sorted.length) onBarClick(sorted[idx]);
+            },
+            onHover: function (_event, elements) {
+                if (!onBarClick) {
+                    canvas.style.cursor = 'default';
+                    return;
+                }
+                canvas.style.cursor = (elements && elements.length) ? 'pointer' : 'default';
+            }
+        },
+        plugins: [dataLabelsPlugin]
+    });
+}
+
+function renderBroadCategoryChart(broadData) {
+    const subtitle = document.getElementById('broadCategorySubtitle');
+    const backBtn = document.getElementById('broadCategoryBackBtn');
+    const items = (broadData || []).filter(function (d) { return d && d.label; });
+
+    function drillInto(broad) {
+        if (!broad || !broad.sub_categories || !broad.sub_categories.length) return;
+        if (subtitle) subtitle.textContent = 'Sub categories in ' + broad.label;
+        if (backBtn) backBtn.style.display = '';
+        _renderBroadCategoryLevel('broadCategoryChart', broad.sub_categories, null, broad.label);
+    }
+
+    function showBroad() {
+        if (subtitle) subtitle.textContent = 'Professional, startup & freelance · click a bar to drill down';
+        if (backBtn) backBtn.style.display = 'none';
+        _renderBroadCategoryLevel('broadCategoryChart', items, drillInto, 'Broad Category');
+    }
+
+    if (backBtn) backBtn.onclick = showBroad;
+    showBroad();
+}
+
 /**
  * Render bar chart - Professional, high-contrast, data-focused style
  */
@@ -2459,9 +2682,10 @@ function renderLineChart(canvasId, title, data) {
  * Vertical bar chart for persona distribution with horizontal scroll
  * so every bar gets enough width to be readable.
  */
-function renderPersonaBarChart(canvasId, data) {
+function renderPersonaBarChart(canvasId, data, datasetLabel) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+    var seriesLabel = datasetLabel || 'User Personas';
 
     const sorted = data.slice().sort(function (a, b) { return b.value - a.value; });
     const labels = sorted.map(function (d) { return d.label; });
@@ -2525,7 +2749,7 @@ function renderPersonaBarChart(canvasId, data) {
         data: {
             labels: labels,
             datasets: [{
-                label: 'User Personas',
+                label: seriesLabel,
                 data: values,
                 backgroundColor: bgColors,
                 borderRadius: 8,

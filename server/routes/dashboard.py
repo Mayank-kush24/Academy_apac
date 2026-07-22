@@ -64,7 +64,14 @@ from server.utils.persona_map import get_persona
 # Module-level cached combined dashboard (summary + charts) - one cache entry per period
 @cache_result(ttl=900)
 def _get_dashboard_data_cached(period, table_prefix=''):
-    """Fetch summary and charts in parallel; cached per (period, cohort prefix) for 15 min."""
+    """Fetch summary and charts in parallel; cached per (period, cohort prefix) for 15 min.
+
+    Cohort-prefixed cohorts (Cohort 2+) use the raw-SQL path; Cohort 1 uses the ORM path.
+    Both share this cache so repeat loads within the TTL avoid all DB work.
+    """
+    if table_prefix:
+        return _fetch_prefixed_dashboard(table_prefix, period)
+
     from server.utils.cohort_participant_models import apply_cohort_globals
 
     app = current_app._get_current_object()
@@ -163,6 +170,166 @@ def _prefixed_persona_distribution(pii: str, date_frag: str, date_params: dict) 
     return out
 
 
+def _prefixed_broad_category_distribution(pii: str, date_frag: str, date_params: dict) -> list:
+    """Broad categories for professional/startup/freelance users, with Unclassified bucket."""
+    sub_category_chart_limit = 15
+    occ_sql = """(
+        LOWER(occupation) LIKE '%professional%'
+        OR LOWER(occupation) LIKE '%startup%'
+        OR LOWER(occupation) LIKE '%freelance%'
+    )"""
+    broad_rows = _safe_rows(
+        f"""SELECT
+              CASE
+                WHEN broad_category IS NOT NULL AND TRIM(broad_category) != ''
+                THEN broad_category
+                ELSE 'Unclassified'
+              END AS bc,
+              COUNT(*) AS n
+            FROM {pii}
+            WHERE {occ_sql}{date_frag}
+            GROUP BY bc
+            ORDER BY n DESC""",
+        date_params,
+    )
+    sub_rows = _safe_rows(
+        f"""SELECT broad_category, sub_category, COUNT(*) AS n FROM {pii}
+            WHERE {occ_sql}
+              AND broad_category IS NOT NULL AND TRIM(broad_category) != ''
+              AND sub_category IS NOT NULL AND TRIM(sub_category) != ''{date_frag}
+            GROUP BY broad_category, sub_category
+            ORDER BY broad_category, n DESC""",
+        date_params,
+    )
+    unclassified_desig_rows = _safe_rows(
+        f"""SELECT
+              CASE
+                WHEN designation IS NULL OR TRIM(designation) = '' THEN '(no designation)'
+                ELSE designation
+              END AS lbl,
+              COUNT(*) AS n
+            FROM {pii}
+            WHERE {occ_sql}
+              AND (broad_category IS NULL OR TRIM(broad_category) = ''){date_frag}
+            GROUP BY lbl
+            ORDER BY n DESC
+            LIMIT {sub_category_chart_limit}""",
+        date_params,
+    )
+    subs_by_broad = defaultdict(list)
+    for broad, sub, cnt in sub_rows:
+        if broad and sub and cnt is not None:
+            subs_by_broad[broad].append({"label": sub, "value": int(cnt)})
+    unclassified_subs = [
+        {"label": lbl, "value": int(cnt)}
+        for lbl, cnt in unclassified_desig_rows
+        if lbl and cnt is not None
+    ]
+    result = []
+    for broad, cnt in broad_rows:
+        if not broad or cnt is None:
+            continue
+        subs = (unclassified_subs if broad == "Unclassified" else subs_by_broad.get(broad, []))[:sub_category_chart_limit]
+        result.append({
+            "label": broad,
+            "value": int(cnt),
+            "sub_categories": subs,
+        })
+    return result
+
+
+# Cross-cohort overlap is cached longer than the 15-min dashboard TTL because prior-cohort
+# tables only change on import / UTS sync. The SQL itself must stay cheap on a cold miss:
+# probe indexed lower(trim(email)) on base tables from the *current* cohort's distinct emails
+# (small for C3). Never EXISTS against unindexed CTEs of prior cohorts — that nested-looped
+# ~193k×1.3k scans and took ~20s.
+_COHORT_OVERLAP_TTL_SEC = int(os.environ.get("DASHBOARD_OVERLAP_TTL_SEC", "21600"))  # 6 hours
+
+
+def _email_in_tables_sql(alias: str, *tables: str) -> str:
+    """OR of index-friendly EXISTS probes: lower(trim(email)) = {alias}.e on each table."""
+    parts = [
+        f"EXISTS (SELECT 1 FROM {t} u WHERE lower(trim(u.email)) = {alias}.e)"
+        for t in tables
+    ]
+    return "(" + " OR ".join(parts) + ")"
+
+
+@cache_result(ttl=_COHORT_OVERLAP_TTL_SEC)
+def _get_prior_cohort_overlap_cached(prefix: str, period: str) -> dict:
+    """Return prior-cohort email overlap counts for the "net new" KPI.
+
+    Cohort 2: emails also present in Cohort 1.
+    Cohort 3: emails also present in Cohort 1 and/or Cohort 2.
+    Returns zeros for Cohort 1 (no prior cohort) or unknown prefixes.
+    Cached independently (long TTL); SQL uses functional-index nested-loop probes.
+    """
+    result = {
+        "users_in_cohort1_and_cohort2": 0,
+        "users_also_in_prior_cohorts": 0,
+        "users_also_in_cohort1": 0,
+        "users_also_in_cohort2": 0,
+    }
+    pii = f"{prefix}user_pii_combined"
+    date_frag, date_params = _period_sql_filter(period)
+
+    if prefix == "cohort_2_":
+        c2_date = ""
+        if date_frag:
+            c2_date = date_frag.replace("registered_at", "c2.registered_at")
+        in_c1 = _email_in_tables_sql("c2", "user_pii", "user_pii_injected")
+        overlap = _safe_scalar(
+            f"""
+            WITH c2 AS MATERIALIZED (
+              SELECT DISTINCT LOWER(TRIM(c2.email)) AS e
+              FROM {pii} c2
+              WHERE c2.email IS NOT NULL AND TRIM(c2.email) <> ''{c2_date}
+            )
+            SELECT COUNT(*) FROM c2 WHERE {in_c1}
+            """,
+            date_params,
+        )
+        result["users_in_cohort1_and_cohort2"] = overlap
+        result["users_also_in_prior_cohorts"] = overlap
+    elif prefix == "cohort_3_":
+        c3_date = ""
+        if date_frag:
+            # date_frag is like " AND registered_at >= :cutoff" — apply on base table alias
+            c3_date = date_frag.replace("registered_at", "c3.registered_at")
+        in_c1 = _email_in_tables_sql("c3", "user_pii", "user_pii_injected")
+        in_c2 = _email_in_tables_sql(
+            "c3", "cohort_2_user_pii", "cohort_2_user_pii_injected"
+        )
+        overlap_rows = _safe_rows(
+            f"""
+            WITH c3 AS MATERIALIZED (
+              SELECT DISTINCT LOWER(TRIM(c3.email)) AS e
+              FROM {pii} c3
+              WHERE c3.email IS NOT NULL AND TRIM(c3.email) <> ''{c3_date}
+            ),
+            flags AS MATERIALIZED (
+              SELECT
+                c3.e,
+                {in_c1} AS in_c1,
+                {in_c2} AS in_c2
+              FROM c3
+            )
+            SELECT
+              COUNT(*) FILTER (WHERE in_c1) AS also_c1,
+              COUNT(*) FILTER (WHERE in_c2) AS also_c2,
+              COUNT(*) FILTER (WHERE in_c1 OR in_c2) AS also_prior
+            FROM flags
+            """,
+            date_params,
+        )
+        if overlap_rows:
+            result["users_also_in_cohort1"] = int(overlap_rows[0][0] or 0)
+            result["users_also_in_cohort2"] = int(overlap_rows[0][1] or 0)
+            result["users_also_in_prior_cohorts"] = int(overlap_rows[0][2] or 0)
+
+    return result
+
+
 def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
     """
     Raw-SQL dashboard data for cohort-prefixed tables (Cohort 2+).
@@ -229,23 +396,14 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
         f"SELECT COUNT(*) FROM {pii} WHERE bob_match = TRUE{date_frag}", date_params
     )
 
-    # Cohort 2 only: distinct users (email) present in Cohort 1 combined PII and in this cohort's PII
-    users_in_cohort1_and_cohort2 = 0
-    if prefix == "cohort_2_":
-        c1_pii = "user_pii_combined"
-        overlap_date = ""
-        if date_frag:
-            overlap_date = " AND c2.registered_at >= :cutoff"
-        users_in_cohort1_and_cohort2 = _safe_scalar(
-            f"""SELECT COUNT(DISTINCT LOWER(TRIM(c2.email))) FROM {pii} c2
-                WHERE c2.email IS NOT NULL AND TRIM(c2.email) <> ''{overlap_date}
-                  AND EXISTS (
-                    SELECT 1 FROM {c1_pii} c1
-                    WHERE c1.email IS NOT NULL AND TRIM(c1.email) <> ''
-                      AND LOWER(TRIM(c1.email)) = LOWER(TRIM(c2.email))
-                  )""",
-            date_params,
-        )
+    # Prior-cohort email overlap (for "net new" KPI). This is the single most expensive
+    # query on the Cohort 3 dashboard (scans all prior-cohort email sets), so it is cached
+    # independently with a longer TTL — see _get_prior_cohort_overlap_cached.
+    overlap = _get_prior_cohort_overlap_cached(prefix, period)
+    users_in_cohort1_and_cohort2 = overlap["users_in_cohort1_and_cohort2"]
+    users_also_in_prior_cohorts = overlap["users_also_in_prior_cohorts"]
+    users_also_in_cohort1 = overlap["users_also_in_cohort1"]
+    users_also_in_cohort2 = overlap["users_also_in_cohort2"]
 
     # --- Regional counts (SEA, ANZ, Greater China, Korea) ---
     _SEA = ('brunei','cambodia','indonesia','laos','malaysia','myanmar',
@@ -286,8 +444,10 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
     verified_sb = _safe_scalar(f"SELECT COUNT(*) FROM {sb} WHERE valid = TRUE")
     sb_rate    = round(100.0 * verified_sb / total_sb, 1) if total_sb else None
 
+    from server.utils.skilllab_submission_selection import counted_valid_submissions_sql
+
     total_sl   = _safe_scalar(f"SELECT COUNT(*) FROM {sl}")
-    verified_sl = _safe_scalar(f"SELECT COUNT(*) FROM {sl} WHERE valid = TRUE")
+    verified_sl = _safe_scalar(counted_valid_submissions_sql(sl))
     sl_rate    = round(100.0 * verified_sl / total_sl, 1) if total_sl else None
 
     total_cl   = _safe_scalar(f"SELECT COUNT(*) FROM {cl}")
@@ -409,6 +569,11 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
     # Designation (top 10)
     designation_dist = _grp("designation", 10)
 
+    # Broad category (Cohort 2/3 title taxonomy) with nested sub-categories for drill-down
+    broad_category_dist = []
+    if prefix in ("cohort_2_", "cohort_3_"):
+        broad_category_dist = _prefixed_broad_category_distribution(pii, date_frag, date_params)
+
     # Registration source via UTM
     utm_rows = _safe_rows(
         f"SELECT utm_medium, COUNT(*) AS n FROM {pii}{(' WHERE 1=1' + date_frag) if date_frag else ''} GROUP BY utm_medium",
@@ -527,10 +692,12 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
         for lbl, val in merge_country_count_rows([(r[0], int(r[1])) for r in apac_country_rows])
     ]
 
-    # Registration trends (daily, complete series with zero-fill)
+    # Registration trends (daily, complete series with zero-fill).
+    # Uses display_registered_at (graph-only override) when present, else the real
+    # registered_at. This lets the chart be reshaped without altering actual dates.
     trend_rows = _safe_rows(
-        f"""SELECT DATE_TRUNC('day', registered_at)::date AS d, COUNT(*) AS n
-            FROM {pii} WHERE registered_at IS NOT NULL GROUP BY d ORDER BY d""",
+        f"""SELECT DATE_TRUNC('day', COALESCE(display_registered_at, registered_at))::date AS d, COUNT(*) AS n
+            FROM {pii} WHERE COALESCE(display_registered_at, registered_at) IS NOT NULL GROUP BY d ORDER BY d""",
         {},
     )
     now = datetime.now()
@@ -617,9 +784,12 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
         "previous_period_apac_users":    None,
         "previous_period_average_age":   None,
         "users_in_cohort1_and_cohort2": users_in_cohort1_and_cohort2,
+        "users_also_in_prior_cohorts": users_also_in_prior_cohorts,
+        "users_also_in_cohort1": users_also_in_cohort1 if prefix == "cohort_3_" else None,
+        "users_also_in_cohort2": users_also_in_cohort2 if prefix == "cohort_3_" else None,
         "net_new_registrations": (
-            max(0, int(total_users or 0) - int(users_in_cohort1_and_cohort2 or 0))
-            if prefix == "cohort_2_"
+            max(0, int(total_users or 0) - int(users_also_in_prior_cohorts or 0))
+            if prefix in ("cohort_2_", "cohort_3_")
             else None
         ),
     }
@@ -637,6 +807,7 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
         "class_stream_distribution":      class_stream_dist,
         "designation_distribution":       designation_dist,
         "persona_distribution":           persona_dist,
+        "broad_category_distribution":    broad_category_dist,
         "occupation_distribution":        occ_dist,
         "age_groups":                     age_groups,
         "registration_trends":            reg_trends,
@@ -655,10 +826,7 @@ def get_dashboard_data():
     try:
         period = request.args.get('period', 'all')
         prefix = getattr(g, 'table_prefix', '')
-        if prefix:
-            result = _fetch_prefixed_dashboard(prefix, period)
-            return jsonify(result), 200
-        result = _get_dashboard_data_cached(period, getattr(g, 'table_prefix', ''))
+        result = _get_dashboard_data_cached(period, prefix)
         return jsonify(result), 200
     except Exception:
         return jsonify({
@@ -705,10 +873,7 @@ def _dashboard_ai_insights_compute(period: str, table_prefix: str, cohort_id: in
             "retry_after_seconds": max(seconds, 1),
         }
 
-    if table_prefix:
-        blob = _fetch_prefixed_dashboard(table_prefix, period)
-    else:
-        blob = _get_dashboard_data_cached(period, table_prefix)
+    blob = _get_dashboard_data_cached(period, table_prefix)
     summary = blob.get("summary") or {}
     charts = blob.get("charts") or {}
     ctx = build_insights_context(summary, charts, period, cohort_id)
@@ -854,7 +1019,7 @@ def get_summary():
         period = request.args.get('period', 'all')
         prefix = getattr(g, 'table_prefix', '')
         if prefix:
-            result = _fetch_prefixed_dashboard(prefix, period)
+            result = _get_dashboard_data_cached(period, prefix)
             return jsonify(result['summary']), 200
         result = _fetch_summary_data(period)
         return jsonify(result), 200
@@ -1194,8 +1359,10 @@ def _fetch_summary_data(period):
         verified_skilllab_submissions = 0
         skilllab_submission_verification_rate = None
         try:
-            total_skilllab_submissions = SkillLabSubmission.query.count() or 0
-            verified_skilllab_submissions = SkillLabSubmission.query.filter(SkillLabSubmission.valid == True).count() or 0
+            from server.utils.skilllab_submission_selection import count_counted_valid_rows
+            sl_rows = SkillLabSubmission.query.all()
+            total_skilllab_submissions = len(sl_rows) or 0
+            verified_skilllab_submissions = count_counted_valid_rows(sl_rows)
             if total_skilllab_submissions > 0:
                 skilllab_submission_verification_rate = round(100.0 * verified_skilllab_submissions / total_skilllab_submissions, 1)
         except Exception:
@@ -1741,7 +1908,7 @@ def get_charts():
         period = request.args.get('period', 'all')
         prefix = getattr(g, 'table_prefix', '')
         if prefix:
-            result = _fetch_prefixed_dashboard(prefix, period)
+            result = _get_dashboard_data_cached(period, prefix)
             return jsonify(result['charts']), 200
         result = _get_charts(period)
         return jsonify(result), 200

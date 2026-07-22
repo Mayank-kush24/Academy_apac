@@ -41,6 +41,8 @@ class UserPII(db.Model):
     bob_match = db.Column(db.Boolean, default=False, nullable=False)
     industry = db.Column(db.String(255), nullable=True)
     persona = db.Column(db.String(100), nullable=True)
+    sub_category = db.Column(db.String(255), nullable=True)
+    broad_category = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -68,6 +70,8 @@ class UserPII(db.Model):
             'bob_match': bool(self.bob_match),
             'industry': self.industry,
             'persona': self.persona,
+            'sub_category': self.sub_category,
+            'broad_category': self.broad_category,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -98,6 +102,8 @@ class UserPIIInjected(db.Model):
     bob_match = db.Column(db.Boolean, default=False, nullable=False)
     industry = db.Column(db.String(255), nullable=True)
     persona = db.Column(db.String(100), nullable=True)
+    sub_category = db.Column(db.String(255), nullable=True)
+    broad_category = db.Column(db.String(100), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -125,6 +131,8 @@ class UserPIIInjected(db.Model):
             'bob_match': bool(self.bob_match),
             'industry': self.industry,
             'persona': self.persona,
+            'sub_category': self.sub_category,
+            'broad_category': self.broad_category,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -155,6 +163,8 @@ _user_pii_combined_table = Table(
     Column('bob_match', db.Boolean, default=False, nullable=False),
     Column('industry', db.String(255), nullable=True),
     Column('persona', db.String(100), nullable=True),
+    Column('sub_category', db.String(255), nullable=True),
+    Column('broad_category', db.String(100), nullable=True),
     Column('created_at', db.DateTime, nullable=False),
     Column('updated_at', db.DateTime, nullable=False),
     Column('source', db.String(32), nullable=True),
@@ -191,6 +201,8 @@ class UserPIICombined(db.Model):
             'bob_match': bool(self.bob_match),
             'industry': self.industry,
             'persona': self.persona,
+            'sub_category': self.sub_category,
+            'broad_category': self.broad_category,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'source': self.source,
@@ -206,45 +218,23 @@ class BobCompany(db.Model):
     normalized_name = db.Column(db.String(500), nullable=True, index=True)
 
 
-class User(db.Model):
-    """Table for storing application users (admin, editor, viewer)"""
-    __tablename__ = 'users'
-    __table_args__ = {'schema': 'public'}
-
-    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    name = db.Column(db.String(255), nullable=False)
-    email = db.Column(db.String(255), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(50), nullable=False, default='viewer')  # admin, editor, viewer
-    status = db.Column(db.String(50), nullable=False, default='active')  # active, inactive
-    allowed_pages = db.Column(db.JSON, nullable=True)  # list of page ids user can see, e.g. ['home','dashboard','profiles']; null = use role defaults
-    allowed_cohort_ids = db.Column(db.JSON, nullable=True)  # e.g. [1, 2]; null = all enabled cohorts (admins always see all)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-
-    def to_dict(self):
-        """Convert model to dictionary (exclude password)"""
-        return {
-            'id': str(self.id),
-            'name': self.name,
-            'email': self.email,
-            'role': self.role,
-            'status': self.status,
-            'allowed_pages': self.allowed_pages,
-            'allowed_cohort_ids': self.allowed_cohort_ids,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-        }
+# NOTE: The legacy ``User`` model has been removed. Authentication and
+# permissions are now handled entirely through the CDI portal JWT
+# (``server/utils/auth.py``, ``server/utils/permissions.py``). The physical
+# ``users`` table in the database, if present from an earlier deployment, is
+# left untouched and is no longer read or written to by this app.
 
 
 class CreditLink(db.Model):
     """
-    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 3000) users.
+    Skill Lab credit links (up to 5). Each link can be allocated to max_allocations (e.g. 4000) users.
     """
     __tablename__ = 'credit_links'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     link_url = db.Column(db.String(1024), nullable=True)  # URL or identifier sent via Sendy
     display_order = db.Column(db.Integer, default=0, nullable=False)  # 1-5, order when allocating
-    max_allocations = db.Column(db.Integer, default=3000, nullable=False)
+    max_allocations = db.Column(db.Integer, default=4000, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
     def to_dict(self):

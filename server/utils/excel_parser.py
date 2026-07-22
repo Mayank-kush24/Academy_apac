@@ -46,18 +46,19 @@ class SheetDetector:
     label            — human-readable name shown in the UI
     patterns         — list of regex strings (case-insensitive); first hit wins
     track / lab      — optional track/lab number when the module is per-track
-    critical         — bool: when True (for the active cohort), absence of this
-                       sheet from a workbook is surfaced as a missing-critical
-                       warning the user must explicitly acknowledge.
+    critical         — bool: when True, absence of this sheet may be surfaced as a
+                       missing-critical warning (see critical_cohorts).
     cohorts          — optional iterable of cohort_ids this detector applies to
                        (None = applies to all cohorts).
+    critical_cohorts — optional iterable limiting which cohorts treat this sheet as
+                       critical when missing (None = same as applies_to_cohort).
     """
 
     __slots__ = ("module", "label", "patterns", "track", "lab",
-                 "critical", "cohorts", "_compiled")
+                 "critical", "cohorts", "critical_cohorts", "_compiled")
 
     def __init__(self, module, label, patterns, track=None, lab=None,
-                 critical=False, cohorts=None):
+                 critical=False, cohorts=None, critical_cohorts=None):
         self.module = module
         self.label = label
         self.patterns = list(patterns)
@@ -65,13 +66,21 @@ class SheetDetector:
         self.lab = lab
         self.critical = bool(critical)
         self.cohorts = tuple(cohorts) if cohorts is not None else None
+        self.critical_cohorts = (
+            tuple(critical_cohorts) if critical_cohorts is not None else None
+        )
         self._compiled = [re.compile(p, re.IGNORECASE) for p in self.patterns]
+
+    @staticmethod
+    def _effective_cohort_id(cohort_id):
+        """Legacy routes use cohort_id=None; treat that as Cohort 1."""
+        return 1 if cohort_id is None else cohort_id
 
     def applies_to_cohort(self, cohort_id):
         """True if this detector is active for the given cohort_id (None = any)."""
         if self.cohorts is None:
             return True
-        return cohort_id in self.cohorts
+        return self._effective_cohort_id(cohort_id) in self.cohorts
 
     def matches(self, sheet_name):
         """True if sheet_name (whitespace-collapsed) matches any compiled pattern."""
@@ -81,7 +90,14 @@ class SheetDetector:
         return any(rx.search(norm) for rx in self._compiled)
 
     def is_critical_for_cohort(self, cohort_id):
-        return self.critical and self.applies_to_cohort(cohort_id)
+        if not self.critical:
+            return False
+        effective = self._effective_cohort_id(cohort_id)
+        if self.critical_cohorts is not None:
+            return effective in self.critical_cohorts
+        if self.cohorts is not None:
+            return effective in self.cohorts
+        return True
 
 
 # Order matters: more specific detectors first so they "win" over fall-throughs.
@@ -95,58 +111,89 @@ SHEET_DETECTORS = [
         critical=False,
     ),
 
-    # Skill Lab Submission
+    # Skill Lab Submission (detect in any cohort; required only for Cohort 1 exports)
     SheetDetector(
         "skilllab_submission", "Skill Lab Submission",
         [r"google\s+skills\s+lab\s+submissio"],
         critical=True,
+        critical_cohorts=(1,),
     ),
 
-    # Code Lab Submission
+    # Code Lab Submission (Cohort 1 Action Center export; pattern does not match Cohort 2 tab names)
     SheetDetector(
         "codelab_submission", "Code Lab Submission",
         [r"code\s+lab\s+submissio"],
         critical=True,
+        cohorts=(1,),
+    ),
+
+    # Cohort 2 Code Lab — Student / Professional track tabs (prefix-agnostic)
+    SheetDetector(
+        "codelab_submission", "Student Track Codelab Building",
+        [r"student\s*track.*codelab\s*buildi"],
+        critical=True,
+        cohorts=(2,),
+    ),
+    SheetDetector(
+        "codelab_submission", "Professional Track 1 Codelab",
+        [r"professional\s+track\s+1\s+codelab"],
+        track=1,
+        critical=True,
+        cohorts=(2,),
+    ),
+    SheetDetector(
+        "codelab_submission", "Professional Track 2 Codelab",
+        [r"professional\s+track\s+2\s+codelab"],
+        track=2,
+        critical=True,
+        cohorts=(2,),
+    ),
+    SheetDetector(
+        "codelab_submission", "Professional Track 3 Codelab",
+        [r"professional\s+track\s+3\s+codelab"],
+        track=3,
+        critical=True,
+        cohorts=(2,),
     ),
 
     # Optional MCQ Track N (must contain "Optional" between MCQ and Track)
     SheetDetector("optional_mcq", "Optional MCQ Track 1",
-                  [r"mcq\s+optional\s+track\s+1\b"], track=1, critical=True),
+                  [r"mcq\s+optional\s+track\s+1\b"], track=1, critical=True, cohorts=(1,)),
     SheetDetector("optional_mcq", "Optional MCQ Track 2",
-                  [r"mcq\s+optional\s+track\s+2\b"], track=2, critical=True),
+                  [r"mcq\s+optional\s+track\s+2\b"], track=2, critical=True, cohorts=(1,)),
     SheetDetector("optional_mcq", "Optional MCQ Track 3",
-                  [r"mcq\s+optional\s+track\s+3\b"], track=3, critical=True),
+                  [r"mcq\s+optional\s+track\s+3\b"], track=3, critical=True, cohorts=(1,)),
 
     # Main MCQ Track N (must NOT have "Optional" between MCQ and Track).
     # Negative lookahead protects against "MCQ Optional Track 1" matching here.
     SheetDetector("main_mcq", "Main MCQ Track 1",
-                  [r"mcq\s+(?!optional\s)track\s+1\b"], track=1, critical=True),
+                  [r"mcq\s+(?!optional\s)track\s+1\b"], track=1, critical=True, cohorts=(1,)),
     SheetDetector("main_mcq", "Main MCQ Track 2",
-                  [r"mcq\s+(?!optional\s)track\s+2\b"], track=2, critical=True),
+                  [r"mcq\s+(?!optional\s)track\s+2\b"], track=2, critical=True, cohorts=(1,)),
     SheetDetector("main_mcq", "Main MCQ Track 3",
-                  [r"mcq\s+(?!optional\s)track\s+3\b"], track=3, critical=True),
+                  [r"mcq\s+(?!optional\s)track\s+3\b"], track=3, critical=True, cohorts=(1,)),
 
     # Lab Completion N x Track N
     SheetDetector("lab_completion", "Lab Completion 1 Track 1",
-                  [r"lab\s+completion\s+1\s+track\s+1\b"], lab=1, track=1, critical=True),
+                  [r"lab\s+completion\s+1\s+track\s+1\b"], lab=1, track=1, critical=True, cohorts=(1,)),
     SheetDetector("lab_completion", "Lab Completion 1 Track 2",
-                  [r"lab\s+completion\s+1\s+track\s+2\b"], lab=1, track=2, critical=True),
+                  [r"lab\s+completion\s+1\s+track\s+2\b"], lab=1, track=2, critical=True, cohorts=(1,)),
     SheetDetector("lab_completion", "Lab Completion 1 Track 3",
-                  [r"lab\s+completion\s+1\s+track\s+3\b"], lab=1, track=3, critical=True),
+                  [r"lab\s+completion\s+1\s+track\s+3\b"], lab=1, track=3, critical=True, cohorts=(1,)),
     SheetDetector("lab_completion", "Lab Completion 2 Track 1",
-                  [r"lab\s+completion\s+2\s+track\s+1\b"], lab=2, track=1, critical=True),
+                  [r"lab\s+completion\s+2\s+track\s+1\b"], lab=2, track=1, critical=True, cohorts=(1,)),
     SheetDetector("lab_completion", "Lab Completion 2 Track 2",
-                  [r"lab\s+completion\s+2\s+track\s+2\b"], lab=2, track=2, critical=True),
+                  [r"lab\s+completion\s+2\s+track\s+2\b"], lab=2, track=2, critical=True, cohorts=(1,)),
     SheetDetector("lab_completion", "Lab Completion 2 Track 3",
-                  [r"lab\s+completion\s+2\s+track\s+3\b"], lab=2, track=3, critical=True),
+                  [r"lab\s+completion\s+2\s+track\s+3\b"], lab=2, track=3, critical=True, cohorts=(1,)),
 
     # Project Submission Track N
     SheetDetector("project_submission", "Project Submission Track 1",
-                  [r"project\s+submission\s+track\s+1\b"], track=1, critical=True),
+                  [r"project\s+submission\s+track\s+1\b"], track=1, critical=True, cohorts=(1,)),
     SheetDetector("project_submission", "Project Submission Track 2",
-                  [r"project\s+submission\s+track\s+2\b"], track=2, critical=True),
+                  [r"project\s+submission\s+track\s+2\b"], track=2, critical=True, cohorts=(1,)),
     SheetDetector("project_submission", "Project Submission Track 3",
-                  [r"project\s+submission\s+track\s+3\b"], track=3, critical=True),
+                  [r"project\s+submission\s+track\s+3\b"], track=3, critical=True, cohorts=(1,)),
 
     # Cohort 2 Optional MCQ — anchored exact pattern "<digits>.MCQ Optional"
     # (e.g. "14.MCQ Optional"). Active only for Cohort 2.
@@ -356,9 +403,26 @@ ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE = (
     'numbering is ignored): "MCQ Track 1/2/3" (Main MCQ), '
     '"MCQ Optional Track 1/2/3" (Optional MCQ), '
     '"Share your Google Skills …" (profile), '
-    '"Google Skills Lab Submissio…", "Code Lab Submissio…", '
+    '"Google Skills Lab Submissio…", "Code Lab Submissio…" (Cohort 1), '
+    '"Student Track Codelab Buildi…" / "Professional Track N Codelab" (Cohort 2), '
     '"Lab Completion 1/2 Track 1/2/3", or "Project Submission Track 1/2/3".'
 )
+
+
+def _sheets_has_codelab_data(sheets):
+    """True if sheets dict has at least one non-empty Code Lab worksheet loaded."""
+    if not sheets:
+        return False
+    if sheets.get("codelab_sheet_name") and _nonempty_dataframe(sheets.get("codelab_df")):
+        return True
+    for cl in sheets.get("codelab_submission_sheets") or []:
+        if _nonempty_dataframe(cl.get("df")):
+            return True
+    return False
+
+
+def _nonempty_dataframe(df):
+    return df is not None and len(df) > 0
 
 
 def action_center_has_non_profile_imports(sheets):
@@ -369,29 +433,72 @@ def action_center_has_non_profile_imports(sheets):
     if not sheets or not isinstance(sheets, dict):
         return False
 
-    def _nonempty_df(df):
-        return df is not None and len(df) > 0
-
-    if sheets.get("submission_sheet_name") and _nonempty_df(sheets.get("submission_df")):
+    if sheets.get("submission_sheet_name") and _nonempty_dataframe(sheets.get("submission_df")):
         return True
-    if sheets.get("codelab_sheet_name") and _nonempty_df(sheets.get("codelab_df")):
+    if _sheets_has_codelab_data(sheets):
         return True
     for lc in sheets.get("lab_completion_sheets") or []:
-        if _nonempty_df(lc.get("df")):
+        if _nonempty_dataframe(lc.get("df")):
             return True
     for m in sheets.get("main_mcq_sheets") or []:
-        if _nonempty_df(m.get("df")):
+        if _nonempty_dataframe(m.get("df")):
             return True
     for om in sheets.get("optional_mcq_sheets") or []:
-        if _nonempty_df(om.get("df")):
+        if _nonempty_dataframe(om.get("df")):
             return True
     for ps in sheets.get("project_submission_sheets") or []:
-        if _nonempty_df(ps.get("df")):
+        if _nonempty_dataframe(ps.get("df")):
             return True
     c2 = sheets.get("cohort2_optional_mcq_sheet")
-    if c2 and isinstance(c2, dict) and _nonempty_df(c2.get("df")):
+    if c2 and isinstance(c2, dict) and _nonempty_dataframe(c2.get("df")):
         return True
     return False
+
+
+def cohort2_action_center_optional_mcq_only(sheets):
+    """
+    True when the workbook has Cohort 2 Optional MCQ data and no other importable
+    non-profile subsheets (e.g. Code Lab Submission, Skill Lab Submission, Main MCQ).
+    """
+    c2 = sheets.get("cohort2_optional_mcq_sheet") if sheets else None
+    if not (c2 and isinstance(c2, dict) and _nonempty_dataframe(c2.get("df"))):
+        return False
+
+    if sheets.get("submission_sheet_name") and _nonempty_dataframe(sheets.get("submission_df")):
+        return False
+    if _sheets_has_codelab_data(sheets):
+        return False
+    for lc in sheets.get("lab_completion_sheets") or []:
+        if _nonempty_dataframe(lc.get("df")):
+            return False
+    for m in sheets.get("main_mcq_sheets") or []:
+        if _nonempty_dataframe(m.get("df")):
+            return False
+    for om in sheets.get("optional_mcq_sheets") or []:
+        if _nonempty_dataframe(om.get("df")):
+            return False
+    for ps in sheets.get("project_submission_sheets") or []:
+        if _nonempty_dataframe(ps.get("df")):
+            return False
+    return True
+
+
+def cohort2_action_center_optional_mcq_only_classification(classification):
+    """Preview-time counterpart to cohort2_action_center_optional_mcq_only."""
+    detected = (classification or {}).get("detected_by_module", {}) or {}
+    if not detected.get("cohort2_optional_mcq"):
+        return False
+    for module in (
+        "skilllab_submission",
+        "codelab_submission",
+        "lab_completion",
+        "main_mcq",
+        "optional_mcq",
+        "project_submission",
+    ):
+        if detected.get(module):
+            return False
+    return True
 
 
 def action_center_preview_has_recognized_imports(preview):
@@ -399,6 +506,10 @@ def action_center_preview_has_recognized_imports(preview):
     if not preview or not isinstance(preview, dict):
         return False
     if preview.get("submission_sheet_name"):
+        return True
+    if preview.get("codelab_sheet_name"):
+        return True
+    if preview.get("codelab_submission_sheets"):
         return True
     if preview.get("mcq_sheets"):
         return True
@@ -441,6 +552,30 @@ def fill_action_center_secondary_preview(file_path, result, classification=None,
             result["submission_sheet_name"] = name
             result["submission_sheet_rows"] = _row_count(name)
             break
+    except Exception:
+        pass
+
+    # Code Lab Submission (all matched tabs)
+    result["codelab_submission_sheets"] = []
+    try:
+        for d in detected.get("codelab_submission", []):
+            name = d.get("sheet_name")
+            if not name:
+                continue
+            track = d.get("track")
+            default_ps = None
+            if track is None and "student" in str(name).lower():
+                default_ps = "Student Track Codelab"
+            result["codelab_submission_sheets"].append({
+                "track": track,
+                "sheet_name": name,
+                "rows": _row_count(name),
+                "default_problem_statement": default_ps,
+            })
+        if result["codelab_submission_sheets"]:
+            first = result["codelab_submission_sheets"][0]
+            result["codelab_sheet_name"] = first["sheet_name"]
+            result["codelab_sheet_rows"] = first["rows"]
     except Exception:
         pass
 
@@ -605,6 +740,7 @@ def load_all_skillboost_sheets(file_path, cohort_id=None):
         'submission_df': None,
         'codelab_sheet_name': None,
         'codelab_df': None,
+        'codelab_submission_sheets': [],
         'lab_completion_sheets': [],
         'main_mcq_sheets': [],
         'optional_mcq_sheets': [],
@@ -645,17 +781,29 @@ def load_all_skillboost_sheets(file_path, cohort_id=None):
                 result['submission_df'] = None
             break
 
-        # Code Lab Submission
+        # Code Lab Submission (all matched tabs — Cohort 2: Student + Professional tracks)
         for det_row in detected.get('codelab_submission', []):
             name = det_row.get('sheet_name')
             if not name:
                 continue
-            result['codelab_sheet_name'] = name
+            track = det_row.get('track')
+            default_ps = None
+            if track is None and 'student' in str(name).lower():
+                default_ps = 'Student Track Codelab'
             try:
-                result['codelab_df'] = pd.read_excel(xl, sheet_name=name)
+                df = pd.read_excel(xl, sheet_name=name)
             except Exception:
-                result['codelab_df'] = None
-            break
+                df = None
+            result['codelab_submission_sheets'].append({
+                'track': track,
+                'sheet_name': name,
+                'df': df,
+                'default_problem_statement': default_ps,
+            })
+        if result['codelab_submission_sheets']:
+            first = result['codelab_submission_sheets'][0]
+            result['codelab_sheet_name'] = first['sheet_name']
+            result['codelab_df'] = first.get('df')
 
         # Lab Completion sheets (preserve registry order)
         for det_row in detected.get('lab_completion', []):
@@ -830,23 +978,25 @@ def get_skillboost_preview(file_path, cohort_id=None):
     profile_rows = detected.get('skillboost_profile', [])
     skill_sheet = profile_rows[0]['sheet_name'] if profile_rows else None
 
-    # Cohort 2: Action Center export may omit the Google Skills sheet — Optional MCQ–only preview
-    # when that tab exists; otherwise full mapping (split exports: submission / forms / quiz files).
+    # Cohort 2: Action Center export may omit the Google Skills sheet — Optional MCQ–only
+    # preview when that is the sole recognised subsheet; otherwise full mapping (Code Lab,
+    # Skill Lab submission, split exports, etc.).
     if cohort_id == 2 and not skill_sheet:
-        c2_rows = detected.get('cohort2_optional_mcq', [])
-        c2_sheet = c2_rows[0]['sheet_name'] if c2_rows else None
-        if c2_sheet:
-            result['cohort2_optional_import_only'] = True
-            try:
-                df = parse_excel_sheet(file_path, c2_sheet)
-                nrows = len(df) if df is not None else 0
-                result['detected_sheet_name'] = c2_sheet
-                result['detected_sheet_rows'] = nrows
-                result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
-                result['cohort2_optional_mcq_sheet'] = {'sheet_name': c2_sheet, 'rows': nrows}
-            except Exception as e:
-                result['error'] = f'Error reading sheet "{c2_sheet}": {str(e)}'
-            return result
+        if cohort2_action_center_optional_mcq_only_classification(classification):
+            c2_rows = detected.get('cohort2_optional_mcq', [])
+            c2_sheet = c2_rows[0]['sheet_name'] if c2_rows else None
+            if c2_sheet:
+                result['cohort2_optional_import_only'] = True
+                try:
+                    df = parse_excel_sheet(file_path, c2_sheet)
+                    nrows = len(df) if df is not None else 0
+                    result['detected_sheet_name'] = c2_sheet
+                    result['detected_sheet_rows'] = nrows
+                    result['columns'] = list(df.columns) if df is not None and len(df) > 0 else []
+                    result['cohort2_optional_mcq_sheet'] = {'sheet_name': c2_sheet, 'rows': nrows}
+                except Exception as e:
+                    result['error'] = f'Error reading sheet "{c2_sheet}": {str(e)}'
+                return result
         result['cohort2_optional_import_only'] = False
         result['action_center_profile_sheet_missing'] = True
         fill_action_center_secondary_preview(
@@ -1004,6 +1154,24 @@ def truncate_record_strings(data):
             data[key] = val[:max_len]
 
 
+def apply_title_categories_to_record(data):
+    """Populate sub_category and broad_category from designation (Cohort 2+)."""
+    try:
+        from flask import g
+        if getattr(g, "cohort_id", None) not in (2, 3):
+            return
+    except RuntimeError:
+        return
+    designation = data.get("designation")
+    if not designation:
+        return
+    from server.utils.title_map import get_title_categories
+
+    sub, broad = get_title_categories(designation)
+    data["sub_category"] = sub
+    data["broad_category"] = broad
+
+
 def normalize_field_name(name):
     """
     Normalize field name for matching
@@ -1040,12 +1208,26 @@ def auto_map_fields(excel_columns):
         'collegeschoolstate',   # College/School State
         'collegeschoolcity',    # College/School city
         'profilename',          # Profile Name
+        'innovator',
+        'utmsource',
+        'utmcampaign',
+        'utmterm',
+        'utmcontent',
+        'portfolio',
+        'foundedinstartupsize',
+        'degreepassoutyear',
+        'whatsapp',
+        'role',
     }
 
     # Explicit Excel header -> DB field (normalized header -> db field)
     explicit_column_map = {
         'timestamp': 'registered_at',
         'collegeschoolcompanystartupname': 'organization_name',  # College/School/Company/Startup Name
+        'fullname': 'name',
+        'name': 'name',
+        'designationyearofexp': 'designation',
+        'classstream': 'class_stream',
     }
 
     # Create normalized versions for matching
@@ -1091,6 +1273,8 @@ def auto_map_fields(excel_columns):
                     'linkedin': 'linkedin_url',
                     'utmmedium': 'utm_medium',
                     'utm_medium': 'utm_medium',
+                    'title': 'designation',
+                    'jobtitle': 'designation',
                 }
 
                 for alias, db_field in alias_map.items():
@@ -1209,6 +1393,7 @@ def import_data(df, mappings, mode='create', progress_callback=None):
                     data[db_field] = value
             
             truncate_record_strings(data)
+            apply_title_categories_to_record(data)
             
             # Email is required
             if not data.get('email'):
@@ -1511,6 +1696,7 @@ def import_data_injected(df, mappings, mode='create', progress_callback=None):
                     data[db_field] = value
 
             truncate_record_strings(data)
+            apply_title_categories_to_record(data)
             if not data.get('email'):
                 skipped += 1
                 if len(errors) < 100:
@@ -1971,15 +2157,20 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
 
     inserted_this_run = set()
 
-    for index, row in df.iterrows():
+    email_idx = df.columns.get_loc(email_col)
+    link_idx = df.columns.get_loc(profile_link_col)
+    email_series = df.iloc[:, email_idx]
+    link_series = df.iloc[:, link_idx]
+
+    for row_pos in range(total_rows):
         try:
-            email_val = row.get(email_col)
-            link_val = row.get(profile_link_col)
+            email_val = email_series.iat[row_pos]
+            link_val = link_series.iat[row_pos]
             if pd.isna(email_val):
                 skipped += 1
                 skip_reason_counts['missing_email'] += 1
                 _record_row_error(errors, rows_errors, _classify_row_error(
-                    index, None, raw_email='', reason_code='missing_email',
+                    row_pos, None, raw_email='', reason_code='missing_email',
                     reason_message='Missing email',
                 ))
                 continue
@@ -1988,7 +2179,7 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 skipped += 1
                 skip_reason_counts['missing_email'] += 1
                 _record_row_error(errors, rows_errors, _classify_row_error(
-                    index, None, raw_email='', reason_code='missing_email',
+                    row_pos, None, raw_email='', reason_code='missing_email',
                     reason_message='Missing email',
                 ))
                 continue
@@ -2004,20 +2195,12 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 if rec.valid:
                     skipped += 1
                     skip_reason_counts['profile_verified_no_update'] += 1
-                    _record_row_error(errors, rows_errors, _classify_row_error(
-                        index, None, raw_email=email,
-                        reason_code='profile_verified_no_update',
-                        reason_message=(
-                            'This email + profile link already exists and is verified '
-                            '(valid=TRUE); the row was not changed.'
-                        ),
-                    ))
                     continue
                 if key in inserted_this_run:
                     skipped += 1
                     skip_reason_counts['duplicate_row_in_workbook'] += 1
                     _record_row_error(errors, rows_errors, _classify_row_error(
-                        index, None, raw_email=email,
+                        row_pos, None, raw_email=email,
                         reason_code='duplicate_row_in_workbook',
                         reason_message=(
                             'Duplicate email + profile link after an earlier row in '
@@ -2041,7 +2224,7 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
                 inserted_this_run.add(key)
                 created += 1
 
-            if progress_callback:
+            if progress_callback and (row_pos % 250 == 0 or row_pos == total_rows - 1):
                 try:
                     progress_callback(created, updated, skipped)
                 except Exception:
@@ -2049,7 +2232,7 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
         except Exception as e:
             skipped += 1
             err_d = _classify_row_error(
-                index, e, raw_email=str(row.get(email_col) or '')[:255],
+                row_pos, e, raw_email=str(email_val or '')[:255],
             )
             skip_reason_counts[err_d.get('reason_code') or 'other'] += 1
             _record_row_error(errors, rows_errors, err_d)
@@ -2095,7 +2278,7 @@ def import_skillboost_profile(df, email_col, profile_link_col, progress_callback
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Skill Lab Submission import (upsert by leader_email)
+# Skill Lab Submission import (one DB row per sheet row; dedupe on re-import)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Column name mapping: normalised XLSX header -> model attribute
@@ -2656,19 +2839,54 @@ def import_project_submission_scores(df, track_number, progress_callback=None, a
     }
 
 
+def _skilllab_submission_fingerprint(email: str, data: dict) -> tuple:
+    """Unique import key: leader email + submission link (upload_screenshot)."""
+    link = (data.get('upload_screenshot') or '').strip().lower()
+    return (email, link)
+
+
+def _load_skilllab_import_fingerprints(SkillLabSubmission, emails_in_sheet):
+    """Fingerprints of rows already stored for leaders in this import."""
+    from sqlalchemy import func
+
+    fingerprints = set()
+    if not emails_in_sheet:
+        return fingerprints
+    try:
+        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
+            if not chunk:
+                continue
+            for srow in SkillLabSubmission.query.filter(
+                func.lower(SkillLabSubmission.leader_email).in_(chunk)
+            ).all():
+                fp = _skilllab_submission_fingerprint(
+                    (srow.leader_email or '').strip().lower(),
+                    {'upload_screenshot': srow.upload_screenshot},
+                )
+                fingerprints.add(fp)
+    except Exception:
+        pass
+    return fingerprints
+
+
 def import_skilllab_submission(df, progress_callback=None):
     """
     Import Skill Lab submissions from a DataFrame into skilllab_submission.
-    Upsert by leader_email: if a row with that leader_email exists, update it;
-    otherwise create a new row.
+    Inserts one row per sheet row; multiple rows per leader_email are kept when
+    the submission link differs. Re-import skips rows that already exist for the
+    same (leader_email, upload_screenshot) pair.
+
+    Verification fields (valid, remark) on existing rows are never overwritten.
+    Metrics use only the latest valid submission per leader and track; see
+    server.utils.skilllab_submission_selection.
 
     Robustness: every row runs in its own SAVEPOINT
     (db.session.begin_nested) so a single FK / integrity error never poisons
     the rest of the batch. Missing user_pii rows for leaders in the sheet are
     auto-created up front.
 
-    Returns dict with total_rows, created, updated, skipped, errors,
-    rows_errors, pii_auto_created, pii_auto_skipped.
+    Returns dict with total_rows, created, updated, skipped, skipped_duplicate,
+    errors, rows_errors, pii_auto_created, pii_auto_skipped.
     """
     from server.models import db
 
@@ -2691,10 +2909,9 @@ def import_skilllab_submission(df, progress_callback=None):
     created = 0
     updated = 0
     skipped = 0
+    skipped_duplicate = 0
     errors = []
     rows_errors = []
-
-    from sqlalchemy import func
 
     pii_pre = _ensure_user_pii_for_leaders(
         df, leader_email_col, name_col=leader_name_col, phone_col=leader_phone_col,
@@ -2709,17 +2926,9 @@ def import_skilllab_submission(df, progress_callback=None):
     except Exception:
         pass
 
-    existing = {}
-    try:
-        for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
-            if not chunk:
-                continue
-            for srow in SkillLabSubmission.query.filter(
-                func.lower(SkillLabSubmission.leader_email).in_(chunk)
-            ).all():
-                existing[srow.leader_email.lower()] = srow
-    except Exception:
-        pass
+    existing_fingerprints = _load_skilllab_import_fingerprints(
+        SkillLabSubmission, emails_in_sheet,
+    )
 
     for index, row in df.iterrows():
         email_val = row.get(leader_email_col)
@@ -2772,20 +2981,15 @@ def import_skilllab_submission(df, progress_callback=None):
 
                 data['leader_email'] = email
 
-                rec = existing.get(email)
-                if rec:
-                    for field, val in data.items():
-                        if field == 'leader_email':
-                            continue
-                        if val is not None:
-                            setattr(rec, field, val)
-                    rec.updated_at = datetime.utcnow()
-                    updated += 1
-                else:
-                    rec = SkillLabSubmission(**data)
-                    db.session.add(rec)
-                    existing[email] = rec
-                    created += 1
+                fp = _skilllab_submission_fingerprint(email, data)
+                if fp in existing_fingerprints:
+                    skipped_duplicate += 1
+                    continue
+
+                rec = SkillLabSubmission(**data)
+                db.session.add(rec)
+                existing_fingerprints.add(fp)
+                created += 1
 
             if progress_callback:
                 try:
@@ -2809,6 +3013,7 @@ def import_skilllab_submission(df, progress_callback=None):
         'created': created,
         'updated': updated,
         'skipped': skipped,
+        'skipped_duplicate': skipped_duplicate,
         'errors': errors[:100],
         'rows_errors': rows_errors,
         'pii_auto_created': pii_pre.get('pii_auto_created', 0),
@@ -2816,11 +3021,19 @@ def import_skilllab_submission(df, progress_callback=None):
     }
 
 
-def import_codelab_submission(df, progress_callback=None):
+def import_codelab_submission(
+    df,
+    progress_callback=None,
+    sheet_track_number=None,
+    default_problem_statement=None,
+):
     """
     Import Code Lab submissions from a DataFrame into codelab_submission.
-    Upsert by leader_email: if a row with that leader_email exists, update it;
-    otherwise create a new row. Uses same column mapping as Skill Lab.
+
+    Cohort 1 (single "Code Lab Submission" tab): upsert by leader_email only.
+    Cohort 2 (per-track tabs): upsert by (leader_email, track_number,
+    problem_statement) when sheet_track_number and/or default_problem_statement
+    are set (Professional Track N / Student Track sheets).
 
     Per-row SAVEPOINT (db.session.begin_nested) isolates row failures and
     missing user_pii rows for leaders are auto-created up front.
@@ -2867,6 +3080,9 @@ def import_codelab_submission(df, progress_callback=None):
     except Exception:
         pass
 
+    use_composite_key = (
+        sheet_track_number is not None or default_problem_statement is not None
+    )
     existing = {}
     try:
         for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
@@ -2875,7 +3091,15 @@ def import_codelab_submission(df, progress_callback=None):
             for crow in CodeLabSubmission.query.filter(
                 func.lower(CodeLabSubmission.leader_email).in_(chunk)
             ).all():
-                existing[crow.leader_email.lower()] = crow
+                if use_composite_key:
+                    key = (
+                        crow.leader_email.lower(),
+                        crow.track_number,
+                        crow.problem_statement or '',
+                    )
+                    existing[key] = crow
+                else:
+                    existing[crow.leader_email.lower()] = crow
     except Exception:
         pass
 
@@ -2929,8 +3153,20 @@ def import_codelab_submission(df, progress_callback=None):
                     data[model_field] = val
 
                 data['leader_email'] = email
+                if sheet_track_number is not None:
+                    data['track_number'] = sheet_track_number
+                if default_problem_statement and not data.get('problem_statement'):
+                    data['problem_statement'] = default_problem_statement
 
-                rec = existing.get(email)
+                if use_composite_key:
+                    lookup_key = (
+                        email,
+                        data.get('track_number'),
+                        data.get('problem_statement') or '',
+                    )
+                    rec = existing.get(lookup_key)
+                else:
+                    rec = existing.get(email)
                 if rec:
                     for field, val in data.items():
                         if field == 'leader_email':
@@ -2942,7 +3178,10 @@ def import_codelab_submission(df, progress_callback=None):
                 else:
                     rec = CodeLabSubmission(**data)
                     db.session.add(rec)
-                    existing[email] = rec
+                    if use_composite_key:
+                        existing[lookup_key] = rec
+                    else:
+                        existing[email] = rec
                     created += 1
 
             if progress_callback:
@@ -2972,6 +3211,49 @@ def import_codelab_submission(df, progress_callback=None):
         'pii_auto_created': pii_pre.get('pii_auto_created', 0),
         'pii_auto_skipped': pii_pre.get('pii_auto_skipped', 0),
     }
+
+
+def import_codelab_submission_sheets(codelab_sheets, progress_callback=None):
+    """Import one or more Code Lab worksheets; aggregate counts for the API response."""
+    totals = {
+        'total_rows': 0,
+        'created': 0,
+        'updated': 0,
+        'skipped': 0,
+        'errors': [],
+        'rows_errors': [],
+        'pii_auto_created': 0,
+        'pii_auto_skipped': 0,
+        'sheets': [],
+    }
+    if not codelab_sheets:
+        return totals
+
+    for sheet_info in codelab_sheets:
+        df = sheet_info.get('df')
+        if not _nonempty_dataframe(df):
+            continue
+        one = import_codelab_submission(
+            df,
+            progress_callback=progress_callback,
+            sheet_track_number=sheet_info.get('track'),
+            default_problem_statement=sheet_info.get('default_problem_statement'),
+        )
+        one['sheet_name'] = sheet_info.get('sheet_name', '')
+        one['track'] = sheet_info.get('track')
+        totals['sheets'].append(one)
+        totals['total_rows'] += one.get('total_rows', 0) or 0
+        totals['created'] += one.get('created', 0) or 0
+        totals['updated'] += one.get('updated', 0) or 0
+        totals['skipped'] += one.get('skipped', 0) or 0
+        totals['pii_auto_created'] += one.get('pii_auto_created', 0) or 0
+        totals['pii_auto_skipped'] += one.get('pii_auto_skipped', 0) or 0
+        if one.get('errors'):
+            totals['errors'].extend(one['errors'])
+        if one.get('rows_errors'):
+            totals['rows_errors'].extend(one['rows_errors'])
+    totals['errors'] = totals['errors'][:100]
+    return totals
 
 
 def import_lab_completion_sheet(df, track_number, lab_number, progress_callback=None):

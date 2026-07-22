@@ -269,7 +269,11 @@ def get_profile_detail(profile_id):
         
         skilllab_submissions = []
         try:
-            subs = SL_m.query.filter_by(leader_email=profile.email).all()
+            subs = (
+                SL_m.query.filter_by(leader_email=profile.email)
+                .order_by(SL_m.created_at.desc())
+                .all()
+            )
             skilllab_submissions = [s.to_dict() for s in subs]
         except Exception:
             pass

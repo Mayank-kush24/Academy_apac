@@ -64,7 +64,11 @@ function redirectByRole() {
 }
 
 function getAuthToken() {
-    return localStorage.getItem('token');
+    // Auth is now driven by the CDI ``h2s_cdi_session`` cookie, not a page-issued
+    // JWT in localStorage. Many legacy pages still do ``if (!token) redirect to /login``
+    // and ``Authorization: Bearer ${token}`` — return a truthy sentinel so those guards
+    // pass. The server ignores the bogus Bearer header when a valid cookie is present.
+    return 'session';
 }
 
 function getCurrentUser() {

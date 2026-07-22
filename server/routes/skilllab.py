@@ -307,9 +307,9 @@ def credit_links():
             for link in links:
                 d = link.to_dict()
                 d['current_allocations'] = count_by_id.get(link.id, 0)
-                # Legacy: Cohort 1 UI historically showed 3000 when DB stored 2000/2500.
-                if getattr(g, "cohort_id", None) == 1 and d.get('max_allocations') in (2000, 2500):
-                    d['max_allocations'] = 3000
+                # Legacy: Cohort 1 UI historically showed 4000 when DB stored 2000/2500/3000.
+                if getattr(g, "cohort_id", None) == 1 and d.get('max_allocations') in (2000, 2500, 3000):
+                    d['max_allocations'] = 4000
                 items.append(d)
             return jsonify({'credit_links': items}), 200
         # POST
@@ -326,7 +326,7 @@ def credit_links():
         for i, item in enumerate(links_data):
             link_url = (item.get('link_url') or '').strip() or None
             display_order = int(item.get('display_order', i + 1))
-            max_allocations = int(item.get('max_allocations', 3000))
+            max_allocations = int(item.get('max_allocations', 4000))
             link = CL(
                 link_url=link_url,
                 display_order=display_order,

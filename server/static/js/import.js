@@ -18,11 +18,156 @@ function _importFetchUrl(u) {
     return u;
 }
 
+function _isCohort3Import() {
+    var page = document.querySelector('.import-page');
+    if (page && page.getAttribute('data-uts-sync') === '1') return true;
+    var fromBody = document.body && document.body.getAttribute('data-cohort-id');
+    if (String(fromBody) === '3') return true;
+    if (typeof getAppCohortId === 'function' && String(getAppCohortId()) === '3') return true;
+    var m = (window.location.pathname || '').match(/\/c\/(\d+)(?:\/|$)/);
+    return !!(m && m[1] === '3');
+}
+
+function _utsFetchUrl(path) {
+    var u = path;
+    if (typeof cohortApiUrl === 'function') return cohortApiUrl(u);
+    // Fallback when cohort.js not loaded yet: append cohort_id=3
+    if (u.indexOf('cohort_id=') === -1 && _isCohort3Import()) {
+        u += (u.indexOf('?') >= 0 ? '&' : '?') + 'cohort_id=3';
+    }
+    return _importFetchUrl(u);
+}
+
+function _renderUtsStatus(status) {
+    status = status || {};
+    var elAt = document.getElementById('utsLastSyncAt');
+    var elStart = document.getElementById('utsRegistrationStart');
+    var elStatus = document.getElementById('utsLastSyncStatus');
+    if (elAt) elAt.textContent = status.last_sync_at || 'Never';
+    if (elStart) elStart.textContent = status.registration_start || '(full sync — no watermark yet)';
+    if (elStatus) elStatus.textContent = status.last_sync_status || '—';
+}
+
+async function loadUtsSyncStatus() {
+    try {
+        var resp = await fetch(_utsFetchUrl('/api/import/uts-sync/status'), {
+            headers: _importAuthHeaders(),
+            credentials: 'same-origin',
+        });
+        var data = await resp.json().catch(function() { return {}; });
+        if (resp.ok && data.status) _renderUtsStatus(data.status);
+    } catch (e) {
+        /* ignore status load errors */
+    }
+}
+
+function _formatUtsResult(data) {
+    var lines = [];
+    var mode = data.full ? 'full (no start watermark)' : 'incremental (with start)';
+    lines.push(data.ok ? 'Sync completed (' + mode + ').' : 'Sync finished with errors (' + mode + ').');
+    if (data.error) lines.push('Error: ' + data.error);
+    lines.push('Started: ' + (data.sync_started_at || '—'));
+    lines.push('Watermark used: ' + (data.registration_start_used || '(none — full fetch)'));
+    lines.push('New watermark: ' + (data.registration_start_new || '—'));
+    var reg = data.registrations || {};
+    lines.push(
+        'Registrations — fetched: ' + (reg.fetched || 0) +
+        ', created: ' + (reg.created || 0) +
+        ', updated: ' + (reg.updated || 0) +
+        ', skipped: ' + (reg.skipped || 0)
+    );
+    var mods = data.modules || {};
+    lines.push(
+        'Modules — listed: ' + (mods.modules_listed || 0) +
+        ', imported: ' + (mods.modules_imported || 0) +
+        ', skipped: ' + (mods.modules_skipped || 0) +
+        ', unknown: ' + (mods.modules_unknown || 0) +
+        ', failed: ' + (mods.modules_failed || 0)
+    );
+    var details = mods.details || [];
+    details.slice(0, 40).forEach(function(d) {
+        lines.push(
+            '  • [' + (d.kind || '?') + '] ' + (d.name || d.id || '') +
+            ' → ' + (d.status || '') +
+            (d.error ? ' (' + d.error + ')' : '') +
+            (d.created != null ? ' c=' + d.created + ' u=' + d.updated : '')
+        );
+    });
+    if (details.length > 40) lines.push('  …and ' + (details.length - 40) + ' more modules');
+    return lines.join('\n');
+}
+
+async function runUtsSync(full) {
+    var btnNow = document.getElementById('utsSyncNowBtn');
+    var btnAll = document.getElementById('utsSyncAllBtn');
+    var spinner = document.getElementById('utsSyncSpinner');
+    var errEl = document.getElementById('utsSyncError');
+    var resEl = document.getElementById('utsSyncResult');
+    if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+    if (resEl) { resEl.style.display = 'none'; resEl.textContent = ''; }
+    if (btnNow) btnNow.disabled = true;
+    if (btnAll) btnAll.disabled = true;
+    if (spinner) {
+        spinner.style.display = 'inline';
+        spinner.innerHTML = full
+            ? '<i class="fas fa-spinner fa-spin"></i> Syncing all data… this may take several minutes'
+            : '<i class="fas fa-spinner fa-spin"></i> Syncing… this may take a few minutes';
+    }
+    try {
+        var resp = await fetch(_utsFetchUrl('/api/import/uts-sync'), {
+            method: 'POST',
+            headers: Object.assign({ 'Content-Type': 'application/json' }, _importAuthHeaders()),
+            credentials: 'same-origin',
+            body: JSON.stringify({ full: !!full }),
+        });
+        var data = await resp.json().catch(function() { return {}; });
+        if (!resp.ok && !data.registrations && !data.modules) {
+            throw new Error(data.error || ('Sync failed (HTTP ' + resp.status + ')'));
+        }
+        if (resEl) {
+            resEl.textContent = _formatUtsResult(data);
+            resEl.style.display = 'block';
+        }
+        if (!data.ok && data.error && errEl) {
+            errEl.textContent = data.error;
+            errEl.style.display = 'block';
+        }
+        await loadUtsSyncStatus();
+    } catch (e) {
+        if (errEl) {
+            errEl.textContent = (e && e.message) || 'Sync failed';
+            errEl.style.display = 'block';
+        }
+    } finally {
+        if (btnNow) btnNow.disabled = false;
+        if (btnAll) btnAll.disabled = false;
+        if (spinner) spinner.style.display = 'none';
+    }
+}
+
+function runUtsSyncNow() {
+    return runUtsSync(false);
+}
+
+function runUtsSyncAll() {
+    return runUtsSync(true);
+}
+
+(function initCohort3UtsSyncUi() {
+    var btn = document.getElementById('utsSyncNowBtn');
+    var btnAll = document.getElementById('utsSyncAllBtn');
+    if (!btn && !btnAll) return;
+    if (btn) btn.addEventListener('click', runUtsSyncNow);
+    if (btnAll) btnAll.addEventListener('click', runUtsSyncAll);
+    loadUtsSyncStatus();
+})();
+
 // Premium file upload zone: show selected file and support drag-and-drop
 (function initFileUploadZone() {
     const zone = document.getElementById('fileUploadZone');
     const fileInput = document.getElementById('excelFile');
     const fileNameDisplay = document.getElementById('fileNameDisplay');
+    if (!zone || !fileInput || !fileNameDisplay) return;
 
     function updateZoneFromInput() {
         const file = fileInput.files[0];
@@ -68,7 +213,10 @@ function _importFetchUrl(u) {
 })();
 
 // Handle file upload
-document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+(function initUploadForm() {
+    var uploadForm = document.getElementById('uploadForm');
+    if (!uploadForm) return;
+    uploadForm.addEventListener('submit', async function(e) {
     e.preventDefault();
     
     const fileInput = document.getElementById('excelFile');
@@ -104,7 +252,8 @@ document.getElementById('uploadForm').addEventListener('submit', async function(
     } catch (error) {
         showError('uploadError', error.message);
     }
-});
+    });
+})();
 
 /**
  * Render field mapping table
@@ -924,9 +1073,20 @@ document.getElementById('skillboostUploadForm').addEventListener('submit', async
         if (skillboostTimeoutId) clearTimeout(skillboostTimeoutId);
         const data = await response.json().catch(function() { return {}; });
         if (!response.ok) {
-            if (errorEl) { errorEl.textContent = data.error || 'Import failed'; errorEl.style.display = 'block'; }
+            var failMsg = data.error || data.message;
+            if (!failMsg) {
+                if (response.status === 409) {
+                    failMsg = 'Some expected sheets are missing. Tick "Import anyway" in the preview banner, then retry.';
+                } else if (response.status === 502 || response.status === 504) {
+                    failMsg = 'Gateway timed out (HTTP ' + response.status + '). The import may still have completed on the server — refresh the dashboard and retry only if counts did not change.';
+                } else {
+                    failMsg = 'Import failed (HTTP ' + response.status + ').';
+                }
+            }
+            if (errorEl) { errorEl.textContent = failMsg; errorEl.style.display = 'block'; }
             return;
         }
+        if (errorEl) errorEl.style.display = 'none';
         if (successEl) {
             var msgHtml = '<div><i class="fas fa-check-circle" style="color: #22c55e;"></i> ' +
                 escapeHtml(data.message || 'Imported ' + (data.created || 0) + ' created, ' + (data.updated || 0) + ' updated, ' + (data.skipped || 0) + ' skipped.') + '</div>';

@@ -22,25 +22,58 @@ from server.utils.skillboost_verify import (
     USER_AGENTS,
 )
 
-# --- expected course cleaning (problem_statement column) ---
+# --- expected course from problem_statement (Skill Lab form options) ---
+
+# Form label (problem_statement column) -> public badge title on Google Skills / Credly.
+_SKILLLAB_PROBLEM_TO_BADGE: tuple[tuple[str, str], ...] = (
+    (
+        "building ai agents with adk",
+        "Engineer AI Agents with Agent Development Kit (ADK)",
+    ),
+    (
+        "conversational analytics with bigquery agents",
+        "Build AI Agents with Enterprise Databases",
+    ),
+    (
+        "ai-assisted data science with bigquery",
+        "Agent Assist and its Gen AI Capabilities",
+    ),
+)
 
 _TRACK_PREFIX_RE = re.compile(
-    r"^\s*\*?\s*(?:\[(?:Professional|Student)\]\s*)?Track\s+\d+\s*-\s*",
+    r"^\s*\*?\s*(?:\[(?:Professional|Student)\]\s*)?Track\s*\d*\s*-\s*",
     re.IGNORECASE,
 )
 
 
-def clean_expected_course(text: Any) -> str:
-    """
-    Strip tier/track prefixes like [Professional] Track X - or [Student] Track Y -
-    and trailing commas/whitespace.
-    """
+def _normalize_problem_statement_key(text: Any) -> str:
+    """Lowercase problem_statement with tier/track prefix removed for lookup."""
     if text is None:
         return ""
     s = str(text).strip()
     s = _TRACK_PREFIX_RE.sub("", s)
-    s = s.rstrip(" ,").strip()
-    return s
+    return s.rstrip(" ,").strip().lower()
+
+
+def resolve_expected_badge_course(problem_statement: Any) -> str:
+    """
+    Map Skill Lab problem_statement dropdown values to the badge title shown on
+    Google Skills Boost / Credly. Falls back to legacy prefix-stripping when unknown.
+    """
+    key = _normalize_problem_statement_key(problem_statement)
+    if not key:
+        return ""
+    for needle, badge_title in _SKILLLAB_PROBLEM_TO_BADGE:
+        if needle in key:
+            return badge_title
+    # Legacy cohort / sheets where problem_statement already contains the badge name
+    legacy = _TRACK_PREFIX_RE.sub("", str(problem_statement).strip()).rstrip(" ,").strip()
+    return legacy
+
+
+def clean_expected_course(text: Any) -> str:
+    """Expected badge course title for verify_badge (from problem_statement)."""
+    return resolve_expected_badge_course(text)
 
 
 # --- course name normalization + fuzzy match ---
@@ -184,10 +217,25 @@ def _date_to_iso(d: Optional[date]) -> Optional[str]:
 
 # --- Google ---
 
-GOOGLE_HOSTS = frozenset({"www.cloudskillsboost.google", "www.skills.google"})
+GOOGLE_HOSTS = frozenset({
+    "www.cloudskillsboost.google",
+    "cloudskillsboost.google",
+    "www.skills.google",
+    "skills.google",
+    "partner.skills.google",
+})
 GOOGLE_BADGE_PATH_RE = re.compile(
     r"^/public_profiles/[a-zA-Z0-9\-]+/badges/\d+/?$",
 )
+
+
+def _is_google_badge_host(host: str) -> bool:
+    h = (host or "").lower()
+    if not h:
+        return False
+    if h in GOOGLE_HOSTS:
+        return True
+    return h.endswith(".skills.google") or h.endswith(".cloudskillsboost.google")
 
 
 class GoogleSkillboostVerifier:
@@ -199,8 +247,11 @@ class GoogleSkillboostVerifier:
         host = (parsed.netloc or "").lower()
         if not host:
             return False, "Invalid host (empty)"
-        if host not in GOOGLE_HOSTS:
-            return False, "Incorrect Domain (must be www.cloudskillsboost.google or www.skills.google)"
+        if not _is_google_badge_host(host):
+            return False, (
+                "Incorrect Domain (must be Google Skills / Cloud Skills Boost, e.g. "
+                "www.skills.google or www.cloudskillsboost.google)"
+            )
         path = parsed.path or ""
         if not GoogleSkillboostVerifier.PATH_RE.match(path):
             return False, "Incorrect Path (must match /public_profiles/{id}/badges/{numeric_id})"
@@ -359,7 +410,7 @@ class CredlyVerifier:
 
 def _detect_platform(parsed) -> Optional[str]:
     host = (parsed.netloc or "").lower()
-    if host in GOOGLE_HOSTS:
+    if _is_google_badge_host(host):
         return "google"
     if host in CREDLY_HOSTS:
         return "credly"

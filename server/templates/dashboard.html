@@ -71,6 +71,25 @@
                     </div>
                 </div>
             </div>
+            {% elif cohort_id == 3 %}
+            <div class="glass-card kpi-hero kpi-hero-net-new" title="Total registrations in this view minus distinct users that also appear in Cohort 1 or Cohort 2">
+                <div class="kpi-hero-body">
+                    <div class="kpi-hero-body__head">
+                        <div class="kpi-icon"><i class="fas fa-user-plus"></i></div>
+                        <div class="kpi-label">Net new registrations</div>
+                    </div>
+                    <div class="kpi-content">
+                        <div class="kpi-value" id="netNewRegistrationsHero">-</div>
+                        <p class="kpi-hero-sublabel">Excludes users already in Cohort 1 or 2</p>
+                    </div>
+                </div>
+                <div class="kpi-hero-footer">
+                    <div class="kpi-footer-stat" id="netNewRegistrationsFooterStat" aria-live="polite"></div>
+                    <div class="kpi-sparkline">
+                        <canvas id="netNewRegistrationsMiniChart" width="100" height="28"></canvas>
+                    </div>
+                </div>
+            </div>
             {% endif %}
 
             <div class="glass-card kpi-hero">
@@ -252,6 +271,17 @@
                     <div class="kpi-small-label">Cohort 1 → Cohort 2</div>
                     <div class="kpi-small-value" id="cohort1Cohort2OverlapUsers">—</div>
                     <div class="cohort-c1-c2-overlap-meta">Users who registered in Cohort 1 and again in Cohort 2</div>
+                </div>
+            </div>
+            {% elif cohort_id == 3 %}
+            <div class="glass-card kpi-small cohort-c1-c2-overlap-card" title="Distinct Cohort 3 users whose email also appears in Cohort 1 or Cohort 2 (matches selected time range for Cohort 3)">
+                <div class="kpi-small-icon">
+                    <i class="fas fa-link"></i>
+                </div>
+                <div class="kpi-small-content">
+                    <div class="kpi-small-label">Prior cohorts → Cohort 3</div>
+                    <div class="kpi-small-value" id="priorCohortsOverlapUsers">—</div>
+                    <div class="cohort-c1-c2-overlap-meta" id="priorCohortsOverlapMeta">From C1 / C2 breakdown loads with dashboard data</div>
                 </div>
             </div>
             {% endif %}
@@ -457,6 +487,26 @@
                 </div>
             </div>
         </div>
+
+        {% if cohort_id in (2, 3) %}
+        <!-- Broad Category (Cohort 2/3 title taxonomy) -->
+        <div class="ranking-row ranking-row-single" id="broadCategorySection">
+            <div class="glass-card chart-ranking">
+                <div class="chart-header">
+                    <div>
+                        <h3 class="chart-title">Broad Category</h3>
+                        <p class="chart-subtitle" id="broadCategorySubtitle">Professional, startup &amp; freelance · click a bar to drill down</p>
+                    </div>
+                    <button class="seg-back-btn" id="broadCategoryBackBtn" title="Back to broad categories" style="display:none;">
+                        <i class="fas fa-arrow-left"></i> Broad categories
+                    </button>
+                </div>
+                <div class="chart-container-medium">
+                    <canvas id="broadCategoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+        {% endif %}
 
         <!-- Registration source + Gender (+ Occupation when enabled) -->
         <div class="bifurcation-row{% if 'occupation-distribution-dashboard' in _hide %} bifurcation-row--two{% endif %}">

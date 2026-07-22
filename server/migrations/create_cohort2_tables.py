@@ -62,6 +62,8 @@ CREATE TABLE IF NOT EXISTS {PREFIX}user_pii (
     bob_match         BOOLEAN       NOT NULL DEFAULT FALSE,
     industry          VARCHAR(255),
     persona           VARCHAR(100),
+    sub_category      VARCHAR(255),
+    broad_category    VARCHAR(100),
     created_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMP     NOT NULL DEFAULT NOW()
 );
@@ -90,6 +92,8 @@ CREATE TABLE IF NOT EXISTS {PREFIX}user_pii_injected (
     bob_match         BOOLEAN       NOT NULL DEFAULT FALSE,
     industry          VARCHAR(255),
     persona           VARCHAR(100),
+    sub_category      VARCHAR(255),
+    broad_category    VARCHAR(100),
     created_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMP     NOT NULL DEFAULT NOW()
 );
@@ -110,7 +114,7 @@ CREATE TABLE IF NOT EXISTS {PREFIX}credit_links (
     id              SERIAL    PRIMARY KEY,
     link_url        VARCHAR(1024),
     display_order   INTEGER   NOT NULL DEFAULT 0,
-    max_allocations INTEGER   NOT NULL DEFAULT 3000,
+    max_allocations INTEGER   NOT NULL DEFAULT 4000,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 """

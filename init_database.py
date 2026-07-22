@@ -12,7 +12,7 @@ if project_root not in sys.path:
 
 from sqlalchemy import text
 from server.app import create_app
-from server.models import db, User, UserPII, ActivityLog, BobCompany, SkillboostProfile, CreditLink, OptionalMcqResponse
+from server.models import db, UserPII, ActivityLog, BobCompany, SkillboostProfile, CreditLink, OptionalMcqResponse
 
 def init_database():
     """Initialize database and create all tables"""
@@ -32,11 +32,6 @@ def init_database():
             print("\nVerifying tables...")
             inspector = db.inspect(db.engine)
             tables = inspector.get_table_names()
-            
-            if 'users' in tables:
-                print("OK: 'users' table exists")
-            else:
-                print("FAIL: 'users' table NOT found")
             
             if 'user_pii' in tables:
                 print("OK: 'user_pii' table exists")
@@ -100,12 +95,23 @@ def init_database():
 
             if 'credit_links' in tables:
                 print("OK: 'credit_links' table exists")
-                # One-time: raise max_allocations from 2000/2500 to 3000
+                # One-time: raise max_allocations from legacy caps to 4000
                 try:
                     with db.engine.connect() as conn:
-                        conn.execute(text("UPDATE credit_links SET max_allocations = 3000 WHERE max_allocations IN (2000, 2500)"))
+                        conn.execute(text(
+                            "UPDATE credit_links SET max_allocations = 4000 "
+                            "WHERE max_allocations IN (2000, 2500, 3000)"
+                        ))
+                        conn.execute(text(
+                            "UPDATE cohort_2_credit_links SET max_allocations = 4000 "
+                            "WHERE max_allocations IN (2000, 2500, 3000)"
+                        ))
+                        conn.execute(text(
+                            "UPDATE cohort_3_credit_links SET max_allocations = 4000 "
+                            "WHERE max_allocations IN (2000, 2500, 3000)"
+                        ))
                         conn.commit()
-                    print("OK: credit_links max_allocations 2000/2500 -> 3000 (if any were 2000 or 2500)")
+                    print("OK: credit_links max_allocations -> 4000 (where 2000/2500/3000)")
                 except Exception as ex:
                     print("WARN: credit_links max_allocations migration:", str(ex))
             else:
@@ -191,15 +197,6 @@ def init_database():
             else:
                 print("FAIL: 'main_mcq_response' table NOT found")
             
-            # Add allowed_pages column to users if missing (dynamic page access)
-            try:
-                with db.engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS allowed_pages JSONB"))
-                    conn.commit()
-                print("OK: users.allowed_pages column verified")
-            except Exception as ex:
-                print("WARN: Could not add users.allowed_pages (may already exist):", str(ex))
-            
             # Add bob_match column to user_pii if missing (Book of Business match)
             try:
                 with db.engine.connect() as conn:
@@ -218,6 +215,20 @@ def init_database():
             except Exception as ex:
                 print("WARN: Could not add user_pii.utm_medium (may already exist):", str(ex))
 
+            for table in ('user_pii', 'user_pii_injected'):
+                try:
+                    with db.engine.connect() as conn:
+                        conn.execute(text(
+                            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS sub_category VARCHAR(255)"
+                        ))
+                        conn.execute(text(
+                            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS broad_category VARCHAR(100)"
+                        ))
+                        conn.commit()
+                    print(f"OK: {table}.sub_category / broad_category columns verified")
+                except Exception as ex:
+                    print(f"WARN: Could not add title category columns to {table}:", str(ex))
+
             # Indexes for dashboard/analytics (faster filters and aggregations)
             try:
                 with db.engine.connect() as conn:
@@ -233,13 +244,9 @@ def init_database():
             except Exception as ex:
                 print("WARN: Could not create user_pii indexes (may already exist):", str(ex))
 
-            # Check if admin user exists
-            admin_count = User.query.filter_by(role='admin').count()
-            if admin_count == 0:
-                print("\nWARN: No admin users found. Run 'python setup_admin.py' to create one.")
-            else:
-                print(f"\nOK: Found {admin_count} admin user(s)")
-            
+            print("\nNote: authentication is handled by the CDI portal (h2s_cdi_session JWT).")
+            print("There is no local users table to seed; admin/page access is configured in the portal.")
+
             print("\nDatabase initialization complete!")
             
         except Exception as e:

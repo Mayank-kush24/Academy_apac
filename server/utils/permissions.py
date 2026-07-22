@@ -1,21 +1,39 @@
 """
-Role-Based Access Control (RBAC) and page-level access decorators
+Page-level access control for the CDI portal.
+
+This module is JWT-only. The legacy DB-backed ``users`` table is no longer
+consulted; access is decided entirely by the verified ``h2s_cdi_session`` cookie:
+
+- ``isAdmin`` in the JWT  -> all pages, all cohorts.
+- ``moduleAccess[<this module id>]`` -> explicit allow-list of portal page ids
+  (logical ids like ``dashboard`` and/or cohort-scoped ids like ``c2__dashboard``).
+- Missing JWT -> 401. Authenticated but not allowed -> 403.
 """
 from functools import wraps
+from typing import Optional
+
 from flask import g, jsonify
+
 from server.h2s_cdi_auth import get_module_pages
-from server.utils.auth import get_current_user
+from server.utils.auth import PortalUser, get_current_user
+
+
+def _portal_jwt_payload() -> Optional[dict]:
+    u = getattr(g, "user", None)
+    return u if isinstance(u, dict) else None
 
 
 def _portal_jwt_is_admin() -> bool:
-    u = getattr(g, "user", None)
-    return isinstance(u, dict) and bool(u.get("isAdmin"))
+    p = _portal_jwt_payload()
+    return bool(p and p.get("isAdmin"))
 
 
 def _portal_jwt_active() -> bool:
-    return isinstance(getattr(g, "user", None), dict)
+    return _portal_jwt_payload() is not None
 
-# Page ids used in nav and allowed_pages. Slug is the path segment under /c/<cohort_id>/...
+
+# Page ids used in nav and the portal page registration. Slug is the path segment
+# under /c/<cohort_id>/...; ``home`` is the global module landing.
 PAGES = [
     {'id': 'home', 'slug': None, 'path': '/', 'label': 'Home'},
     {'id': 'dashboard', 'slug': 'dashboard', 'path': '/c/<cohort>/dashboard', 'label': 'Dashboard'},
@@ -32,92 +50,69 @@ PAGES = [
     {'id': 'import', 'slug': 'import', 'path': '/c/<cohort>/import', 'label': 'Import Data'},
 ]
 
-# Default roles that can access each page when allowed_pages is not set
-# support: view-only access to home + profiles (use allowed_pages to restrict to those only)
-DEFAULT_PAGE_ROLES = {
-    'home': ['viewer', 'editor', 'admin', 'support'],
-    'dashboard': ['viewer', 'editor', 'admin'],
-    'profiles': ['viewer', 'editor', 'admin', 'support'],
-    'skill_lab_credits': ['viewer', 'editor', 'admin'],
-    'book_of_business': ['viewer', 'editor', 'admin'],
-    'users_registrations': ['viewer', 'editor', 'admin'],
-    'skilllab_submission': ['viewer', 'editor', 'admin'],
-    'codelab_submission': ['viewer', 'editor', 'admin'],
-    'project_submission': ['viewer', 'editor', 'admin'],
-    'optional_mcq_verification': ['viewer', 'editor', 'admin'],
-    'mcq_verification': ['viewer', 'editor', 'admin'],
-    'track_progress_query': ['viewer', 'editor', 'admin'],
-    'import': ['editor', 'admin'],
-}
 
+def can_access_page(user, page_id: str) -> bool:
+    """
+    True if the current request is allowed to access ``page_id``.
 
-def can_access_page(user, page_id):
-    """Return True if user is allowed to access the given page (by allowed_pages or role)."""
+    ``user`` may be ``None`` (portal-only request without DB row) or a
+    :class:`PortalUser`. The decision is made entirely from the JWT.
+    """
     if _portal_jwt_is_admin():
         return True
-    if _portal_jwt_active():
-        mod_pages = get_module_pages()
-        if mod_pages is not None:
-            if len(mod_pages) == 0:
-                return False
-            if page_id in mod_pages:
-                return True
-            from server.cdi_integration import portal_allowlist_allows_logical_page
-
-            return portal_allowlist_allows_logical_page(mod_pages, page_id)
-        return True
-    if not user or user.status != 'active':
+    if not _portal_jwt_active():
         return False
-    if user.allowed_pages is not None and len(user.allowed_pages) > 0:
-        return page_id in user.allowed_pages
-    roles = DEFAULT_PAGE_ROLES.get(page_id, [])
-    return user.role in roles
+    mod_pages = get_module_pages()
+    if mod_pages is None:
+        # Module access not constrained for this user -> all pages allowed.
+        return True
+    if not mod_pages:
+        return False
+    if page_id in mod_pages:
+        return True
+    from server.cdi_integration import portal_allowlist_allows_logical_page
+
+    return portal_allowlist_allows_logical_page(mod_pages, page_id)
 
 
 def require_role(*allowed_roles):
     """
-    Decorator to require specific role(s) for access
-    
-    Usage:
-        @require_role('admin')
-        @require_role('admin', 'editor')
+    Decorator preserved for compatibility with existing route code.
+
+    Portal users are admin or viewer (derived from ``isAdmin``). Non-portal callers
+    are rejected with 401.
     """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if _portal_jwt_is_admin():
                 return f(*args, **kwargs)
-            user = get_current_user()
-            if not user:
+            if not _portal_jwt_active():
                 return jsonify({'error': 'Authentication required'}), 401
-            
-            if user.status != 'active':
-                return jsonify({'error': 'User account is inactive'}), 403
-            
-            if user.role not in allowed_roles:
+            user: Optional[PortalUser] = get_current_user()
+            role = (user.role if user else "viewer")
+            if role not in allowed_roles:
                 return jsonify({'error': 'Insufficient permissions'}), 403
-            
             return f(*args, **kwargs)
         return decorated_function
     return decorator
 
 
-def require_page_access(page_id):
+def require_page_access(page_id: str):
     """
-    Decorator to require access to a page. If user has allowed_pages set, checks page_id is in it;
-    otherwise falls back to role (DEFAULT_PAGE_ROLES for that page).
+    Require access to ``page_id`` based solely on the verified CDI JWT.
+
+    - 401 if no JWT.
+    - 403 if JWT does not grant this page (logical or cohort-scoped form).
     """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
             if _portal_jwt_is_admin():
                 return f(*args, **kwargs)
-            user = get_current_user()
-            if not user:
+            if not _portal_jwt_active():
                 return jsonify({'error': 'Authentication required'}), 401
-            if user.status != 'active':
-                return jsonify({'error': 'User account is inactive'}), 403
-            if not can_access_page(user, page_id):
+            if not can_access_page(None, page_id):
                 return jsonify({'error': 'Access not allowed to this page'}), 403
             return f(*args, **kwargs)
         return decorated_function

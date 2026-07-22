@@ -5,18 +5,33 @@ from unittest.mock import patch
 from server.utils.badge_verify import clean_expected_course, verify_badge
 
 
-def test_clean_expected_course_strips_professional_track_prefix():
+def test_cohort2_student_problem_statement_maps_to_badge_title():
+    raw = "[Student] Track - Building AI Agents with ADK : From Single Agents to Multi-Agent Systems,"
+    assert clean_expected_course(raw) == "Engineer AI Agents with Agent Development Kit (ADK)"
+
+
+def test_cohort2_professional_track1_maps_to_badge_title():
+    raw = "[Professional] Track 1 - Conversational Analytics with BigQuery Agents,"
+    assert clean_expected_course(raw) == "Build AI Agents with Enterprise Databases"
+
+
+def test_cohort2_professional_track2_maps_to_badge_title():
+    raw = "[Professional] Track 2 - AI-Assisted Data Science with BigQuery,"
+    assert clean_expected_course(raw) == "Agent Assist and its Gen AI Capabilities"
+
+
+def test_clean_expected_course_legacy_when_badge_name_in_problem_statement():
     raw = "[Professional] Track 2 - Agent Assist and its Gen AI Capabilities,"
     assert clean_expected_course(raw) == "Agent Assist and its Gen AI Capabilities"
 
 
-def test_clean_expected_course_strips_student_track_prefix():
+def test_clean_expected_course_strips_student_track_prefix_legacy():
     raw = "[Student] Track 3 - Engineer AI Agents with Agent Development Kit (ADK),"
     assert clean_expected_course(raw) == "Engineer AI Agents with Agent Development Kit (ADK)"
 
 
 def test_clean_expected_course_strips_leading_asterisk():
-    raw = "* [Professional] Track 2 - Agent Assist and its Gen AI Capabilities,"
+    raw = "* [Professional] Track 2 - AI-Assisted Data Science with BigQuery,"
     assert clean_expected_course(raw) == "Agent Assist and its Gen AI Capabilities"
 
 
@@ -34,7 +49,7 @@ def test_google_valid_url_matching_title_and_date():
     with patch("server.utils.badge_verify.make_request", return_value=(200, html, GOOGLE_URL)):
         r = verify_badge(
             GOOGLE_URL,
-            "[Professional] Track 2 - Agent Assist and its Gen AI Capabilities,",
+            "[Professional] Track 2 - AI-Assisted Data Science with BigQuery,",
         )
     assert r["status"] == "verified"
     assert r["valid"] is True

@@ -23,14 +23,14 @@ from server.utils.excel_parser import (
     _find_profile_link_column,
     import_skillboost_profile,
     import_skilllab_submission,
-    import_codelab_submission,
+    import_codelab_submission_sheets,
     import_project_submission,
     import_lab_completion_sheet,
     import_main_mcq_response,
     import_optional_mcq_response,
-    load_cohort2_optional_mcq_sheet_only,
     skillboost_sheet_not_found_message,
     action_center_has_non_profile_imports,
+    cohort2_action_center_optional_mcq_only,
     ACTION_CENTER_NO_RECOGNIZED_SHEETS_MESSAGE,
     SKILLLAB_SUBMISSION_SHEET_SUBSTRING,
     CODELAB_SUBMISSION_SHEET_SUBSTRING,
@@ -42,7 +42,7 @@ from server.utils.cohort_participant_models import (
     participant_model,
     snapshot_cohort_globals,
 )
-from server.utils.cache import clear_cache
+from server.utils.cache import clear_cache, clear_dashboard_cache
 from server.utils.skillboost_verify import verify_profile_url
 from server.utils.audit import set_audit_session_vars
 from server.utils.import_file_archive import archive_upload, ImportArchiveError
@@ -158,9 +158,20 @@ def _build_per_sheet_errors(*, profile_result=None, profile_sheet_name=None,
             out.append(block)
 
     if codelab_result and isinstance(codelab_result, dict) and 'error' not in codelab_result:
-        block = _per_sheet_block('codelab_submission', codelab_sheet_name, codelab_result)
-        if block:
-            out.append(block)
+        per_sheet = codelab_result.get('sheets')
+        if per_sheet:
+            for clr in per_sheet:
+                if not isinstance(clr, dict) or 'error' in clr:
+                    continue
+                block = _per_sheet_block(
+                    'codelab_submission', clr.get('sheet_name'), clr, track=clr.get('track'),
+                )
+                if block:
+                    out.append(block)
+        else:
+            block = _per_sheet_block('codelab_submission', codelab_sheet_name, codelab_result)
+            if block:
+                out.append(block)
 
     for mcr in main_mcq_results or []:
         if not isinstance(mcr, dict) or 'error' in mcr:
@@ -193,6 +204,65 @@ def _build_per_sheet_errors(*, profile_result=None, profile_sheet_name=None,
             out.append(block)
 
     return out
+
+
+def _require_cohort3_uts():
+    """Return (error_response, status) if this request is not cohort 3; else (None, None)."""
+    cohort_id = getattr(g, "cohort_id", None)
+    if cohort_id != 3:
+        return jsonify({
+            "error": "UTS sync is only available for Cohort 3.",
+            "cohort_id": cohort_id,
+        }), 400
+    return None, None
+
+
+@bp.route("/uts-sync/status", methods=["GET"])
+@require_page_access("import")
+def uts_sync_status():
+    """Last Cohort 3 UTS sync watermark / status."""
+    err, code = _require_cohort3_uts()
+    if err is not None:
+        return err, code
+    from server.utils.h2s_uts_sync import get_sync_status
+
+    prefix = getattr(g, "table_prefix", None) or "cohort_3_"
+    return jsonify({"ok": True, "status": get_sync_status(prefix)}), 200
+
+
+@bp.route("/uts-sync", methods=["POST"])
+@require_page_access("import")
+def uts_sync_now():
+    """On-demand Cohort 3 sync from Hack2Skill UTS APIs.
+
+    Body/query ``full=true`` omits the registration ``start`` watermark and fetches all data.
+    """
+    err, code = _require_cohort3_uts()
+    if err is not None:
+        return err, code
+    from server.utils.h2s_uts_client import H2SUtsError
+    from server.utils.h2s_uts_sync import run_cohort3_uts_sync
+
+    full = False
+    if request.args.get("full", "").strip().lower() in ("1", "true", "yes"):
+        full = True
+    else:
+        body = request.get_json(silent=True) or {}
+        if isinstance(body, dict):
+            raw = body.get("full")
+            if raw is True or str(raw).strip().lower() in ("1", "true", "yes"):
+                full = True
+
+    prefix = getattr(g, "table_prefix", None) or "cohort_3_"
+    try:
+        result = run_cohort3_uts_sync(prefix=prefix, full=full)
+    except H2SUtsError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)[:500]}), 500
+
+    status = 200 if result.get("ok") else 502
+    return jsonify(result), status
 
 
 @bp.route('/preview', methods=['POST'])
@@ -304,7 +374,7 @@ def execute_import():
                         except Exception:
                             pass
                         try:
-                            clear_cache('_get_dashboard_data_cached')
+                            clear_dashboard_cache()
                         except Exception:
                             pass
                         progress_queue.put({'done': True, 'result': res})
@@ -343,7 +413,7 @@ def execute_import():
         except Exception:
             pass
         try:
-            clear_cache('_get_dashboard_data_cached')
+            clear_dashboard_cache()
         except Exception:
             pass
         return jsonify(result), 200
@@ -401,7 +471,7 @@ def import_bob_companies():
         updated = recalculate_bob_match()
 
         try:
-            clear_cache('_get_dashboard_data_cached')
+            clear_dashboard_cache()
         except Exception:
             pass
 
@@ -426,7 +496,7 @@ def recalculate_bob_matches_only():
 
         updated = recalculate_bob_match()
         try:
-            clear_cache('_get_dashboard_data_cached')
+            clear_dashboard_cache()
         except Exception:
             pass
         return jsonify({
@@ -548,15 +618,13 @@ def import_skillboost_profiles():
         except Exception:
             pass
 
-        # Cohort 2: no Skills profile sheet — if this file has the Cohort 2 Optional MCQ tab, import that only
-        # and return. Otherwise keep the full workbook parse: split Action Center exports (forms / quiz /
-        # submission) may omit both profile and 14.MCQ Optional while still carrying other subsheets.
+        # Cohort 2: no Skills profile sheet — if Optional MCQ is the only recognised subsheet,
+        # import that only and return. When Code Lab / Skill Lab submission / other tabs are also
+        # present, continue through the full import path below (same as Cohort 1).
         if cohort_id == 2 and (not sheets.get('profile_sheet_name') or sheets.get('profile_df') is None):
-            c2_only_sheets = load_cohort2_optional_mcq_sheet_only(file_path)
-            c2 = c2_only_sheets.get('cohort2_optional_mcq_sheet')
+            c2 = sheets.get('cohort2_optional_mcq_sheet')
             c2df = c2.get('df') if c2 else None
-            if c2 and c2df is not None and len(c2df) > 0:
-                sheets = c2_only_sheets
+            if cohort2_action_center_optional_mcq_only(sheets) and c2 and c2df is not None and len(c2df) > 0:
                 optional_mcq_results = []
                 optional_mcq_errors = []
                 try:
@@ -587,7 +655,7 @@ def import_skillboost_profiles():
                 except Exception:
                     pass
                 try:
-                    clear_cache('_get_dashboard_data_cached')
+                    clear_dashboard_cache()
                 except Exception:
                     pass
 
@@ -717,18 +785,29 @@ def import_skillboost_profiles():
             except Exception as sub_err:
                 submission_result = {'error': str(sub_err)}
 
-        # Code Lab Submission (already loaded)
+        # Code Lab Submission (already loaded; Cohort 2 may have Student + Professional track tabs)
         codelab_result = None
         codelab_sheet = sheets.get('codelab_sheet_name')
-        codelab_df = sheets.get('codelab_df')
-        if codelab_sheet and codelab_df is not None and len(codelab_df) > 0:
+        codelab_sheets = sheets.get('codelab_submission_sheets') or []
+        if not codelab_sheets and sheets.get('codelab_df') is not None:
+            codelab_sheets = [{
+                'sheet_name': codelab_sheet,
+                'df': sheets.get('codelab_df'),
+                'track': None,
+                'default_problem_statement': None,
+            }]
+        if codelab_sheets:
             try:
                 from server.utils.audit import set_audit_extra
-                set_audit_extra({"source": "codelab_submission_import", "filename": file.filename, "sheet": codelab_sheet})
+                set_audit_extra({
+                    "source": "codelab_submission_import",
+                    "filename": file.filename,
+                    "sheets": [s.get('sheet_name') for s in codelab_sheets],
+                })
             except Exception:
                 pass
             try:
-                codelab_result = import_codelab_submission(codelab_df)
+                codelab_result = import_codelab_submission_sheets(codelab_sheets)
             except Exception as codelab_err:
                 codelab_result = {'error': str(codelab_err)}
 
@@ -776,7 +855,7 @@ def import_skillboost_profiles():
             except Exception as main_err:
                 main_mcq_errors.append({'track': track, 'sheet_name': main_sheet_name, 'error': str(main_err)})
 
-        # Optional MCQ: Cohort 1 → sheets per track 1–3 (Cohort 2 handled above).
+        # Optional MCQ: Cohort 1 → tracks 1–3; Cohort 2 → "14.MCQ Optional" (track 4).
         optional_mcq_results = []
         optional_mcq_errors = []
         if cohort_oneish:
@@ -802,9 +881,32 @@ def import_skillboost_profiles():
                         'sheet_name': om.get('sheet_name', ''),
                         'error': str(e),
                     })
+        elif cohort_id == 2:
+            c2 = sheets.get('cohort2_optional_mcq_sheet')
+            c2df = c2.get('df') if c2 else None
+            if c2 and c2df is not None and len(c2df) > 0:
+                try:
+                    from server.utils.audit import set_audit_extra
+                    set_audit_extra({
+                        'source': 'optional_mcq_import_cohort2',
+                        'filename': file.filename,
+                        'sheet': c2.get('sheet_name'),
+                    })
+                    omr = import_optional_mcq_response(
+                        c2df, 4, score_from_sheet=True, allow_multiple_per_email=True
+                    )
+                    omr['track'] = 4
+                    omr['sheet_name'] = c2.get('sheet_name')
+                    optional_mcq_results.append(omr)
+                except Exception as e:
+                    optional_mcq_errors.append({
+                        'track': 4,
+                        'sheet_name': c2.get('sheet_name', ''),
+                        'error': str(e),
+                    })
 
         try:
-            clear_cache('_get_dashboard_data_cached')
+            clear_dashboard_cache()
         except Exception:
             pass
         if submission_result and 'error' not in submission_result:
@@ -1115,7 +1217,7 @@ def _verify_skillboost_stream(pending_only=False):
     except Exception:
         pass
     try:
-        clear_cache('_get_dashboard_data_cached')
+        clear_dashboard_cache()
     except Exception:
         pass
 
@@ -1271,7 +1373,7 @@ def _verify_submissions_stream(pending_only=False, min_date=None):
     except Exception:
         pass
     try:
-        clear_cache("_get_dashboard_data_cached")
+        clear_dashboard_cache()
     except Exception:
         pass
 
