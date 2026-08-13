@@ -41,11 +41,27 @@
 .searchable-select-wrap-organization { min-width: 360px; }
 .searchable-select-wrap-organization .searchable-select-dropdown { min-width: 360px; }
 .searchable-select-wrap-organization .searchable-select-list li { white-space: normal; word-break: break-word; }
-@media (max-width: 900px) {
-    .users-stats-section { grid-template-columns: repeat(2, 1fr); }
+.users-filters-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 0.75rem;
 }
-@media (max-width: 480px) {
-    .users-stats-section { grid-template-columns: 1fr; }
+.users-filters-header h3 { margin: 0; font-size: 1rem; font-weight: 600; }
+.users-filters-body.collapsed { display: none; }
+@media (max-width: 768px) {
+    .users-stats-section { grid-template-columns: 1fr !important; }
+    .searchable-select-wrap-organization,
+    .searchable-select-wrap-organization .searchable-select-dropdown { min-width: 0 !important; width: 100% !important; }
+    .users-filters-body:not(.collapsed) { display: block; }
+    .users-filters-row { flex-direction: column !important; align-items: stretch !important; }
+    .users-filters-row > * { min-width: 0 !important; width: 100% !important; max-width: 100% !important; }
+    .users-filters-actions { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+    .users-filters-actions .btn { width: 100%; justify-content: center; min-height: 44px; }
+}
+@media (min-width: 769px) {
+    .users-filters-toggle { display: none !important; }
+    .users-filters-body.collapsed { display: block !important; }
+}
+@media (max-width: 900px) and (min-width: 769px) {
+    .users-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
 }
 </style>
 <div class="dashboard-premium" id="usersRegistrationsPage">
@@ -109,11 +125,18 @@
 
         <div class="glass-card" style="margin-bottom: 1.5rem;">
             <div style="padding: 1rem 1.25rem;">
-                <div style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
-                    <div style="flex: 1; min-width: 200px;">
-                        <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
-                        <input type="text" id="searchInput" class="form-control" placeholder="Name or organization..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
-                    </div>
+                <div class="users-filters-header">
+                    <h3><i class="fas fa-filter"></i> Search &amp; Filters</h3>
+                    <button type="button" class="btn btn-sm btn-secondary users-filters-toggle" id="usersFiltersToggle" onclick="toggleUsersFilters()" aria-expanded="false">
+                        <i class="fas fa-chevron-down" id="usersFiltersToggleIcon"></i> Filters
+                    </button>
+                </div>
+                <div style="margin-bottom: 1rem;">
+                    <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Search</label>
+                    <input type="text" id="searchInput" class="form-control" placeholder="Name or organization..." style="width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1); box-sizing: border-box; min-height: 44px; font-size: 16px;">
+                </div>
+                <div id="usersFiltersBody" class="users-filters-body collapsed">
+                <div class="users-filters-row mobile-filter-stack" style="display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; margin-bottom: 1rem;">
                     <div style="min-width: 180px;" class="searchable-select-wrap">
                         <label class="form-label" style="display: block; margin-bottom: 4px; font-size: 0.875rem; font-weight: 500;">Country</label>
                         <div class="searchable-select" data-filter="country">
@@ -204,6 +227,7 @@
                             <input type="hidden" id="filterIndustry" name="filterIndustry" value="">
                         </div>
                     </div>
+                    <div class="users-filters-actions" style="display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center;">
                     <button type="button" class="btn btn-primary" onclick="applyFilters()">
                         <i class="fas fa-search"></i> Apply
                     </button>
@@ -216,9 +240,11 @@
                     <button type="button" class="btn btn-secondary" id="btnDownloadFiltered" onclick="downloadCSV('filtered')" title="Download filtered data as CSV">
                         <i class="fas fa-filter"></i> Download Filtered
                     </button>
+                    </div>
+                </div>
                 </div>
 
-                <div class="table-responsive">
+                <div class="table-responsive desktop-only-table table-sticky-first">
                     <table class="data-table">
                         <thead>
                             <tr>
@@ -235,6 +261,9 @@
                             <tr><td colspan="7" class="text-center">Loading...</td></tr>
                         </tbody>
                     </table>
+                </div>
+                <div id="usersCardList" class="data-card-list mobile-only-cards" aria-live="polite">
+                    <div class="data-card" style="cursor:default;opacity:0.7;">Loading...</div>
                 </div>
                 <div id="paginationBar" class="pagination-bar" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; flex-wrap: wrap; gap: 0.5rem;"></div>
             </div>
@@ -255,8 +284,10 @@
 
     function renderTable(rows) {
         var tbody = document.getElementById('tableBody');
+        var cardList = document.getElementById('usersCardList');
         if (!rows || rows.length === 0) {
             tbody.innerHTML = '<tr><td colspan="7" class="text-center">No users found.</td></tr>';
+            if (cardList) cardList.innerHTML = '<div class="data-card" style="cursor:default;"><div class="data-card-title">No users found</div></div>';
             return;
         }
         tbody.innerHTML = rows.map(function(r) {
@@ -275,7 +306,45 @@
             var industry = rawIndustry ? escapeHtml(rawIndustry) : (isProfessional ? 'Other' : '<span class="text-muted">—</span>');
             return '<tr><td>' + name + '</td><td>' + country + '</td><td>' + state + '</td><td>' + city + '</td><td>' + org + '</td><td>' + designation + '</td><td>' + industry + '</td></tr>';
         }).join('');
+        if (cardList) {
+            cardList.innerHTML = rows.map(function(r) {
+                var name = (r.name && r.name.trim()) ? escapeHtml(r.name) : '—';
+                var org = (r.organization && r.organization.trim()) ? escapeHtml(r.organization) : '—';
+                var country = (r.country && r.country.trim()) ? escapeHtml(r.country) : '—';
+                var city = (r.city && r.city.trim()) ? escapeHtml(r.city) : '—';
+                var state = (r.state && r.state.trim()) ? escapeHtml(r.state) : '—';
+                var rawDesig = (r.occupation && r.occupation.toLowerCase().indexOf('student') !== -1)
+                    ? 'Student'
+                    : (r.designation && r.designation.trim()) ? r.designation.replace(/\s*\(.*?\)\s*$/, '').trim() : '';
+                var designation = rawDesig ? escapeHtml(rawDesig) : '—';
+                var occ = (r.occupation || '').toLowerCase();
+                var isProfessional = occ.indexOf('professional') !== -1 || occ.indexOf('startup') !== -1 || occ.indexOf('freelance') !== -1;
+                var rawIndustry = (r.industry && r.industry.trim()) ? r.industry.trim() : '';
+                var industry = rawIndustry ? escapeHtml(rawIndustry) : (isProfessional ? 'Other' : '—');
+                var locParts = [city, state, country].filter(function(x) { return x && x !== '—'; });
+                var location = locParts.length ? locParts.join(', ') : '—';
+                return '<div class="data-card" style="cursor:default;">' +
+                    '<div class="data-card-title">' + name + '</div>' +
+                    '<div class="data-card-subtitle">' + org + '</div>' +
+                    '<div class="data-card-meta">' +
+                    '<div class="data-card-row"><span class="data-card-label">Location</span><span class="data-card-value">' + location + '</span></div>' +
+                    '<div class="data-card-row"><span class="data-card-label">Designation</span><span class="data-card-value">' + designation + '</span></div>' +
+                    '<div class="data-card-row"><span class="data-card-label">Industry</span><span class="data-card-value">' + industry + '</span></div>' +
+                    '</div></div>';
+            }).join('');
+        }
     }
+
+    window.toggleUsersFilters = function() {
+        var body = document.getElementById('usersFiltersBody');
+        var icon = document.getElementById('usersFiltersToggleIcon');
+        var btn = document.getElementById('usersFiltersToggle');
+        if (!body) return;
+        var open = body.classList.contains('collapsed');
+        body.classList.toggle('collapsed', !open);
+        if (icon) icon.className = open ? 'fas fa-chevron-up' : 'fas fa-chevron-down';
+        if (btn) btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    };
 
     function renderPagination(data) {
         var bar = document.getElementById('paginationBar');

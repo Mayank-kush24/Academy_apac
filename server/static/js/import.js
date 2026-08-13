@@ -38,14 +38,46 @@ function _utsFetchUrl(path) {
     return _importFetchUrl(u);
 }
 
+function _utsStatusTone(raw) {
+    var s = String(raw || '').toLowerCase();
+    if (!s || s === '—' || s === '-') return '';
+    if (/(ok|success|complete|done)/.test(s)) return 'is-ok';
+    if (/(fail|error)/.test(s)) return 'is-error';
+    if (/(run|partial|warn)/.test(s)) return 'is-running';
+    return '';
+}
+
 function _renderUtsStatus(status) {
     status = status || {};
     var elAt = document.getElementById('utsLastSyncAt');
     var elStart = document.getElementById('utsRegistrationStart');
     var elStatus = document.getElementById('utsLastSyncStatus');
     if (elAt) elAt.textContent = status.last_sync_at || 'Never';
-    if (elStart) elStart.textContent = status.registration_start || '(full sync — no watermark yet)';
-    if (elStatus) elStatus.textContent = status.last_sync_status || '—';
+    if (elStart) elStart.textContent = status.registration_start || 'No watermark yet';
+    if (elStatus) {
+        var rawStatus = status.last_sync_status || '—';
+        elStatus.textContent = rawStatus;
+        elStatus.className = 'uts-metric-value uts-metric-status ' + _utsStatusTone(rawStatus);
+    }
+
+    var elGap = document.getElementById('utsGapWarning');
+    if (!elGap) return;
+    var gaps = status.registration_gaps || [];
+    if (!gaps.length) {
+        elGap.style.display = 'none';
+        elGap.innerHTML = '';
+        return;
+    }
+    var html = '<strong><i class="fas fa-exclamation-triangle"></i> ' +
+        'Missing registration window' + (gaps.length > 1 ? 's' : '') + '</strong><ul style="margin: 6px 0 0 18px;">';
+    gaps.forEach(function(g) {
+        html += '<li>' + escapeHtml(g.from || '?') + ' → ' + escapeHtml(g.to || '?') +
+            (g.reason ? '<br><span style="opacity:.75;">' + escapeHtml(g.reason) + '</span>' : '') +
+            '</li>';
+    });
+    html += '</ul>';
+    elGap.innerHTML = html;
+    elGap.style.display = 'block';
 }
 
 async function loadUtsSyncStatus() {
@@ -65,25 +97,35 @@ function _formatUtsResult(data) {
     var lines = [];
     var mode = data.full ? 'full (no start watermark)' : 'incremental (with start)';
     lines.push(data.ok ? 'Sync completed (' + mode + ').' : 'Sync finished with errors (' + mode + ').');
-    if (data.error) lines.push('Error: ' + data.error);
     lines.push('Started: ' + (data.sync_started_at || '—'));
     lines.push('Watermark used: ' + (data.registration_start_used || '(none — full fetch)'));
     lines.push('New watermark: ' + (data.registration_start_new || '—'));
-    var reg = data.registrations || {};
-    lines.push(
-        'Registrations — fetched: ' + (reg.fetched || 0) +
-        ', created: ' + (reg.created || 0) +
-        ', updated: ' + (reg.updated || 0) +
-        ', skipped: ' + (reg.skipped || 0)
-    );
+    if (data.registrations_error) {
+        lines.push('Registrations — FAILED: ' + data.registrations_error);
+    } else {
+        var reg = data.registrations || {};
+        lines.push(
+            'Registrations — fetched: ' + (reg.fetched || 0) +
+            ', created: ' + (reg.created || 0) +
+            ', updated: ' + (reg.updated || 0) +
+            ', skipped: ' + (reg.skipped || 0)
+        );
+    }
     var mods = data.modules || {};
-    lines.push(
-        'Modules — listed: ' + (mods.modules_listed || 0) +
-        ', imported: ' + (mods.modules_imported || 0) +
-        ', skipped: ' + (mods.modules_skipped || 0) +
-        ', unknown: ' + (mods.modules_unknown || 0) +
-        ', failed: ' + (mods.modules_failed || 0)
-    );
+    if (data.modules_error) {
+        lines.push('Modules — FAILED: ' + data.modules_error);
+    } else {
+        lines.push(
+            'Modules — listed: ' + (mods.modules_listed || 0) +
+            ', imported: ' + (mods.modules_imported || 0) +
+            ', skipped: ' + (mods.modules_skipped || 0) +
+            ', unknown: ' + (mods.modules_unknown || 0) +
+            ', failed: ' + (mods.modules_failed || 0)
+        );
+    }
+    (data.registration_gaps || []).forEach(function(g) {
+        lines.push('Missing window: ' + (g.from || '?') + ' → ' + (g.to || '?'));
+    });
     var details = mods.details || [];
     details.slice(0, 40).forEach(function(d) {
         lines.push(
@@ -108,7 +150,7 @@ async function runUtsSync(full) {
     if (btnNow) btnNow.disabled = true;
     if (btnAll) btnAll.disabled = true;
     if (spinner) {
-        spinner.style.display = 'inline';
+        spinner.style.display = 'inline-flex';
         spinner.innerHTML = full
             ? '<i class="fas fa-spinner fa-spin"></i> Syncing all data… this may take several minutes'
             : '<i class="fas fa-spinner fa-spin"></i> Syncing… this may take a few minutes';

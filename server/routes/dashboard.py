@@ -20,6 +20,7 @@ from server.utils.dashboard_gemini_insights import (
 )
 from server.utils.state_normalize import normalize_state, merge_state_count_rows
 from server.utils.country_normalize import (
+    canonical_aliases_lower,
     country_column_matches_canonical,
     country_column_matches_any_canonical,
     merge_country_count_rows,
@@ -55,6 +56,20 @@ APAC_COUNTRIES_CANONICAL = [
     'Timor-Leste', 'Vietnam', 'APAC',
 ]
 APAC_FOR_MAP_EXCL_INDIA = APAC_COUNTRIES_CANONICAL
+
+# Dashboard region cards. "Others" is every registration whose country matches none of these
+# (including registrations with no country), so the six cards always add up to total registrations.
+SEA_COUNTRIES = [
+    'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
+    'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam',
+]
+ANZ_COUNTRIES = ['Australia', 'New Zealand']
+GREATER_CHINA_COUNTRIES = ['China', 'Hong Kong', 'Taiwan', 'Mongolia']
+KOREA_COUNTRIES = ['South Korea', 'North Korea']
+REGION_CARD_COUNTRIES = (
+    SEA_COUNTRIES + ANZ_COUNTRIES + GREATER_CHINA_COUNTRIES + KOREA_COUNTRIES + ['India']
+)
+OTHERS_UNSPECIFIED_LABEL = 'Unspecified'
 
 bp = Blueprint('dashboard', __name__)
 
@@ -405,31 +420,54 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
     users_also_in_cohort1 = overlap["users_also_in_cohort1"]
     users_also_in_cohort2 = overlap["users_also_in_cohort2"]
 
-    # --- Regional counts (SEA, ANZ, Greater China, Korea) ---
-    _SEA = ('brunei','cambodia','indonesia','laos','malaysia','myanmar',
-            'philippines','singapore','thailand','timor-leste','vietnam')
-    _ANZ = ('australia','new zealand')
-    _GC  = ('china','hong kong','taiwan','mongolia')
-    _KR  = ('south korea','north korea')
+    # --- Regional counts (SEA, ANZ, Greater China, Korea, Others) ---
+    _SEA = canonical_aliases_lower(SEA_COUNTRIES)
+    _ANZ = canonical_aliases_lower(ANZ_COUNTRIES)
+    _GC  = canonical_aliases_lower(GREATER_CHINA_COUNTRIES)
+    _KR  = canonical_aliases_lower(KOREA_COUNTRIES)
+    _ALL_REGIONS = canonical_aliases_lower(REGION_CARD_COUNTRIES)
 
-    def _region_count(canonical_tuple: tuple) -> int:
-        placeholders = ','.join(f':c{i}' for i in range(len(canonical_tuple)))
-        params = {f'c{i}': v for i, v in enumerate(canonical_tuple)}
+    def _alias_params(alias_tuple: tuple) -> tuple[str, dict]:
+        placeholders = ','.join(f':c{i}' for i in range(len(alias_tuple)))
+        params = {f'c{i}': v for i, v in enumerate(alias_tuple)}
         params.update(date_params)
+        return placeholders, params
+
+    def _region_count(alias_tuple: tuple) -> int:
+        placeholders, params = _alias_params(alias_tuple)
         return _safe_scalar(
             f"SELECT COUNT(*) FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag}",
             params,
         )
 
-    def _region_top(canonical_tuple: tuple) -> str:
-        placeholders = ','.join(f':c{i}' for i in range(len(canonical_tuple)))
-        params = {f'c{i}': v for i, v in enumerate(canonical_tuple)}
-        params.update(date_params)
+    def _region_top(alias_tuple: tuple) -> str:
+        placeholders, params = _alias_params(alias_tuple)
         rows = _safe_rows(
-            f"SELECT country, COUNT(*) AS n FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag} GROUP BY country ORDER BY n DESC LIMIT 1",
+            f"SELECT country, COUNT(*) AS n FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag} GROUP BY country",
             params,
         )
-        return rows[0][0] if rows else None
+        merged = merge_country_count_rows([(r[0], int(r[1])) for r in rows])
+        return merged[0][0] if merged else None
+
+    def _others_count() -> int:
+        """Registrations outside every region card, including rows with no country."""
+        placeholders, params = _alias_params(_ALL_REGIONS)
+        return _safe_scalar(
+            f"SELECT COUNT(*) FROM {pii} WHERE (country IS NULL OR LOWER(TRIM(country)) NOT IN ({placeholders})){date_frag}",
+            params,
+        )
+
+    def _others_top() -> str:
+        placeholders, params = _alias_params(_ALL_REGIONS)
+        rows = _safe_rows(
+            f"""SELECT country, COUNT(*) AS n FROM {pii}
+                WHERE country IS NOT NULL AND TRIM(country) != ''
+                  AND LOWER(TRIM(country)) NOT IN ({placeholders}){date_frag}
+                GROUP BY country""",
+            params,
+        )
+        merged = merge_country_count_rows([(r[0], int(r[1])) for r in rows])
+        return merged[0][0] if merged else None
 
     sea_registrations      = _region_count(_SEA)
     sea_top_country        = _region_top(_SEA)
@@ -439,6 +477,8 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
     gc_top_country         = _region_top(_GC)
     korea_registrations    = _region_count(_KR)
     korea_top_country      = _region_top(_KR)
+    others_registrations   = _others_count()
+    others_top_country     = _others_top()
 
     total_sb   = _safe_scalar(f"SELECT COUNT(*) FROM {sb}")
     verified_sb = _safe_scalar(f"SELECT COUNT(*) FROM {sb} WHERE valid = TRUE")
@@ -751,6 +791,7 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
         "anz_registrations":           anz_registrations,      "anz_top_country":           anz_top_country    or "N/A",
         "greater_china_registrations": gc_registrations,       "greater_china_top_country": gc_top_country     or "N/A",
         "korea_registrations":         korea_registrations,    "korea_top_country":         korea_top_country  or "N/A",
+        "others_registrations":        others_registrations,   "others_top_country":        others_top_country or "N/A",
         "india_registrations": india_count,
         "book_of_business_registrations": bob_count,
         "total_skillboost_profiles":    total_sb,
@@ -838,6 +879,7 @@ def get_dashboard_data():
                 'anz_registrations': 0, 'anz_top_country': 'N/A',
                 'greater_china_registrations': 0, 'greater_china_top_country': 'N/A',
                 'korea_registrations': 0, 'korea_top_country': 'N/A',
+                'others_registrations': 0, 'others_top_country': 'N/A',
                 'india_registrations': 0
             },
             'charts': {
@@ -1032,6 +1074,7 @@ def get_summary():
             'anz_registrations': 0, 'anz_top_country': 'N/A',
             'greater_china_registrations': 0, 'greater_china_top_country': 'N/A',
             'korea_registrations': 0, 'korea_top_country': 'N/A',
+            'others_registrations': 0, 'others_top_country': 'N/A',
             'india_registrations': 0
         }), 200
 
@@ -1041,13 +1084,6 @@ def _get_region_breakdown_cached(region, period):
     """Cached region breakdown data (15 min)."""
     cutoff_date = _get_period_dates(period)
     date_cond = _date_filter_condition(cutoff_date)
-    SEA_COUNTRIES = [
-        'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
-        'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
-    ]
-    ANZ_COUNTRIES = ['Australia', 'New Zealand']
-    GREATER_CHINA_COUNTRIES = ['China', 'Hong Kong', 'Taiwan', 'Mongolia']
-    KOREA_COUNTRIES = ['South Korea', 'North Korea']
     if region == 'india':
         label = 'India'
         q = db.session.query(
@@ -1065,6 +1101,31 @@ def _get_region_breakdown_cached(region, period):
         rows = q.group_by(UserPIICombined.state).order_by(desc('count')).all()
         merged_list = merge_state_count_rows([(r[0], r[1]) for r in rows])
         items = [{'name': k, 'count': v} for k, v in merged_list]
+    elif region == 'others':
+        label = 'Others'
+        in_region = country_column_matches_any_canonical(
+            UserPIICombined.country, REGION_CARD_COUNTRIES
+        )
+        q = db.session.query(
+            UserPIICombined.country,
+            func.count(UserPIICombined.id).label('count')
+        ).filter(
+            UserPIICombined.country.isnot(None),
+            UserPIICombined.country != '',
+            ~in_region,
+        )
+        blank_q = db.session.query(func.count(UserPIICombined.id)).filter(
+            or_(UserPIICombined.country.is_(None), func.trim(UserPIICombined.country) == '')
+        )
+        if date_cond is not None:
+            q = q.filter(date_cond)
+            blank_q = blank_q.filter(date_cond)
+        rows = [(r[0], r[1]) for r in q.group_by(UserPIICombined.country).all()]
+        blank_count = blank_q.scalar() or 0
+        if blank_count:
+            rows.append((OTHERS_UNSPECIFIED_LABEL, blank_count))
+        merged = merge_country_count_rows(rows)
+        items = [{'name': k, 'count': v} for k, v in merged]
     else:
         region_map = {
             'sea': ('SEA (Southeast Asia)', SEA_COUNTRIES),
@@ -1097,18 +1158,19 @@ def get_region_breakdown():
     """Get per-country (or per-state for India) registration counts for a region (cached 5 min)."""
     region = (request.args.get('region') or '').strip().lower()
     period = request.args.get('period', 'all')
-    if region not in ('sea', 'anz', 'greater_china', 'korea', 'india'):
+    if region not in ('sea', 'anz', 'greater_china', 'korea', 'india', 'others'):
         return jsonify({'error': 'Invalid region'}), 400
     prefix = getattr(g, 'table_prefix', '')
     if prefix:
         # Raw-SQL path for cohort-prefixed tables
         pii = f"{prefix}user_pii_combined"
         date_frag, date_params = _period_sql_filter(period)
-        SEA = ('brunei','cambodia','indonesia','laos','malaysia','myanmar','philippines','singapore','thailand','timor-leste','vietnam')
-        ANZ = ('australia','new zealand')
-        GC  = ('china','hong kong','taiwan','mongolia')
-        KR  = ('south korea','north korea')
-        region_map = {'sea': ('SEA (Southeast Asia)', SEA), 'anz': ('ANZ (Australia & New Zealand)', ANZ), 'greater_china': ('Greater China', GC), 'korea': ('Korea', KR)}
+        region_map = {
+            'sea': ('SEA (Southeast Asia)', canonical_aliases_lower(SEA_COUNTRIES)),
+            'anz': ('ANZ (Australia & New Zealand)', canonical_aliases_lower(ANZ_COUNTRIES)),
+            'greater_china': ('Greater China', canonical_aliases_lower(GREATER_CHINA_COUNTRIES)),
+            'korea': ('Korea', canonical_aliases_lower(KOREA_COUNTRIES)),
+        }
         try:
             if region == 'india':
                 rows = _safe_rows(
@@ -1118,6 +1180,26 @@ def get_region_breakdown():
                 merged = merge_state_count_rows([(r[0], int(r[1])) for r in rows])
                 items = [{'name': k, 'count': v} for k, v in merged]
                 return jsonify({'region': region, 'label': 'India', 'items': items, 'total': sum(i['count'] for i in items)}), 200
+            if region == 'others':
+                all_regions = canonical_aliases_lower(REGION_CARD_COUNTRIES)
+                placeholders = ','.join(f':rc{i}' for i in range(len(all_regions)))
+                rc_params = {f'rc{i}': v for i, v in enumerate(all_regions)}
+                rc_params.update(date_params)
+                rows = _safe_rows(
+                    f"""SELECT country, COUNT(*) AS n FROM {pii}
+                        WHERE country IS NOT NULL AND TRIM(country) != ''
+                          AND LOWER(TRIM(country)) NOT IN ({placeholders}){date_frag}
+                        GROUP BY country""",
+                    rc_params)
+                pairs = [(r[0], int(r[1])) for r in rows]
+                blank_count = _safe_scalar(
+                    f"SELECT COUNT(*) FROM {pii} WHERE (country IS NULL OR TRIM(country) = ''){date_frag}",
+                    date_params)
+                if blank_count:
+                    pairs.append((OTHERS_UNSPECIFIED_LABEL, blank_count))
+                merged = merge_country_count_rows(pairs)
+                items = [{'name': k, 'count': v} for k, v in merged]
+                return jsonify({'region': region, 'label': 'Others', 'items': items, 'total': sum(i['count'] for i in items)}), 200
             label, countries = region_map[region]
             placeholders = ','.join(f':rc{i}' for i in range(len(countries)))
             rc_params = {f'rc{i}': v for i, v in enumerate(countries)}
@@ -1125,7 +1207,6 @@ def get_region_breakdown():
             rows = _safe_rows(
                 f"SELECT country, COUNT(*) AS n FROM {pii} WHERE LOWER(TRIM(country)) IN ({placeholders}){date_frag} GROUP BY country ORDER BY n DESC",
                 rc_params)
-            from server.utils.country_normalize import merge_country_count_rows
             merged = merge_country_count_rows([(r[0], int(r[1])) for r in rows])
             items = [{'name': k, 'count': v} for k, v in merged]
             return jsonify({'region': region, 'label': label, 'items': items, 'total': sum(i['count'] for i in items)}), 200
@@ -1473,22 +1554,7 @@ def _fetch_summary_data(period):
                 avg_age = None
         
         APAC_COUNTRIES = APAC_COUNTRIES_CANONICAL
-        # SEA (Southeast Asia)
-        SEA_COUNTRIES = [
-            'Brunei', 'Cambodia', 'Indonesia', 'Laos', 'Malaysia', 'Myanmar',
-            'Philippines', 'Singapore', 'Thailand', 'Timor-Leste', 'Vietnam'
-        ]
-        # ANZ (Australia & New Zealand)
-        ANZ_COUNTRIES = ['Australia', 'New Zealand']
-        # Greater China
-        GREATER_CHINA_COUNTRIES = [
-            'China', 'Hong Kong', 'Taiwan', 'Mongolia'
-        ]
-        # Korea
-        KOREA_COUNTRIES = ['South Korea', 'North Korea']
-        # East Asia (union, kept for APAC totals)
-        EAST_ASIA_COUNTRIES = GREATER_CHINA_COUNTRIES + KOREA_COUNTRIES + ['Japan']
-        
+
         # Users from APAC except India
         apac_except_india_count = 0
         try:
@@ -1641,6 +1707,32 @@ def _fetch_summary_data(period):
         except Exception as e:
             print(f"Error calculating region stats: {e}")
 
+        # Others: registrations that match none of the region cards (blank country included)
+        others_registrations = 0
+        others_top_country = None
+        try:
+            in_region_match = country_column_matches_any_canonical(
+                UserPIICombined.country, REGION_CARD_COUNTRIES
+            )
+            others_registrations = base_query.filter(
+                or_(UserPIICombined.country.is_(None), ~in_region_match)
+            ).count() or 0
+            others_top_q = db.session.query(
+                UserPIICombined.country,
+                func.count(UserPIICombined.id).label('count')
+            ).filter(
+                UserPIICombined.country.isnot(None),
+                UserPIICombined.country != '',
+                ~in_region_match,
+            )
+            if date_cond is not None:
+                others_top_q = others_top_q.filter(date_cond)
+            others_rows = others_top_q.group_by(UserPIICombined.country).all()
+            merged_others = merge_country_count_rows([(r[0], r[1]) for r in others_rows])
+            others_top_country = merged_others[0][0] if merged_others else None
+        except Exception as e:
+            print(f"Error calculating Others region stats: {e}")
+
         # India: count and top state (same period filter)
         india_registrations = 0
         try:
@@ -1778,6 +1870,8 @@ def _fetch_summary_data(period):
             'greater_china_top_country': greater_china_top_country or 'N/A',
             'korea_registrations': korea_registrations,
             'korea_top_country': korea_top_country or 'N/A',
+            'others_registrations': others_registrations,
+            'others_top_country': others_top_country or 'N/A',
             'india_registrations': india_registrations,
             'book_of_business_registrations': book_of_business_registrations,
             'total_skillboost_profiles': total_skillboost_profiles,
@@ -1828,6 +1922,8 @@ def _fetch_summary_data(period):
             'greater_china_top_country': 'N/A',
             'korea_registrations': 0,
             'korea_top_country': 'N/A',
+            'others_registrations': 0,
+            'others_top_country': 'N/A',
             'india_registrations': 0,
             'book_of_business_registrations': 0,
             'total_skillboost_profiles': 0,

@@ -128,6 +128,8 @@ SHEET_DETECTORS = [
     ),
 
     # Cohort 2 Code Lab — Student / Professional track tabs (prefix-agnostic)
+    # Student Track: track_number is assigned as 3 at import time (profiles.js convention).
+    # Detector track stays None so it does not collide with Professional Track 3 in SHEET_DETECTORS.
     SheetDetector(
         "codelab_submission", "Student Track Codelab Building",
         [r"student\s*track.*codelab\s*buildi"],
@@ -172,6 +174,30 @@ SHEET_DETECTORS = [
                   [r"mcq\s+(?!optional\s)track\s+2\b"], track=2, critical=True, cohorts=(1,)),
     SheetDetector("main_mcq", "Main MCQ Track 3",
                   [r"mcq\s+(?!optional\s)track\s+3\b"], track=3, critical=True, cohorts=(1,)),
+
+    # Cohort 2/3 Main MCQ — Professional / Student track quiz tabs (separate Quiz workbook).
+    # Not critical: Forms exports often omit these; Quiz files are imported separately.
+    SheetDetector(
+        "main_mcq", "Professional Track 1 MCQ",
+        [r"professional\s+track\s+1\s+mcq"],
+        track=1, critical=False, cohorts=(2, 3),
+    ),
+    SheetDetector(
+        "main_mcq", "Professional Track 2 MCQ",
+        [r"professional\s+track\s+2\s+mcq"],
+        track=2, critical=False, cohorts=(2, 3),
+    ),
+    SheetDetector(
+        "main_mcq", "Professional Track 3 MCQ",
+        [r"professional\s+track\s+3\s+mcq"],
+        track=3, critical=False, cohorts=(2, 3),
+    ),
+    # Student Track → track_number=3 (same convention as Code Lab / profiles grid).
+    SheetDetector(
+        "main_mcq", "Student Track MCQ",
+        [r"student\s+track\s+mcq"],
+        track=3, critical=False, cohorts=(2, 3),
+    ),
 
     # Lab Completion N x Track N
     SheetDetector("lab_completion", "Lab Completion 1 Track 1",
@@ -219,6 +245,35 @@ SKILLBOOST_SHEET_SUBSTRINGS = (
 SKILLBOOST_SHEET_SUBSTRING = SKILLBOOST_SHEET_SUBSTRINGS[0]
 SKILLLAB_SUBMISSION_SHEET_SUBSTRING = "Google Skills Lab Submissio"
 CODELAB_SUBMISSION_SHEET_SUBSTRING = "Code Lab Submissio"
+
+
+def _codelab_sheet_track_number(sheet_name, track):
+    """
+    Resolve track_number for a Code Lab sheet.
+    Cohort 2 Student Track → 3 (profiles / verification UI convention).
+    """
+    if track is not None:
+        return track
+    if "student" in (sheet_name or "").lower():
+        return 3
+    return None
+
+
+def _codelab_default_problem_statement(sheet_name, track):
+    """
+    Cohort 2 Code Lab tabs have no Problem Statement column — lab identity is the tab.
+    Returns a stable label for problem_statement (and Lab column in the UI).
+    """
+    name = (sheet_name or "").lower()
+    if "student" in name:
+        return "Student Track Codelab"
+    if track == 1 or ("professional" in name and "track 1" in name):
+        return "Professional Track 1 Codelab"
+    if track == 2 or ("professional" in name and "track 2" in name):
+        return "Professional Track 2 Codelab"
+    if track == 3 or ("professional" in name and "track 3" in name):
+        return "Professional Track 3 Codelab"
+    return None
 LAB_COMPLETION_SHEET_SUBSTRINGS = [
     {'substring': 'Lab Completion 1 Track 1', 'lab': 1, 'track': 1},
     {'substring': 'Lab Completion 1 Track 2', 'lab': 1, 'track': 2},
@@ -562,10 +617,8 @@ def fill_action_center_secondary_preview(file_path, result, classification=None,
             name = d.get("sheet_name")
             if not name:
                 continue
-            track = d.get("track")
-            default_ps = None
-            if track is None and "student" in str(name).lower():
-                default_ps = "Student Track Codelab"
+            track = _codelab_sheet_track_number(name, d.get("track"))
+            default_ps = _codelab_default_problem_statement(name, track)
             result["codelab_submission_sheets"].append({
                 "track": track,
                 "sheet_name": name,
@@ -786,10 +839,8 @@ def load_all_skillboost_sheets(file_path, cohort_id=None):
             name = det_row.get('sheet_name')
             if not name:
                 continue
-            track = det_row.get('track')
-            default_ps = None
-            if track is None and 'student' in str(name).lower():
-                default_ps = 'Student Track Codelab'
+            track = _codelab_sheet_track_number(name, det_row.get('track'))
+            default_ps = _codelab_default_problem_statement(name, track)
             try:
                 df = pd.read_excel(xl, sheet_name=name)
             except Exception:
@@ -2301,6 +2352,12 @@ _SUBMISSION_COL_MAP = {
     'share the link for your skill badge': 'upload_screenshot',
     'upload_screenshot': 'upload_screenshot',
     'screenshot': 'upload_screenshot',
+    # Cohort 2 Code Lab Action Center tabs use "Upload File" (GCS screenshot URL)
+    'upload file': 'upload_screenshot',
+    'upload_file': 'upload_screenshot',
+    'file link': 'upload_screenshot',
+    'file url': 'upload_screenshot',
+    'upload': 'upload_screenshot',
     'created at': 'created_at',
     'created_at': 'created_at',
     'created by name': 'created_by_name',
@@ -3080,9 +3137,11 @@ def import_codelab_submission(
     except Exception:
         pass
 
-    use_composite_key = (
-        sheet_track_number is not None or default_problem_statement is not None
-    )
+    # Cohort 2 per-track tabs: one row per (email, track). Cohort 1: one row per email.
+    # Key by track (not problem_statement) so re-imports still match rows that were
+    # stored with a null/empty lab label before defaults were filled in.
+    use_track_key = sheet_track_number is not None
+    use_ps_key = (not use_track_key) and default_problem_statement is not None
     existing = {}
     try:
         for chunk in _chunk_list(emails_in_sheet, IMPORT_EMAIL_IN_CHUNK):
@@ -3091,15 +3150,13 @@ def import_codelab_submission(
             for crow in CodeLabSubmission.query.filter(
                 func.lower(CodeLabSubmission.leader_email).in_(chunk)
             ).all():
-                if use_composite_key:
-                    key = (
-                        crow.leader_email.lower(),
-                        crow.track_number,
-                        crow.problem_statement or '',
-                    )
-                    existing[key] = crow
+                email_key = crow.leader_email.lower()
+                if use_track_key:
+                    existing[(email_key, crow.track_number)] = crow
+                elif use_ps_key:
+                    existing[(email_key, crow.problem_statement or '')] = crow
                 else:
-                    existing[crow.leader_email.lower()] = crow
+                    existing[email_key] = crow
     except Exception:
         pass
 
@@ -3158,14 +3215,17 @@ def import_codelab_submission(
                 if default_problem_statement and not data.get('problem_statement'):
                     data['problem_statement'] = default_problem_statement
 
-                if use_composite_key:
-                    lookup_key = (
-                        email,
-                        data.get('track_number'),
-                        data.get('problem_statement') or '',
-                    )
+                if use_track_key:
+                    lookup_key = (email, data.get('track_number'))
+                    # Legacy student rows were stored with track_number NULL.
+                    rec = existing.get(lookup_key)
+                    if rec is None and sheet_track_number == 3:
+                        rec = existing.get((email, None))
+                elif use_ps_key:
+                    lookup_key = (email, data.get('problem_statement') or '')
                     rec = existing.get(lookup_key)
                 else:
+                    lookup_key = email
                     rec = existing.get(email)
                 if rec:
                     for field, val in data.items():
@@ -3175,13 +3235,12 @@ def import_codelab_submission(
                             setattr(rec, field, val)
                     rec.updated_at = datetime.utcnow()
                     updated += 1
+                    if use_track_key:
+                        existing[(email, data.get('track_number'))] = rec
                 else:
                     rec = CodeLabSubmission(**data)
                     db.session.add(rec)
-                    if use_composite_key:
-                        existing[lookup_key] = rec
-                    else:
-                        existing[email] = rec
+                    existing[lookup_key] = rec
                     created += 1
 
             if progress_callback:
@@ -3755,11 +3814,12 @@ def import_optional_mcq_response(
     }
 
 
-def import_main_mcq_response(df, track_number, progress_callback=None):
+def import_main_mcq_response(df, track_number, progress_callback=None, score_from_sheet=False):
     """
     Import Main MCQ (MCQ Verification) responses from a DataFrame into main_mcq_response.
     Upsert by (track_number, email): update if exists, else insert.
-    Uses main_mcq_answer_key.score_submission for text-based scoring.
+    Cohort 1: score via main_mcq_answer_key. Cohort 2/3: prefer Score column
+    (score_from_sheet=True) because question banks differ from Cohort 1.
     Returns dict: total_rows, created, updated, skipped, errors.
     """
     from server.models import db
@@ -3776,9 +3836,12 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
             "Please ensure the sheet has a column named 'Leader Email'."
         )
     question_cols = _find_mcq_question_columns(columns, email_col)
+    if not question_cols and score_from_sheet:
+        question_cols = _find_question_columns_score_to_created(columns)
     if not question_cols:
         raise Exception("Could not find 10 question columns in the Main MCQ sheet.")
 
+    score_col = _find_mcq_column(columns, 'score')
     leader_name_col = _find_mcq_column(columns, 'leader name', 'Leader Name')
     leader_phone_col = _find_mcq_column(columns, 'leader phone', 'Leader Phone')
     team_size_col = _find_mcq_column(columns, 'team size', 'Team size', 'team_size')
@@ -3868,13 +3931,22 @@ def import_main_mcq_response(df, track_number, progress_callback=None):
                     else:
                         data[model_field] = str(val).strip() or None
 
-                auto = main_score_submission(
-                    track_number,
-                    data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
-                    data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
-                    data.get('question_9'), data.get('question_10'),
-                )
-                data['score'] = auto['correct_count']
+                if score_from_sheet:
+                    num, den = _parse_mcq_score_slash(row.get(score_col)) if score_col else (None, None)
+                    if num is not None and den and den > 0:
+                        data['score'] = min(10, max(0, int(round(num * 10.0 / float(den)))))
+                    elif num is not None:
+                        data['score'] = min(10, max(0, num))
+                    else:
+                        data['score'] = None
+                else:
+                    auto = main_score_submission(
+                        track_number,
+                        data.get('question_1'), data.get('question_2'), data.get('question_3'), data.get('question_4'),
+                        data.get('question_5'), data.get('question_6'), data.get('question_7'), data.get('question_8'),
+                        data.get('question_9'), data.get('question_10'),
+                    )
+                    data['score'] = auto['correct_count']
 
                 rec = existing.get(email)
                 if rec:

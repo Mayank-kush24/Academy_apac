@@ -261,7 +261,10 @@ def uts_sync_now():
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)[:500]}), 500
 
-    status = 200 if result.get("ok") else 502
+    # Partial runs (one of registrations/modules succeeded) still carry useful results,
+    # so only report a transport-level failure when nothing at all was imported.
+    nothing_succeeded = not result.get("registrations") and not result.get("modules")
+    status = 502 if (not result.get("ok") and nothing_succeeded) else 200
     return jsonify(result), status
 
 
@@ -846,7 +849,10 @@ def import_skillboost_profiles():
                 if main_df is not None and len(main_df) > 0:
                     from server.utils.audit import set_audit_extra
                     set_audit_extra({"source": "main_mcq_import", "filename": file.filename, "sheet": main_sheet_name})
-                    mcr = import_main_mcq_response(main_df, track)
+                    # Cohort 2/3 question banks differ from C1 — use Action Center Score column.
+                    mcr = import_main_mcq_response(
+                        main_df, track, score_from_sheet=(not cohort_oneish),
+                    )
                     mcr['track'] = track
                     mcr['sheet_name'] = main_sheet_name
                     main_mcq_results.append(mcr)

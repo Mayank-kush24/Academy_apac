@@ -97,7 +97,7 @@
                     {% if 'mcq-verification' not in cohort_disabled_pages %}
                     <a href="{{ cohort_prefix }}/mcq-verification" class="nav-item" id="navMcqVerification" data-page-id="mcq_verification" style="display: none;">
                         <i class="nav-icon fas fa-clipboard-check"></i>
-                        <span>MCQ Verification</span>
+                        <span>Main MCQ Verification</span>
                     </a>
                     {% endif %}
                     {% if 'track-progress-query' not in cohort_disabled_pages %}
@@ -124,15 +124,15 @@
                     <button type="button" class="sidebar-toggle" id="sidebarToggleBtn" onclick="toggleSidebar()" aria-label="Toggle sidebar">
                         <i class="fas fa-bars"></i>
                     </button>
-                    <div class="top-bar-right" style="display:flex;align-items:center;gap:10px;flex-wrap:nowrap;min-width:0;">
+                    <div class="top-bar-right">
                         {% if cdi_enabled and cdi_portal_dashboard_url %}
-                        <a href="{{ cdi_portal_dashboard_url }}" class="btn btn-sm btn-secondary" id="btnBackToCdi" style="flex-shrink:0;text-decoration:none;" title="Return to the Hack2skill CDI portal">
-                            <i class="fas fa-th-large"></i> Back to CDI
+                        <a href="{{ cdi_portal_dashboard_url }}" class="btn btn-sm btn-secondary top-bar-btn" id="btnBackToCdi" title="Return to the Hack2skill CDI portal">
+                            <i class="fas fa-th-large"></i><span class="top-bar-btn-label"> Back to CDI</span>
                         </a>
                         {% endif %}
-                        <span class="user-info" id="userInfo" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:180px;">Loading...</span>
-                        <button class="btn btn-sm btn-secondary" onclick="logout()" style="flex-shrink:0;">
-                            <i class="fas fa-sign-out-alt"></i> Logout
+                        <span class="user-info" id="userInfo">Loading...</span>
+                        <button class="btn btn-sm btn-secondary top-bar-btn" onclick="logout()" title="Logout">
+                            <i class="fas fa-sign-out-alt"></i><span class="top-bar-btn-label"> Logout</span>
                         </button>
                     </div>
                 </div>
@@ -146,14 +146,14 @@
                         <span>Gen AI Academy</span>
                         <span class="badge" style="margin-left: 8px;">APAC Edition</span>
                     </div>
-                    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                    <div class="public-header-actions">
                         {% if cdi_enabled and cdi_portal_dashboard_url %}
                         <a href="{{ cdi_portal_dashboard_url }}" class="btn btn-secondary" title="Return to the Hack2skill CDI portal">
-                            <i class="fas fa-th-large"></i> Back to CDI
+                            <i class="fas fa-th-large"></i><span class="top-bar-btn-label"> Back to CDI</span>
                         </a>
                         {% endif %}
                         <a href="{{ url_for('login_page') }}" class="btn btn-primary">
-                            <i class="fas fa-sign-in-alt"></i> Login
+                            <i class="fas fa-sign-in-alt"></i><span class="top-bar-btn-label"> Login</span>
                         </a>
                     </div>
                 </div>
@@ -186,7 +186,7 @@
         function initMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebarOverlay');
-            const isMobile = window.innerWidth <= 640;
+            const isMobile = window.innerWidth <= 768;
             
             // Ensure sidebar starts in correct state
             if (isMobile) {
@@ -315,7 +315,7 @@
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebarOverlay');
-            const isMobile = window.innerWidth <= 640;
+            const isMobile = window.innerWidth <= 768;
             
             if (isMobile) {
                 // On mobile, toggle sidebar and overlay with smooth animation
@@ -359,7 +359,7 @@
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', function(e) {
                 const sidebar = document.getElementById('sidebar');
-                const isMobile = window.innerWidth <= 640;
+                const isMobile = window.innerWidth <= 768;
                 
                 if (isMobile) {
                     // Allow navigation to happen, then smoothly close sidebar
@@ -377,7 +377,7 @@
             }
             const sidebar = document.getElementById('sidebar');
             const overlay = document.getElementById('sidebarOverlay');
-            const isMobile = window.innerWidth <= 640;
+            const isMobile = window.innerWidth <= 768;
             
             if (!isMobile) {
                 // On desktop, ensure sidebar is visible and overlay is hidden

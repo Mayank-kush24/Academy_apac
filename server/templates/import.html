@@ -22,33 +22,56 @@
 
     <!-- Cohort 3: UTS API sync (replaces Excel upload) — rendered server-side so it always shows -->
     {% if is_c3_uts %}
-    <div id="utsSyncSection" class="glass-card import-step-card" style="margin-bottom: 24px;">
-        <div class="chart-header">
-            <h3 class="chart-title"><i class="fas fa-cloud-download-alt"></i> Hack2Skill UTS Sync</h3>
-            <p class="chart-subtitle">
-                Pull Cohort 3 registrations and submission modules from the Hack2Skill UTS APIs.
-                <strong>Sync Now</strong> uses the stored <code>start</code> watermark (incremental).
-                <strong>Sync all data</strong> omits <code>start</code> and fetches everything.
-            </p>
+    <div id="utsSyncSection" class="glass-card import-step-card uts-sync-card">
+        <div class="uts-sync-header">
+            <div class="uts-sync-title-row">
+                <span class="uts-sync-icon" aria-hidden="true"><i class="fas fa-cloud-download-alt"></i></span>
+                <div class="uts-sync-heading">
+                    <h3 class="uts-sync-title">Hack2Skill UTS Sync</h3>
+                    <p class="uts-sync-desc">
+                        Pull Cohort 3 registrations and submission modules from the Hack2Skill UTS APIs.
+                    </p>
+                </div>
+            </div>
         </div>
-        <div id="utsSyncStatusBox" style="margin-bottom: 16px; padding: 12px; border-radius: 8px; background: var(--glass-bg, rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.1); font-size: 0.95rem;">
-            <div><strong>Last sync:</strong> <span id="utsLastSyncAt">—</span></div>
-            <div><strong>Registration watermark:</strong> <span id="utsRegistrationStart">—</span></div>
-            <div><strong>Status:</strong> <span id="utsLastSyncStatus">—</span></div>
+
+        <div id="utsSyncStatusBox" class="uts-sync-metrics">
+            <div class="uts-metric">
+                <span class="uts-metric-label">Last sync</span>
+                <span class="uts-metric-value" id="utsLastSyncAt">—</span>
+            </div>
+            <div class="uts-metric">
+                <span class="uts-metric-label">Registration watermark</span>
+                <span class="uts-metric-value" id="utsRegistrationStart">—</span>
+            </div>
+            <div class="uts-metric">
+                <span class="uts-metric-label">Status</span>
+                <span class="uts-metric-value uts-metric-status" id="utsLastSyncStatus">—</span>
+            </div>
         </div>
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 12px;">
-            <button type="button" class="btn btn-primary" id="utsSyncNowBtn">
-                <i class="fas fa-sync-alt"></i> Sync Now
-            </button>
-            <button type="button" class="btn btn-secondary" id="utsSyncAllBtn">
-                <i class="fas fa-download"></i> Sync all data
-            </button>
-            <span id="utsSyncSpinner" style="display: none; color: var(--text-muted, #94a3b8);">
+
+        <div id="utsGapWarning" class="uts-gap-warning" style="display: none;"></div>
+
+        <div class="uts-sync-actions">
+            <div class="uts-action">
+                <button type="button" class="btn btn-primary" id="utsSyncNowBtn">
+                    <i class="fas fa-sync-alt"></i> Sync Now
+                </button>
+                <span class="uts-action-hint">Incremental — uses the stored start watermark</span>
+            </div>
+            <div class="uts-action">
+                <button type="button" class="btn btn-secondary uts-btn-secondary" id="utsSyncAllBtn">
+                    <i class="fas fa-database"></i> Sync all data
+                </button>
+                <span class="uts-action-hint">Full fetch — omits start and pulls everything</span>
+            </div>
+            <span id="utsSyncSpinner" class="uts-sync-spinner" style="display: none;">
                 <i class="fas fa-spinner fa-spin"></i> Syncing… this may take a few minutes
             </span>
         </div>
+
         <div id="utsSyncError" class="error-message" style="display: none;"></div>
-        <div id="utsSyncResult" style="display: none; margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--glass-bg, rgba(255,255,255,0.06)); border: 1px solid rgba(255,255,255,0.1); white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.85rem;"></div>
+        <div id="utsSyncResult" class="uts-sync-result" style="display: none;"></div>
     </div>
     {% endif %}
 

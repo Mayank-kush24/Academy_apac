@@ -37,12 +37,7 @@
 .track-filter-bar .track-btn.active {
     background: #3b82f6; border-color: #3b82f6; color: #fff;
 }
-@media (max-width: 900px) {
-    .submission-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
-}
-@media (max-width: 480px) {
-    .submission-stats-section { grid-template-columns: 1fr !important; }
-}
+/* Mobile stats/filters handled globally in styles.css */
 </style>
 <div class="dashboard-premium" id="codelabSubmissionPage">
     <div class="dashboard-container">
@@ -132,7 +127,7 @@
                         <i class="fas fa-times"></i> Clear
                     </button>
                 </div>
-                <!-- Track filter bar -->
+                <!-- Track filter bar (labels filled per cohort on load) -->
                 <div class="track-filter-bar">
                     <span style="font-size: 0.875rem; font-weight: 500; color: var(--text-muted, #6b7280); margin-right: 0.25rem;">Track:</span>
                     <button type="button" class="track-btn active" id="trackBtnAll" data-track="">All</button>
@@ -145,7 +140,7 @@
 
         <!-- Table -->
         <div class="glass-card">
-            <div class="table-responsive">
+            <div class="table-responsive table-sticky-first">
                 <table class="data-table">
                     <thead>
                         <tr>
@@ -176,6 +171,7 @@
     var headers = token ? { 'Authorization': 'Bearer ' + token } : {};
     var currentUser = typeof getCurrentUser === 'function' ? getCurrentUser() : null;
     var isAdmin = currentUser && currentUser.role === 'admin';
+    var trackLabels = { 1: 'Track 1', 2: 'Track 2', 3: 'Track 3' };
 
     function escapeHtml(s) {
         if (s == null || s === undefined) return '';
@@ -197,6 +193,24 @@
     function truncate(s, max) {
         if (!s) return '';
         return s.length > max ? s.slice(0, max - 3) + '...' : s;
+    }
+
+    function applyTrackLabels(labels) {
+        if (!labels) return;
+        trackLabels = labels;
+        var map = { '1': 'trackBtn1', '2': 'trackBtn2', '3': 'trackBtn3' };
+        Object.keys(map).forEach(function(key) {
+            var el = document.getElementById(map[key]);
+            if (el && labels[key] != null) el.textContent = labels[key];
+            else if (el && labels[parseInt(key, 10)] != null) el.textContent = labels[parseInt(key, 10)];
+        });
+    }
+
+    function trackDisplay(r) {
+        if (r.track_label) return escapeHtml(r.track_label);
+        if (r.track_number && trackLabels[r.track_number]) return escapeHtml(trackLabels[r.track_number]);
+        if (r.track_number) return 'Track ' + r.track_number;
+        return '<span class="text-muted">—</span>';
     }
 
     /* ---------- Stats ---------- */
@@ -224,6 +238,7 @@
             .then(function(res) { return res.ok ? res.json() : null; })
             .then(function(data) {
                 if (!data) return;
+                applyTrackLabels(data.track_labels);
                 var sel = document.getElementById('problemFilter');
                 if (!sel) return;
                 sel.innerHTML = '<option value="">All</option>';
@@ -252,7 +267,7 @@
             if (r.leader_name && r.leader_name.trim()) nameParts.push('<span class="text-muted" style="font-size: 0.8125rem;">' + escapeHtml(r.leader_name) + '</span>');
             var nameCell = nameParts.length > 0 ? nameParts.join('<br>') : '<span class="text-muted">—</span>';
 
-            var trackCell = r.track_number ? 'Track ' + r.track_number : '<span class="text-muted">—</span>';
+            var trackCell = trackDisplay(r);
             var labCell = r.problem_statement ? escapeHtml(r.problem_statement) : '<span class="text-muted">—</span>';
 
             var screenshot = '';
@@ -329,6 +344,7 @@
             })
             .then(function(data) {
                 if (!data) return;
+                if (data.track_labels) applyTrackLabels(data.track_labels);
                 renderTable(data.rows);
                 renderPagination({ total: data.total, page: data.page, per_page: data.per_page, pages: data.pages });
             })

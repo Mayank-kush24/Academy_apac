@@ -28,47 +28,140 @@ function getProfileCohortLabel() {
     return 'COHORT ' + getProfileCohortId();
 }
 
+/** Cohorts whose Certificate of Completion data has been imported. */
+const CERTIFICATE_COHORTS = [2];
+
+function cohortTracksCertificates() {
+    return CERTIFICATE_COHORTS.indexOf(getProfileCohortId()) !== -1;
+}
+
+function profilesTableColumnCount() {
+    return cohortTracksCertificates() ? 11 : 10;
+}
+
+function applyCertificateColumnVisibility() {
+    const th = document.getElementById('certificateHeaderCell');
+    if (th) th.style.display = cohortTracksCertificates() ? '' : 'none';
+}
+
 function trackLabelToNumber(trackLabel) {
     return trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
 }
 
-function isStudentTrackCodelabSubmission(submission) {
-    var ps = (submission.problem_statement || '').toLowerCase();
-    return ps.indexOf('student track') >= 0;
+/** Column headers for the Track Progress grid (cohort-aware). */
+function getProfileTrackHeaders(cohortId) {
+    cohortId = cohortId != null ? cohortId : getProfileCohortId();
+    if (cohortId === 2 || cohortId === 3) {
+        return [
+            { key: 'Track 1', label: 'Professional Track 1' },
+            { key: 'Track 2', label: 'Professional Track 2' },
+            { key: 'Track 3', label: 'Student Track' },
+        ];
+    }
+    return [
+        { key: 'Track 1', label: 'Track 1' },
+        { key: 'Track 2', label: 'Track 2' },
+        { key: 'Track 3', label: 'Track 3' },
+    ];
 }
 
-/** Match codelab rows to profile grid columns (Cohort 2 Track 3 = Student track sheet). */
+function isStudentTrackCodelabSubmission(submission) {
+    var ps = (submission.problem_statement || '').toLowerCase();
+    if (ps.indexOf('student track') >= 0) return true;
+    // Backfilled C2 student rows use track_number=3
+    return submission.track_number === 3 && ps.indexOf('professional') < 0;
+}
+
+/** Match codelab rows to profile grid columns (Cohort 2 Track 3 = Student track). */
 function codelabSubmissionMatchesTrack(submission, trackLabel, cohortId) {
     var trackNum = trackLabelToNumber(trackLabel);
     if (!trackNum) return false;
     cohortId = cohortId != null ? cohortId : getProfileCohortId();
-    if (cohortId === 2 && trackLabel === 'Track 3') {
-        return isStudentTrackCodelabSubmission(submission);
+    if ((cohortId === 2 || cohortId === 3) && trackLabel === 'Track 3') {
+        return isStudentTrackCodelabSubmission(submission)
+            || submission.track_number === 3;
     }
     return submission.track_number === trackNum;
 }
 
+/** Short display name for problem_statement / lab labels. */
+function shortActivityName(raw, maxLen) {
+    if (!raw) return '';
+    var s = String(raw).trim();
+    s = s.replace(/^\*?\s*/, '');
+    s = s.replace(/^(codelab|google skills lab)\s*:\s*/i, '');
+    s = s.replace(/^\[(professional|student)\]\s*track\s*\d*\s*-\s*/i, '');
+    s = s.replace(/,\s*$/, '').trim();
+    maxLen = maxLen || 42;
+    if (s.length > maxLen) s = s.slice(0, maxLen - 1) + '…';
+    return s;
+}
+
+function activityExternalLinkHtml(url, title) {
+    if (!url || !String(url).trim()) return '';
+    var href = String(url).trim();
+    if (!/^https?:\/\//i.test(href)) return '';
+    return '<a href="' + escapeHtml(href) + '" target="_blank" rel="noopener" class="tp-activity-link" title="' + escapeHtml(title || 'Open link') + '"><i class="fas fa-external-link-alt"></i> Open</a>';
+}
+
+function verificationStatusHtml(valid, remark, opts) {
+    opts = opts || {};
+    var pendingLabel = opts.pendingLabel || 'Pending';
+    var validLabel = opts.validLabel || 'Valid';
+    if (valid) {
+        return '<span class="tp-status tp-status--ok"><i class="fas fa-check-circle"></i> ' + escapeHtml(validLabel) + '</span>';
+    }
+    if (remark && String(remark).trim()) {
+        var r = String(remark).trim();
+        var shortR = r.length > 40 ? r.slice(0, 37) + '…' : r;
+        return '<span class="tp-status tp-status--bad"><i class="fas fa-times-circle"></i> Not valid</span>'
+            + '<div class="tp-activity-meta" title="' + escapeHtml(r) + '">' + escapeHtml(shortR) + '</div>';
+    }
+    return '<span class="tp-status tp-status--pending"><i class="fas fa-hourglass-half"></i> ' + escapeHtml(pendingLabel) + '</span>';
+}
+
+function certificateBadgeHtml(issued) {
+    if (issued) {
+        return '<span class="certificate-badge certificate-badge--issued" title="Certificate of Completion issued">'
+            + '<i class="fas fa-certificate"></i> Issued</span>';
+    }
+    return '<span class="certificate-badge certificate-badge--none" title="No certificate issued">Not issued</span>';
+}
+
+function tpActivityBlock(title, statusHtml, linkHtml) {
+    var html = '<div class="tp-activity">';
+    if (title) {
+        html += '<div class="tp-activity-name" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</div>';
+    }
+    html += '<div class="tp-activity-row">' + (statusHtml || '') + (linkHtml ? ' ' + linkHtml : '') + '</div>';
+    html += '</div>';
+    return html;
+}
+
 /**
  * Generate HTML for a Skill Lab track cell in the Track Progress table.
- * Searches skilllab_submissions for a submission whose problem_statement contains the trackLabel.
- * Returns valid/not-valid markup with remark if applicable.
+ * Shows which skill lab / badge was submitted, status, and badge link.
  */
 function skillLabProblemMatchesTrack(problemStatement, trackLabel) {
     var ps = (problemStatement || '').toLowerCase();
     var label = (trackLabel || '').toLowerCase();
     if (label === 'track 1') {
         return ps.indexOf('conversational analytics with bigquery agents') >= 0
+            || ps.indexOf('build ai agents with enterprise databases') >= 0
             || (ps.indexOf('professional') >= 0 && ps.indexOf('track 1') >= 0)
             || (ps.indexOf('track 1') >= 0 && ps.indexOf('professional') < 0 && ps.indexOf('student') < 0);
     }
     if (label === 'track 2') {
         return ps.indexOf('ai-assisted data science with bigquery') >= 0
+            || ps.indexOf('agent assist and its gen ai capabilities') >= 0
             || (ps.indexOf('professional') >= 0 && ps.indexOf('track 2') >= 0)
             || (ps.indexOf('track 2') >= 0 && ps.indexOf('professional') < 0);
     }
     if (label === 'track 3') {
         return ps.indexOf('building ai agents with adk') >= 0
+            || ps.indexOf('engineer ai agents with agent development kit') >= 0
             || (ps.indexOf('[student]') >= 0 && ps.indexOf('track') >= 0)
+            || (ps.indexOf('student') >= 0 && ps.indexOf('track') >= 0)
             || (ps.indexOf('track 3') >= 0 && ps.indexOf('professional') < 0 && ps.indexOf('student') < 0);
     }
     return ps.indexOf(label) >= 0;
@@ -88,25 +181,14 @@ function getSkillLabTrackCell(submissions, trackLabel) {
     var validRows = forTrack.filter(function(s) { return s.valid; });
     var match = validRows.length ? validRows[0] : forTrack[0];
     if (!match) return '';
-    // Not yet reviewed (no valid flag set and no remark)
-    if (!match.valid && (!match.remark || !match.remark.trim())) {
-        return '<span style="color:#999;font-size:0.8rem;">Pending</span>';
-    }
-    if (match.valid) {
-        return '<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> Valid</span>';
-    }
-    // Not valid — show remark
-    var html = '<span style="color:#ef4444;font-weight:600;"><i class="fas fa-times-circle"></i> Not Valid</span>';
-    if (match.remark && match.remark.trim()) {
-        html += '<br><span style="color:#666;font-size:0.75rem;" title="' + escapeHtml(match.remark) + '">' + escapeHtml(match.remark) + '</span>';
-    }
-    return html;
+    var title = shortActivityName(match.problem_statement, 48) || 'Skill Lab';
+    var status = verificationStatusHtml(match.valid, match.remark, { pendingLabel: 'Pending review' });
+    var link = activityExternalLinkHtml(match.upload_screenshot, 'Open skill badge');
+    return tpActivityBlock(title, status, link);
 }
 
 /**
- * Generate HTML for a Code Lab track cell in the Track Progress table.
- * Uses track_number (int) to group submissions per track.
- * Shows aggregated status across labs within that track.
+ * Code Lab cell: no verification — show count submitted + which lab(s) + screenshot link.
  */
 function getCodeLabTrackCell(submissions, trackLabel, cohortId) {
     if (!submissions || submissions.length === 0) return '';
@@ -117,47 +199,63 @@ function getCodeLabTrackCell(submissions, trackLabel, cohortId) {
         return codelabSubmissionMatchesTrack(s, trackLabel, cohortId);
     });
     if (matches.length === 0) return '';
-    var validCount = matches.filter(function(s) { return s.valid; }).length;
-    var invalidCount = matches.filter(function(s) { return !s.valid && s.remark && s.remark.trim(); }).length;
-    var pendingCount = matches.length - validCount - invalidCount;
-    var parts = [];
-    if (validCount > 0) parts.push('<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> ' + validCount + ' Valid</span>');
-    if (invalidCount > 0) parts.push('<span style="color:#ef4444;font-weight:600;"><i class="fas fa-times-circle"></i> ' + invalidCount + ' Not Valid</span>');
-    if (pendingCount > 0) parts.push('<span style="color:#999;font-size:0.8rem;">' + pendingCount + ' Pending</span>');
-    return parts.join('<br>');
+    matches.sort(function(a, b) {
+        var pa = (a.problem_statement || '').toLowerCase();
+        var pb = (b.problem_statement || '').toLowerCase();
+        if (pa < pb) return -1;
+        if (pa > pb) return 1;
+        var ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        var tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+    });
+    // One entry per distinct lab name (latest screenshot wins)
+    var byLab = {};
+    var order = [];
+    matches.forEach(function(s) {
+        var key = (s.problem_statement || '').trim().toLowerCase() || ('track-' + (s.track_number || trackNum));
+        if (!byLab[key]) {
+            byLab[key] = s;
+            order.push(key);
+        }
+    });
+    var count = order.length;
+    var countLabel = count === 1 ? '1 submitted' : (count + ' submitted');
+    var html = '<div class="tp-activity">';
+    html += '<div class="tp-activity-row"><span class="tp-status tp-status--ok"><i class="fas fa-check-circle"></i> '
+        + escapeHtml(countLabel) + '</span></div>';
+    order.forEach(function(key) {
+        var s = byLab[key];
+        var title = shortActivityName(s.problem_statement, 48)
+            || (cohortId === 2 || cohortId === 3
+                ? (trackLabel === 'Track 3' ? 'Student Track Codelab' : 'Professional Track ' + trackNum + ' Codelab')
+                : ('Lab (Track ' + trackNum + ')'));
+        var link = activityExternalLinkHtml(s.upload_screenshot, 'View screenshot');
+        html += '<div class="tp-activity-row tp-codelab-item">';
+        html += '<span class="tp-activity-name" title="' + escapeHtml(title) + '">' + escapeHtml(title) + '</span>';
+        if (link) html += ' ' + link;
+        html += '</div>';
+    });
+    html += '</div>';
+    return html;
 }
 
 /**
  * Final project submission for a track (one row per leader per track).
- * Shows team name plus verification stats (submitted / verified / pending review).
  */
 function getProjectTrackCell(submissions, trackLabel) {
     if (!submissions || submissions.length === 0) return '';
-    var trackNum = trackLabel === 'Track 1' ? 1 : (trackLabel === 'Track 2' ? 2 : (trackLabel === 'Track 3' ? 3 : 0));
+    var trackNum = trackLabelToNumber(trackLabel);
     if (!trackNum) return '';
     var match = submissions.find(function(s) { return s.track_number === trackNum; });
-    if (!match) {
-        return '<span style="color:#d1d5db;font-size:0.75rem;">—</span>';
-    }
-    var team = (match.team_name && String(match.team_name).trim()) ? String(match.team_name).trim() : '';
-    var teamLine = '';
-    if (team) {
-        var shortTeam = team.length > 36 ? team.slice(0, 33) + '…' : team;
-        teamLine = '<div style="font-size:0.7rem;color:#4b5563;font-weight:600;margin-bottom:4px;line-height:1.25;" title="' + escapeHtml(team) + '">' + escapeHtml(shortTeam) + '</div>';
-    }
-    var statLine = '<div style="font-size:0.68rem;color:#6b7280;margin-bottom:2px;">1 submission</div>';
-    var statusBlock = '';
-    if (!match.valid && (!match.remark || !match.remark.trim())) {
-        statusBlock = '<span style="color:#ca8a04;font-weight:600;font-size:0.75rem;"><i class="fas fa-hourglass-half"></i> Pending review</span>';
-    } else if (match.valid) {
-        statusBlock = '<span style="color:#16a34a;font-weight:600;font-size:0.75rem;"><i class="fas fa-check-circle"></i> Verified</span>';
-    } else {
-        statusBlock = '<span style="color:#dc2626;font-weight:600;font-size:0.75rem;"><i class="fas fa-times-circle"></i> Not valid</span>';
-        if (match.remark && match.remark.trim()) {
-            statusBlock += '<br><span style="color:#6b7280;font-size:0.68rem;" title="' + escapeHtml(match.remark) + '">' + escapeHtml(match.remark.length > 48 ? match.remark.slice(0, 45) + '…' : match.remark) + '</span>';
-        }
-    }
-    return teamLine + statLine + statusBlock;
+    if (!match) return '';
+    var title = shortActivityName(match.problem_statement, 40)
+        || (match.team_name && String(match.team_name).trim())
+        || ('Project Track ' + trackNum);
+    var status = verificationStatusHtml(match.valid, match.remark, {
+        pendingLabel: 'Pending review',
+        validLabel: 'Verified',
+    });
+    return tpActivityBlock(title, status, '');
 }
 
 /**
@@ -172,14 +270,16 @@ function getWebinarTrackCell(codelabSubmissions, trackLabel, cohortId) {
         return codelabSubmissionMatchesTrack(s, trackLabel, cohortId);
     });
     if (!hasSubmission) return '';
-    return '<span style="color:#22c55e;font-weight:600;"><i class="fas fa-check-circle"></i> Valid</span>';
+    return tpActivityBlock('Webinar (via Code Lab)', verificationStatusHtml(true, null, { validLabel: 'Valid' }), '');
 }
 
 function getOptionalMcqTrackCell(scores, trackLabel, cohortId) {
     if (!scores || scores.length === 0) return '';
     cohortId = cohortId != null ? cohortId : getProfileCohortId();
     var item;
-    if (cohortId === 2) {
+    var title;
+    if (cohortId === 2 || cohortId === 3) {
+        // Single cohort-wide Optional MCQ (track_number=4); show under Track 1 only.
         if (trackLabel !== 'Track 1') return '';
         var track4Rows = scores.filter(function(s) { return s.track_number === 4; });
         if (track4Rows.length === 0) return '';
@@ -189,38 +289,40 @@ function getOptionalMcqTrackCell(scores, trackLabel, cohortId) {
             return tb - ta;
         });
         item = track4Rows[0];
+        title = 'Optional MCQ';
     } else {
         var trackNum = trackLabelToNumber(trackLabel);
         if (!trackNum) return '';
         item = scores.find(function(s) { return s.track_number === trackNum; });
+        title = 'Optional MCQ Track ' + trackNum;
     }
     if (!item || item.score_display == null) return '';
     var scoreDisplay = String(item.score_display);
     var score = typeof item.score === 'number' ? item.score : parseInt(scoreDisplay.split('/')[0], 10);
     var isPass = !isNaN(score) && score >= 6;
-    var label = isPass ? 'Verified' : 'Fail';
-    var color = isPass ? '#16a34a' : '#dc2626';
-    var icon = isPass ? '<i class="fas fa-check-circle"></i> ' : '';
-    return '<span style="color:' + color + ';font-weight:600;">' + icon + escapeHtml(label) + '</span>';
+    var status = isPass
+        ? '<span class="tp-status tp-status--ok"><i class="fas fa-check-circle"></i> '
+            + escapeHtml(scoreDisplay + ' · Verified') + '</span>'
+        : '<span class="tp-status tp-status--bad"><i class="fas fa-times-circle"></i> '
+            + escapeHtml(scoreDisplay + ' · Fail') + '</span>';
+    return tpActivityBlock(title, status, '');
 }
 
-/**
- * Generate HTML for a Main MCQ (MCQ Verification) track cell.
- * Shows Verified when score >= 6, Fail when submitted but < 6.
- */
 /**
  * Build Track Progress table HTML for profile detail modal.
  */
 function buildTrackProgressSectionHtml(data) {
     var cohortId = getProfileCohortId();
     var cohortLabel = getProfileCohortLabel();
+    var headers = getProfileTrackHeaders(cohortId);
+    var trackKeys = headers.map(function(h) { return h.key; });
     var codelab_submissions = data.codelab_submissions || [];
     var project_submissions = data.project_submissions || [];
     var optional_mcq_scores = data.optional_mcq_scores || [];
     var main_mcq_scores = data.main_mcq_scores || [];
     var skilllab_submissions = data.skilllab_submissions || [];
-    function cell(fn, trackLabel) {
-        return fn(trackLabel);
+    function cells(fn) {
+        return trackKeys.map(function(t) { return '<td>' + (fn(t) || '') + '</td>'; }).join('');
     }
     function webinarCell(t) { return getWebinarTrackCell(codelab_submissions, t, cohortId); }
     function mainMcqCell(t) { return getMainMcqTrackCell(main_mcq_scores, t); }
@@ -228,27 +330,40 @@ function buildTrackProgressSectionHtml(data) {
     function codeLabCell(t) { return getCodeLabTrackCell(codelab_submissions, t, cohortId); }
     function projectCell(t) { return getProjectTrackCell(project_submissions, t); }
     function skillLabCell(t) { return getSkillLabTrackCell(skilllab_submissions, t); }
+
+    // Project submission is Cohort 1 only (disabled for C2/C3).
+    var showProject = cohortId === 1;
+
+    var headCols = headers.map(function(h) {
+        return '<th>' + escapeHtml(h.label) + '</th>';
+    }).join('');
+
+    var rows = '';
+    rows += '<tr><td class="grid-row-label">WEBINAR</td>' + cells(webinarCell) + '</tr>';
+    rows += '<tr><td class="grid-row-label">MCQ</td>' + cells(mainMcqCell) + '</tr>';
+    rows += '<tr><td class="grid-row-label">Optional MCQ</td>' + cells(optMcqCell) + '</tr>';
+    rows += '<tr><td class="grid-row-label">CODE LAB</td>' + cells(codeLabCell) + '</tr>';
+    if (showProject) {
+        rows += '<tr><td class="grid-row-label">PROJECT SUBMISSION</td>' + cells(projectCell) + '</tr>';
+    }
+    rows += '<tr><td class="grid-row-label">SKILL LAB</td>' + cells(skillLabCell) + '</tr>';
+
     return `
                 <div class="detail-section profile-cohort-grid-section">
                     <h4><i class="fas fa-th-large"></i> Track Progress</h4>
+                    <div class="table-responsive table-sticky-first profile-cohort-grid-scroll">
                     <table class="profile-cohort-grid" aria-label="Track progress by activity">
                         <thead>
                             <tr>
                                 <th>${escapeHtml(cohortLabel)}</th>
-                                <th>Track 1</th>
-                                <th>Track 2</th>
-                                <th>Track 3</th>
+                                ${headCols}
                             </tr>
                         </thead>
                         <tbody>
-                            <tr><td class="grid-row-label">WEBINAR</td><td>${cell(webinarCell, 'Track 1')}</td><td>${cell(webinarCell, 'Track 2')}</td><td>${cell(webinarCell, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">MCQ</td><td>${cell(mainMcqCell, 'Track 1')}</td><td>${cell(mainMcqCell, 'Track 2')}</td><td>${cell(mainMcqCell, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">Optional MCQ</td><td>${cell(optMcqCell, 'Track 1')}</td><td>${cell(optMcqCell, 'Track 2')}</td><td>${cell(optMcqCell, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">CODE LAB</td><td>${cell(codeLabCell, 'Track 1')}</td><td>${cell(codeLabCell, 'Track 2')}</td><td>${cell(codeLabCell, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">PROJECT SUBMISSION</td><td>${cell(projectCell, 'Track 1')}</td><td>${cell(projectCell, 'Track 2')}</td><td>${cell(projectCell, 'Track 3')}</td></tr>
-                            <tr><td class="grid-row-label">SKILL LAB</td><td>${cell(skillLabCell, 'Track 1')}</td><td>${cell(skillLabCell, 'Track 2')}</td><td>${cell(skillLabCell, 'Track 3')}</td></tr>
+                            ${rows}
                         </tbody>
                     </table>
+                    </div>
                 </div>
         `;
 }
@@ -259,11 +374,19 @@ function getMainMcqTrackCell(scores, trackLabel) {
     if (!trackNum) return '';
     var item = scores.find(function(s) { return s.track_number === trackNum; });
     if (!item) return '';
-    var score = typeof item.score === 'number' ? item.score : parseInt(String(item.score_display || '').split('/')[0], 10);
+    var scoreDisplay = item.score_display != null ? String(item.score_display) : '';
+    var score = typeof item.score === 'number' ? item.score : parseInt(scoreDisplay.split('/')[0], 10);
     var isPass = !isNaN(score) && score >= 6;
-    var label = isPass ? 'Verified' : 'Fail';
-    var color = isPass ? '#16a34a' : '#dc2626';
-    return '<span style="color:' + color + ';font-weight:600;"><i class="fas fa-check-circle"></i> ' + escapeHtml(label) + '</span>';
+    var title = 'Main MCQ Track ' + trackNum;
+    var status;
+    if (isPass) {
+        status = '<span class="tp-status tp-status--ok"><i class="fas fa-check-circle"></i> '
+            + escapeHtml((scoreDisplay || 'Pass') + ' · Verified') + '</span>';
+    } else {
+        status = '<span class="tp-status tp-status--bad"><i class="fas fa-times-circle"></i> '
+            + escapeHtml((scoreDisplay || 'Fail') + ' · Fail') + '</span>';
+    }
+    return tpActivityBlock(title, status, '');
 }
 
 function formatDate(dateString) {
@@ -403,7 +526,8 @@ window.viewProfileDetails = function(profileId) {
         // Populate modal
         const modalNameEl = document.getElementById('modalProfileName');
         if (modalNameEl) {
-            modalNameEl.textContent = profile.name || 'Profile Details';
+            modalNameEl.innerHTML = escapeHtml(profile.name || 'Profile Details')
+                + (cohortTracksCertificates() && profile.certificate_issued ? ' ' + certificateBadgeHtml(true) : '');
         } else {
             console.error('Modal name element not found');
         }
@@ -448,6 +572,10 @@ window.viewProfileDetails = function(profileId) {
                         <span class="detail-label">Gender:</span>
                         <span class="detail-value">${escapeHtml(profile.gender || 'N/A')}</span>
                     </div>
+                    ${cohortTracksCertificates() ? `<div class="detail-row">
+                        <span class="detail-label">Certificate:</span>
+                        <span class="detail-value">${certificateBadgeHtml(profile.certificate_issued)}</span>
+                    </div>` : ''}
                 </div>
                 
                 <div class="detail-section">
@@ -655,6 +783,7 @@ window.closeProfileModal = function() {
 
 // Load on page load
 document.addEventListener('DOMContentLoaded', function() {
+    applyCertificateColumnVisibility();
     loadFilterOptions();
     loadProfiles();
 });
@@ -836,7 +965,11 @@ async function loadProfiles() {
         const tbody = document.getElementById('profilesListBody');
         if (tbody) {
             tbody.innerHTML = 
-                '<tr><td colspan="10" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+                '<tr><td colspan="' + profilesTableColumnCount() + '" class="error-state">Failed to load profiles. Please try again.</td></tr>';
+        }
+        const cardList = document.getElementById('profilesCardList');
+        if (cardList) {
+            cardList.innerHTML = '<div class="data-card" style="cursor:default;"><div class="data-card-title">Failed to load profiles</div><div class="data-card-subtitle">Please try again.</div></div>';
         }
     }
 }
@@ -846,9 +979,15 @@ async function loadProfiles() {
  */
 function renderProfiles(profiles) {
     const tbody = document.getElementById('profilesListBody');
+    const cardList = document.getElementById('profilesCardList');
+    const showCertificate = cohortTracksCertificates();
+    applyCertificateColumnVisibility();
     
     if (profiles.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="empty-state">No profiles found matching your criteria.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + profilesTableColumnCount() + '" class="empty-state">No profiles found matching your criteria.</td></tr>';
+        if (cardList) {
+            cardList.innerHTML = '<div class="data-card" style="cursor:default;"><div class="data-card-title">No profiles found</div><div class="data-card-subtitle">Try adjusting your filters.</div></div>';
+        }
         return;
     }
     
@@ -893,6 +1032,9 @@ function renderProfiles(profiles) {
             <td>
                 <span class="profile-list-skilllab">${skillLabHtml}</span>
             </td>
+            ${showCertificate ? `<td>
+                <span class="profile-list-certificate">${certificateBadgeHtml(profile.certificate_issued)}</span>
+            </td>` : ''}
             <td>
                 <div class="profile-list-social">
                     ${profile.github_url ? `
@@ -918,6 +1060,31 @@ function renderProfiles(profiles) {
         </tr>
     `;
     }).join('');
+
+    if (cardList) {
+        cardList.innerHTML = profiles.map(profile => {
+            const v = profile.skillboost_verification || { total: 0, verified: 0, pending: 0, failed: 0 };
+            let skillLabText = '—';
+            if (v.total > 0) skillLabText = v.verified + '/' + v.total + ' verified';
+            return `
+            <div class="data-card" role="button" tabindex="0" onclick="viewProfileDetails('${profile.id}')" onkeydown="if(event.key==='Enter'){viewProfileDetails('${profile.id}');}">
+                <div class="data-card-title">${escapeHtml(profile.name || 'N/A')}</div>
+                <div class="data-card-subtitle">${escapeHtml(profile.email || 'N/A')}</div>
+                <div class="data-card-meta">
+                    <div class="data-card-row"><span class="data-card-label">Organization</span><span class="data-card-value">${escapeHtml(profile.organization_name || 'N/A')}</span></div>
+                    <div class="data-card-row"><span class="data-card-label">Location</span><span class="data-card-value">${escapeHtml(formatLocation(profile))}</span></div>
+                    <div class="data-card-row"><span class="data-card-label">BOB</span><span class="data-card-value">${profile.bob_match ? 'Yes' : 'No'}</span></div>
+                    <div class="data-card-row"><span class="data-card-label">Skill Lab</span><span class="data-card-value">${escapeHtml(skillLabText)}</span></div>
+                    ${showCertificate ? `<div class="data-card-row"><span class="data-card-label">Certificate</span><span class="data-card-value">${certificateBadgeHtml(profile.certificate_issued)}</span></div>` : ''}
+                </div>
+                <div class="data-card-actions">
+                    <button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation();viewProfileDetails('${profile.id}')">
+                        <i class="fas fa-eye"></i> View
+                    </button>
+                </div>
+            </div>`;
+        }).join('');
+    }
 }
 
 /**
@@ -967,7 +1134,8 @@ async function viewProfileDetails(profileId) {
         // Populate modal
         const modalNameEl = document.getElementById('modalProfileName');
         if (modalNameEl) {
-            modalNameEl.textContent = profile.name || 'Profile Details';
+            modalNameEl.innerHTML = escapeHtml(profile.name || 'Profile Details')
+                + (cohortTracksCertificates() && profile.certificate_issued ? ' ' + certificateBadgeHtml(true) : '');
         } else {
             console.error('Modal name element not found');
         }
@@ -1011,6 +1179,10 @@ async function viewProfileDetails(profileId) {
                         <span class="detail-label">Gender:</span>
                         <span class="detail-value">${escapeHtml(profile.gender || 'N/A')}</span>
                     </div>
+                    ${cohortTracksCertificates() ? `<div class="detail-row">
+                        <span class="detail-label">Certificate:</span>
+                        <span class="detail-value">${certificateBadgeHtml(profile.certificate_issued)}</span>
+                    </div>` : ''}
                 </div>
                 
                 <div class="detail-section">

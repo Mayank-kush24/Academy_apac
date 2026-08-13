@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS {PREFIX}user_pii (
     persona           VARCHAR(100),
     sub_category      VARCHAR(255),
     broad_category    VARCHAR(100),
+    certificate_issued BOOLEAN      NOT NULL DEFAULT FALSE,
     display_registered_at TIMESTAMP,
     created_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMP     NOT NULL DEFAULT NOW()
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS {PREFIX}user_pii_injected (
     persona           VARCHAR(100),
     sub_category      VARCHAR(255),
     broad_category    VARCHAR(100),
+    certificate_issued BOOLEAN      NOT NULL DEFAULT FALSE,
     display_registered_at TIMESTAMP,
     created_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMP     NOT NULL DEFAULT NOW()
@@ -117,8 +119,8 @@ CREATE TABLE IF NOT EXISTS {PREFIX}sync_state (
 _DDL_BOB_COMPANIES = f"""
 CREATE TABLE IF NOT EXISTS {PREFIX}bob_companies (
     id              SERIAL        PRIMARY KEY,
-    company_name    VARCHAR(500)  NOT NULL,
-    normalized_name VARCHAR(500)
+    company_name    VARCHAR(1000) NOT NULL,
+    normalized_name VARCHAR(1000)
 );
 CREATE INDEX IF NOT EXISTS ix_{PREFIX}bob_companies_normalized
     ON {PREFIX}bob_companies (normalized_name);

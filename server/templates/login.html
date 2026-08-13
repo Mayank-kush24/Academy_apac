@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Login - Gen AI Academy APAC</title>
     {% set v = v|default(1) %}
     <link rel="icon" href="{{ url_for('static_files', filename='images/hero-panels.png') }}?v={{ v }}" type="image/png">
@@ -61,5 +62,53 @@
     <script>window.__APP_SCRIPT_ROOT__ = {{ (request.script_root or '') | tojson }};</script>
     <script>window.__CDI_PORTAL_LOGIN_URL__ = {{ (cdi_portal_login_url|default('')) | tojson }};</script>
     <script src="{{ url_for('static_files', filename='js/auth.js') }}?v={{ v }}"></script>
+    <style>
+    @media (max-width: 768px) {
+        .login-page.theme-premium-login {
+            padding: 16px;
+            overflow-x: hidden;
+        }
+        .login-container {
+            width: 100%;
+            max-width: 100%;
+            padding: 0;
+        }
+        .login-card {
+            width: 100%;
+            max-width: 100%;
+            margin: 0 auto;
+            padding: 28px 20px;
+            box-sizing: border-box;
+        }
+        .login-header h1 {
+            font-size: 1.5rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            text-align: center;
+            gap: 8px;
+        }
+        .login-header h1 i {
+            font-size: 28px !important;
+            margin-right: 0 !important;
+        }
+        .login-form .form-group input {
+            width: 100%;
+            font-size: 16px;
+            min-height: 44px;
+            box-sizing: border-box;
+        }
+        .login-form .btn-block,
+        .login-form .btn-primary {
+            width: 100%;
+            min-height: 48px;
+            justify-content: center;
+        }
+        .login-page .btn-secondary {
+            width: 100%;
+            justify-content: center;
+            min-height: 44px;
+        }
+    }
+    </style>
 </body>
 </html>

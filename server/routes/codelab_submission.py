@@ -15,10 +15,52 @@ from server.utils.cache import cache_result
 
 bp = Blueprint('codelab_submission', __name__)
 
+# Cohort 2 Action Center tabs: Professional Track 1/2 + Student Track (track_number=3).
+_COHORT2_TRACK_LABELS = {
+    1: 'Professional Track 1',
+    2: 'Professional Track 2',
+    3: 'Student Track',
+}
+_DEFAULT_TRACK_LABELS = {1: 'Track 1', 2: 'Track 2', 3: 'Track 3'}
+
 
 def _CL():
     """Return CodeLabSubmission model for the current cohort."""
     return participant_model(CodeLabSubmission)
+
+
+def _cohort_id():
+    cid = getattr(g, 'cohort_id', None)
+    return cid if isinstance(cid, int) else 1
+
+
+def _track_labels():
+    return _COHORT2_TRACK_LABELS if _cohort_id() == 2 else _DEFAULT_TRACK_LABELS
+
+
+def _is_student_track_row(problem_statement, track_number):
+    ps = (problem_statement or '').lower()
+    if 'student track' in ps:
+        return True
+    # Legacy Cohort 2 imports stored student rows with null track_number.
+    return track_number is None and 'student' in ps
+
+
+def _enrich_row(d):
+    """Add display track_label for the UI (cohort-aware)."""
+    labels = _track_labels()
+    tn = d.get('track_number')
+    if _cohort_id() == 2 and _is_student_track_row(d.get('problem_statement'), tn):
+        d['track_label'] = labels.get(3, 'Student Track')
+        if not d.get('problem_statement'):
+            d['problem_statement'] = 'Student Track Codelab'
+    elif tn in labels:
+        d['track_label'] = labels[tn]
+    elif tn:
+        d['track_label'] = f'Track {tn}'
+    else:
+        d['track_label'] = None
+    return d
 
 
 @cache_result(ttl=900)
@@ -100,12 +142,25 @@ def list_submissions():
             query = query.filter(CL.problem_statement.ilike(f'%{problem_filter}%'))
 
         if track_param in ('1', '2', '3'):
-            query = query.filter(CL.track_number == int(track_param))
+            tn = int(track_param)
+            if _cohort_id() == 2 and tn == 3:
+                # Student Track: track_number=3, or legacy null + student lab label.
+                query = query.filter(
+                    or_(
+                        CL.track_number == 3,
+                        and_(
+                            CL.track_number.is_(None),
+                            CL.problem_statement.ilike('%student%'),
+                        ),
+                    )
+                )
+            else:
+                query = query.filter(CL.track_number == tn)
 
         query = query.order_by(CL.created_at.desc())
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
 
-        rows = [row.to_dict() for row in pagination.items]
+        rows = [_enrich_row(row.to_dict()) for row in pagination.items]
 
         return jsonify({
             'rows': rows,
@@ -113,6 +168,7 @@ def list_submissions():
             'page': page,
             'per_page': per_page,
             'pages': pagination.pages,
+            'track_labels': _track_labels(),
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -166,7 +222,7 @@ def verify_submission(submission_id):
 @bp.route('/filters', methods=['GET'])
 @require_page_access('codelab_submission')
 def get_filter_options():
-    """Return distinct problem statements for filter dropdown."""
+    """Return distinct problem statements and cohort track labels for filters."""
     try:
         CL = _CL()
         problem_statements = [
@@ -183,6 +239,7 @@ def get_filter_options():
 
         return jsonify({
             'problem_statements': problem_statements,
+            'track_labels': _track_labels(),
         }), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

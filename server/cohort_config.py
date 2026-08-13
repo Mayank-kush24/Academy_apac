@@ -34,7 +34,6 @@ COHORTS: Dict[int, Dict[str, Any]] = {
         # Sidebar + HTML/API: these modules are hidden and return 404 for cohort 2.
         "disabled_pages": (
             "project-submission",
-            "mcq-verification",
             "track-progress-query",
             # Skill Lab credits, Skill Lab Submissions verification, and dashboard Skill Lab row like Cohort 1.
             # Dashboard-only: Code Lab KPI card in kpi-small-row (page / sidebar stay enabled).
@@ -54,7 +53,6 @@ COHORTS: Dict[int, Dict[str, Any]] = {
         # Same module set as Cohort 2.
         "disabled_pages": (
             "project-submission",
-            "mcq-verification",
             "track-progress-query",
             "codelab-submission-dashboard",
         ),

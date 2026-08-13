@@ -43,6 +43,7 @@ class UserPII(db.Model):
     persona = db.Column(db.String(100), nullable=True)
     sub_category = db.Column(db.String(255), nullable=True)
     broad_category = db.Column(db.String(100), nullable=True)
+    certificate_issued = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -72,6 +73,7 @@ class UserPII(db.Model):
             'persona': self.persona,
             'sub_category': self.sub_category,
             'broad_category': self.broad_category,
+            'certificate_issued': bool(self.certificate_issued),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -104,6 +106,7 @@ class UserPIIInjected(db.Model):
     persona = db.Column(db.String(100), nullable=True)
     sub_category = db.Column(db.String(255), nullable=True)
     broad_category = db.Column(db.String(100), nullable=True)
+    certificate_issued = db.Column(db.Boolean, default=False, nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -133,6 +136,7 @@ class UserPIIInjected(db.Model):
             'persona': self.persona,
             'sub_category': self.sub_category,
             'broad_category': self.broad_category,
+            'certificate_issued': bool(self.certificate_issued),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None
         }
@@ -165,6 +169,7 @@ _user_pii_combined_table = Table(
     Column('persona', db.String(100), nullable=True),
     Column('sub_category', db.String(255), nullable=True),
     Column('broad_category', db.String(100), nullable=True),
+    Column('certificate_issued', db.Boolean, default=False, nullable=False),
     Column('created_at', db.DateTime, nullable=False),
     Column('updated_at', db.DateTime, nullable=False),
     Column('source', db.String(32), nullable=True),
@@ -203,6 +208,7 @@ class UserPIICombined(db.Model):
             'persona': self.persona,
             'sub_category': self.sub_category,
             'broad_category': self.broad_category,
+            'certificate_issued': bool(self.certificate_issued),
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'source': self.source,
@@ -214,8 +220,8 @@ class BobCompany(db.Model):
     __tablename__ = 'bob_companies'
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
-    company_name = db.Column(db.String(500), nullable=False)
-    normalized_name = db.Column(db.String(500), nullable=True, index=True)
+    company_name = db.Column(db.String(1000), nullable=False)
+    normalized_name = db.Column(db.String(1000), nullable=True, index=True)
 
 
 # NOTE: The legacy ``User`` model has been removed. Authentication and

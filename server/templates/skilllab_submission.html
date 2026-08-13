@@ -24,12 +24,7 @@
     color: #3b82f6; text-decoration: none; font-size: 0.8125rem; word-break: break-all;
 }
 .screenshot-link:hover { text-decoration: underline; }
-@media (max-width: 900px) {
-    .submission-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
-}
-@media (max-width: 480px) {
-    .submission-stats-section { grid-template-columns: 1fr !important; }
-}
+/* Mobile stats/filters handled globally in styles.css */
 </style>
 <div class="dashboard-premium" id="skillLabSubmissionPage">
     <div class="dashboard-container">
@@ -124,7 +119,7 @@
 
         <!-- Table -->
         <div class="glass-card">
-            <div class="table-responsive">
+            <div class="table-responsive table-sticky-first">
                 <table class="data-table">
                     <thead>
                         <tr>

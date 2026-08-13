@@ -1,7 +1,9 @@
 """
-Seed cohort_3_credit_links with five Skill Lab catalog URLs (2000 max allocations each).
+Seed / refresh cohort_3_credit_links with five Skill Lab catalog URLs
+(2000 max allocations each).
 
-Idempotent: inserts only when cohort_3_credit_links has no rows.
+- Empty table: inserts all five links.
+- Existing rows: updates link_url by display_order (keeps max_allocations).
 
 Run from project root:
     python server/migrations/seed_cohort3_credit_links.py
@@ -23,11 +25,11 @@ load_dotenv()
 from sqlalchemy import create_engine, text  # noqa: E402
 
 COHORT3_CREDIT_LINKS = [
-    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-15", 1, 2000),
-    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-16", 2, 2000),
-    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-17", 3, 2000),
-    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-18", 4, 2000),
-    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-19", 5, 2000),
+    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-45", 1, 2000),
+    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-46", 2, 2000),
+    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-47", 3, 2000),
+    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-48", 4, 2000),
+    ("https://www.skills.google/catalog?qlcampaign=6m-GAAAE-49", 5, 2000),
 ]
 
 
@@ -48,7 +50,32 @@ def main():
     with engine.begin() as conn:
         n = conn.execute(text("SELECT COUNT(*) FROM cohort_3_credit_links")).scalar()
         if n and int(n) > 0:
-            print(f"cohort_3_credit_links already has {n} row(s); skipping seed.")
+            for link_url, display_order, _max_allocations in COHORT3_CREDIT_LINKS:
+                result = conn.execute(
+                    text(
+                        """
+                        UPDATE cohort_3_credit_links
+                        SET link_url = :link_url
+                        WHERE display_order = :display_order
+                        """
+                    ),
+                    {"link_url": link_url, "display_order": display_order},
+                )
+                if result.rowcount == 0:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO cohort_3_credit_links (link_url, display_order, max_allocations)
+                            VALUES (:link_url, :display_order, :max_allocations)
+                            """
+                        ),
+                        {
+                            "link_url": link_url,
+                            "display_order": display_order,
+                            "max_allocations": 2000,
+                        },
+                    )
+            print(f"Updated cohort_3_credit_links URLs ({n} existing row(s)).")
             return
         for link_url, display_order, max_allocations in COHORT3_CREDIT_LINKS:
             conn.execute(

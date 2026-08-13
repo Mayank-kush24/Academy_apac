@@ -9,33 +9,44 @@ from sqlalchemy import text
 from server.cohort_config import ALLOWED_COHORT_IDS, get_cohort_entry, get_table_prefix
 
 
-def _view_sql(prefix: str, src_has_display: bool = False, injected_has_display: bool = False) -> str:
+def _view_sql(
+    prefix: str,
+    src_has_display: bool = False,
+    injected_has_display: bool = False,
+    src_has_certificate: bool = False,
+    injected_has_certificate: bool = False,
+) -> str:
     """Build CREATE VIEW SQL for a given table-name prefix (empty string = cohort 1).
 
     ``display_registered_at`` is a graph-only override of ``registered_at`` used to
     reshape the Registration Trend chart without altering real registration dates.
     It is always exposed by the view; when a base table lacks the column we emit
     ``NULL`` so downstream ``COALESCE(display_registered_at, registered_at)`` is a no-op.
+
+    ``certificate_issued`` is likewise always exposed; base tables that predate the
+    add_certificate_issued migration fall back to FALSE.
     """
     view  = f"{prefix}user_pii_combined"
     src   = f"{prefix}user_pii"
     injected = f"{prefix}user_pii_injected"
     src_display = "display_registered_at" if src_has_display else "NULL::timestamp AS display_registered_at"
     injected_display = "display_registered_at" if injected_has_display else "NULL::timestamp AS display_registered_at"
+    src_certificate = "certificate_issued" if src_has_certificate else "FALSE AS certificate_issued"
+    injected_certificate = "certificate_issued" if injected_has_certificate else "FALSE AS certificate_issued"
     return f"""
         DROP VIEW IF EXISTS {view} CASCADE;
         CREATE VIEW {view} AS
         SELECT id, registered_at, {src_display}, organization_name, class_stream, domain, designation, name, email,
                mobile_number, country, state, city, date_of_birth, gender, occupation,
                github_url, linkedin_url, utm_medium, bob_match, industry, persona,
-               sub_category, broad_category, created_at, updated_at,
+               sub_category, broad_category, {src_certificate}, created_at, updated_at,
                'user_pii'::text AS source
         FROM {src}
         UNION ALL
         SELECT id, registered_at, {injected_display}, organization_name, class_stream, domain, designation, name, email,
                mobile_number, country, state, city, date_of_birth, gender, occupation,
                github_url, linkedin_url, utm_medium, bob_match, industry, persona,
-               sub_category, broad_category, created_at, updated_at,
+               sub_category, broad_category, {injected_certificate}, created_at, updated_at,
                'user_pii_injected'::text AS source
         FROM {injected} i
         WHERE NOT EXISTS (SELECT 1 FROM {src} u WHERE u.email = i.email)
@@ -60,17 +71,19 @@ def ensure_user_pii_combined_views(engine):
         if pii_injected_table not in existing_tables and pii_table not in existing_tables:
             continue  # tables not created yet – skip silently
 
-        def _has_display(table_name: str) -> bool:
+        def _has_column(table_name: str, column: str) -> bool:
             if table_name not in existing_tables:
                 return False
-            return any(c["name"] == "display_registered_at" for c in insp.get_columns(table_name, schema="public"))
+            return any(c["name"] == column for c in insp.get_columns(table_name, schema="public"))
 
         try:
             with engine.connect() as conn:
                 conn.execute(text(_view_sql(
                     prefix,
-                    src_has_display=_has_display(pii_table),
-                    injected_has_display=_has_display(pii_injected_table),
+                    src_has_display=_has_column(pii_table, "display_registered_at"),
+                    injected_has_display=_has_column(pii_injected_table, "display_registered_at"),
+                    src_has_certificate=_has_column(pii_table, "certificate_issued"),
+                    injected_has_certificate=_has_column(pii_injected_table, "certificate_issued"),
                 )))
                 conn.commit()
             label = f"cohort {cid}" if prefix else "cohort 1 (public)"

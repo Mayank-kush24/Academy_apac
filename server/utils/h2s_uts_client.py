@@ -93,7 +93,7 @@ class H2SUtsClient:
             raise H2SUtsError(f"UTS request failed: {exc}") from exc
 
         if resp.status_code >= 400:
-            body = (resp.text or "")[:500]
+            body = (resp.text or "")[:1000]
             raise H2SUtsError(
                 f"UTS API HTTP {resp.status_code} for {path}: {body}",
                 status_code=resp.status_code,

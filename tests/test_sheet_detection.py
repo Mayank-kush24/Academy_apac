@@ -48,3 +48,15 @@ def test_student_track_detector_allows_no_space_in_tab_name():
     det = _match_detector("3.StudentTrack Codelab Buildi", cohort_id=2)
     assert det is not None
     assert det.label == "Student Track Codelab Building"
+    assert det.track is None  # track_number=3 assigned at import, not on detector
+
+
+def test_codelab_upload_file_column_maps_to_screenshot():
+    from server.utils.excel_parser import _map_submission_columns, _codelab_default_problem_statement, _codelab_sheet_track_number
+
+    mapping = _map_submission_columns(["Leader Email", "Upload File", "Team Name"])
+    assert "Upload File" in mapping
+    assert mapping["Upload File"] == "upload_screenshot"
+    assert _codelab_sheet_track_number("3.Student Track Codelab Buildi", None) == 3
+    assert _codelab_default_problem_statement("2.Professional Track 1 Codelab", 1) == "Professional Track 1 Codelab"
+    assert _codelab_default_problem_statement("3.Student Track Codelab Buildi", 3) == "Student Track Codelab"

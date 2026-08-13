@@ -7,6 +7,7 @@ Uses:
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,6 +28,7 @@ from server.utils.excel_parser import (
     import_skillboost_profile,
     import_skilllab_submission,
 )
+from server.utils.cohort_participant_models import apply_cohort_globals
 from server.utils.h2s_uts_client import (
     H2SUtsClient,
     H2SUtsError,
@@ -39,12 +41,31 @@ from server.utils.h2s_uts_client import (
 SYNC_KEY_REGISTRATION_START = "registration_start"
 SYNC_KEY_LAST_SYNC_AT = "last_sync_at"
 SYNC_KEY_LAST_SYNC_STATUS = "last_sync_status"
+SYNC_KEY_REGISTRATION_GAPS = "registration_gaps"
 
 _TRACK_RE = re.compile(r"track\s*(\d+)", re.IGNORECASE)
+_COHORT_PREFIX_RE = re.compile(r"^cohort_([0-9]+)_$")
 
 
 def _sync_table(prefix: str) -> str:
     return f"{prefix}sync_state"
+
+
+def _bind_cohort_context(prefix: str) -> None:
+    """
+    Pin flask.g to the cohort being synced.
+
+    import_data(), the module importers and recalculate_bob_match() all resolve their
+    target tables from g.table_prefix, which is normally set per request. Outside a
+    request (CLI, cron, worker thread) it is unset and they silently fall back to the
+    cohort 1 tables, so bind it explicitly rather than trusting the caller's context.
+    """
+    match = _COHORT_PREFIX_RE.match(prefix or "")
+    if not match:
+        raise ValueError(
+            f"refusing to sync with table prefix {prefix!r}; expected e.g. 'cohort_3_'"
+        )
+    apply_cohort_globals(prefix, int(match.group(1)))
 
 
 def get_sync_value(prefix: str, key: str) -> Optional[str]:
@@ -73,11 +94,46 @@ def set_sync_value(prefix: str, key: str, value: Optional[str]) -> None:
     db.session.commit()
 
 
+def get_registration_gaps(prefix: str) -> List[Dict[str, str]]:
+    """
+    Windows of registration time that were deliberately skipped and are still missing.
+
+    Populated when the watermark is advanced past an upstream record that UTS cannot
+    serve. Cleared by a successful full sync, which refetches the whole range.
+    """
+    raw = get_sync_value(prefix, SYNC_KEY_REGISTRATION_GAPS)
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return []
+    return [g for g in parsed if isinstance(g, dict)] if isinstance(parsed, list) else []
+
+
+def add_registration_gap(prefix: str, gap_from: str, gap_to: str, reason: str) -> None:
+    gaps = get_registration_gaps(prefix)
+    gaps.append(
+        {
+            "from": gap_from,
+            "to": gap_to,
+            "reason": reason,
+            "recorded_at": _utc_now_iso(),
+        }
+    )
+    set_sync_value(prefix, SYNC_KEY_REGISTRATION_GAPS, json.dumps(gaps))
+
+
+def clear_registration_gaps(prefix: str) -> None:
+    set_sync_value(prefix, SYNC_KEY_REGISTRATION_GAPS, None)
+
+
 def get_sync_status(prefix: str = "cohort_3_") -> Dict[str, Any]:
     return {
         "registration_start": get_sync_value(prefix, SYNC_KEY_REGISTRATION_START),
         "last_sync_at": get_sync_value(prefix, SYNC_KEY_LAST_SYNC_AT),
         "last_sync_status": get_sync_value(prefix, SYNC_KEY_LAST_SYNC_STATUS),
+        "registration_gaps": get_registration_gaps(prefix),
     }
 
 
@@ -343,7 +399,13 @@ def run_cohort3_uts_sync(*, prefix: str = "cohort_3_", full: bool = False) -> Di
     full=True (Sync all data): omit ``start`` and fetch all registrations.
 
     Advances registration watermark after a successful registration pull either way.
+
+    Registrations and modules are pulled independently: a failure of one is reported
+    but does not prevent the other from running, because the UTS registrations
+    endpoint can fail on upstream data problems while every module endpoint is healthy.
     """
+    _bind_cohort_context(prefix)
+
     sync_started = _utc_now_iso()
     watermark = None if full else get_sync_value(prefix, SYNC_KEY_REGISTRATION_START)
 
@@ -362,31 +424,50 @@ def run_cohort3_uts_sync(*, prefix: str = "cohort_3_", full: bool = False) -> Di
         "registrations": None,
         "modules": None,
         "registration_start_new": None,
+        "registrations_error": None,
+        "modules_error": None,
         "error": None,
     }
 
+    registrations_ok = False
     try:
         out["registrations"] = _sync_registrations(client, prefix, watermark)
         # Advance watermark to sync invocation time so next incremental pull is contiguous.
         set_sync_value(prefix, SYNC_KEY_REGISTRATION_START, sync_started)
         out["registration_start_new"] = sync_started
-
-        out["modules"] = _sync_modules(client)
-
-        clear_cache()
-        set_sync_value(prefix, SYNC_KEY_LAST_SYNC_AT, sync_started)
-        mode = "full" if full else "incremental"
-        set_sync_value(prefix, SYNC_KEY_LAST_SYNC_STATUS, f"ok ({mode})")
-        return out
-    except H2SUtsError as exc:
-        out["ok"] = False
-        out["error"] = str(exc)
-        set_sync_value(prefix, SYNC_KEY_LAST_SYNC_AT, sync_started)
-        set_sync_value(prefix, SYNC_KEY_LAST_SYNC_STATUS, f"error: {exc}")
-        return out
+        registrations_ok = True
+        # A successful full pull refetches the entire range, so any recorded gap is filled.
+        if full:
+            clear_registration_gaps(prefix)
     except Exception as exc:
-        out["ok"] = False
-        out["error"] = str(exc)[:500]
-        set_sync_value(prefix, SYNC_KEY_LAST_SYNC_AT, sync_started)
-        set_sync_value(prefix, SYNC_KEY_LAST_SYNC_STATUS, f"error: {exc}")
-        return out
+        out["registrations_error"] = str(exc)[:1000]
+
+    modules_ok = False
+    try:
+        out["modules"] = _sync_modules(client)
+        modules_ok = True
+    except Exception as exc:
+        out["modules_error"] = str(exc)[:1000]
+
+    clear_cache()
+
+    out["registration_gaps"] = get_registration_gaps(prefix)
+    out["ok"] = registrations_ok and modules_ok
+    failures = []
+    if not registrations_ok:
+        failures.append(f"registrations: {out['registrations_error']}")
+    if not modules_ok:
+        failures.append(f"modules: {out['modules_error']}")
+    out["error"] = " | ".join(failures) or None
+
+    mode = "full" if full else "incremental"
+    if out["ok"]:
+        status = f"ok ({mode})"
+    elif registrations_ok or modules_ok:
+        done = "registrations" if registrations_ok else "modules"
+        status = f"partial ({mode}, {done} ok): {out['error']}"
+    else:
+        status = f"error ({mode}): {out['error']}"
+    set_sync_value(prefix, SYNC_KEY_LAST_SYNC_AT, sync_started)
+    set_sync_value(prefix, SYNC_KEY_LAST_SYNC_STATUS, status)
+    return out

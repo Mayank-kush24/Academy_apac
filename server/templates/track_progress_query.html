@@ -78,9 +78,11 @@
 .result-grid-cell .pass { color: #16a34a; font-weight: 600; }
 .result-grid-cell .fail { color: #dc2626; font-weight: 600; }
 .result-grid-cell .empty { color: #d1d5db; }
-@media (max-width: 900px) {
-    .tpq-filter-grid { font-size: 0.75rem; }
-    .tpq-filter-grid select { font-size: 0.75rem; }
+@media (max-width: 768px) {
+    .tpq-filter-grid { font-size: 0.75rem; display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tpq-filter-grid select { font-size: 16px; min-height: 40px; }
+    .tpq-actions { flex-direction: column; align-items: stretch; }
+    .tpq-actions .btn { width: 100%; justify-content: center; min-height: 44px; }
 }
 </style>
 <div class="dashboard-premium" id="trackProgressQueryPage">
@@ -180,7 +182,7 @@
 
         <!-- Results table -->
         <div class="glass-card">
-            <div class="table-responsive">
+            <div class="table-responsive table-sticky-first">
                 <table class="data-table">
                     <thead>
                         <tr>

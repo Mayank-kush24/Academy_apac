@@ -16,12 +16,7 @@
 .mcq-q-correct { color: #16a34a; font-weight: 600; }
 .mcq-q-incorrect { color: #dc2626; }
 .mcq-q-correct-answer { font-size: 0.8125rem; color: #6b7280; margin-top: 2px; }
-@media (max-width: 900px) {
-    .mcq-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
-}
-@media (max-width: 480px) {
-    .mcq-stats-section { grid-template-columns: 1fr !important; }
-}
+/* Mobile stats/filters handled globally in styles.css */
 </style>
 <div class="dashboard-premium" id="mcqVerificationPage">
     <div class="dashboard-container">
@@ -117,7 +112,7 @@
 
         <!-- Table: Name, Email, Track, Score, View submission -->
         <div class="glass-card">
-            <div class="table-responsive">
+            <div class="table-responsive table-sticky-first">
                 <table class="data-table">
                     <thead>
                         <tr>

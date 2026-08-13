@@ -38,12 +38,7 @@
 .track-filter-bar .track-btn.active {
     background: #3b82f6; border-color: #3b82f6; color: #fff;
 }
-@media (max-width: 900px) {
-    .submission-stats-section { grid-template-columns: repeat(2, 1fr) !important; }
-}
-@media (max-width: 480px) {
-    .submission-stats-section { grid-template-columns: 1fr !important; }
-}
+/* Mobile stats/filters handled globally in styles.css */
 </style>
 <div class="dashboard-premium" id="projectSubmissionPage">
     <div class="dashboard-container">
@@ -166,7 +161,7 @@
         </div>
 
         <div class="glass-card">
-            <div class="table-responsive">
+            <div class="table-responsive table-sticky-first">
                 <table class="data-table project-sub-table">
                     <thead>
                         <tr>

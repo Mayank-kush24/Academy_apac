@@ -255,7 +255,8 @@
 
     <!-- Profiles List -->
     <div class="profiles-list-container">
-        <div class="glass-card profiles-list-card-glass">
+        <div class="glass-card profiles-list-card-glass desktop-only-table">
+            <div class="table-responsive">
             <table class="profiles-list-table">
                 <thead>
                     <tr>
@@ -267,16 +268,21 @@
                         <th>UTM medium</th>
                         <th>Location</th>
                         <th>Skill Lab</th>
+                        <th id="certificateHeaderCell">Certificate</th>
                         <th>Social</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="profilesListBody">
                     <tr>
-                        <td colspan="10" class="loading-state">Loading profiles...</td>
+                        <td colspan="11" class="loading-state">Loading profiles...</td>
                     </tr>
                 </tbody>
             </table>
+            </div>
+        </div>
+        <div id="profilesCardList" class="data-card-list mobile-only-cards" aria-live="polite">
+            <div class="data-card" style="cursor:default;opacity:0.7;">Loading profiles...</div>
         </div>
     </div>
 

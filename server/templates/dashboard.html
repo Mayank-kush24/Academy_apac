@@ -5,7 +5,7 @@
 {% block content %}
 {% set _cp = cohort_path_prefix if cohort_path_prefix else cohort_base_cohort1 %}
 {% set _hide = cohort_disabled_pages %}
-<div class="dashboard-premium" id="dashboardPremium">
+<div class="dashboard-premium is-loading" id="dashboardPremium" aria-busy="true">
     <div class="dashboard-container">
         <!-- Header Section -->
         <div class="dashboard-header">
@@ -189,7 +189,7 @@
             </div>
         </div>
 
-        <!-- Region registrations: SEA, ANZ, Greater China and Korea, India (click to see breakdown) -->
+        <!-- Region registrations: SEA, ANZ, Greater China, Korea, India, Others (click to see breakdown) -->
         <div class="region-registrations-row">
             <div class="glass-card region-card region-card-clickable" data-region="sea" role="button" tabindex="0" title="Click to see country-wise registrations">
                 <div class="region-card-icon">
@@ -239,6 +239,16 @@
                     <div class="region-card-label">India</div>
                     <div class="region-card-value" id="indiaRegistrations">-</div>
                     <div class="region-card-meta" id="indiaTopState">Top: —</div>
+                </div>
+            </div>
+            <div class="glass-card region-card region-card-clickable" data-region="others" role="button" tabindex="0" title="Registrations outside the regions above – click to see country-wise breakdown">
+                <div class="region-card-icon">
+                    <i class="fas fa-globe"></i>
+                </div>
+                <div class="region-card-content">
+                    <div class="region-card-label">Others</div>
+                    <div class="region-card-value" id="othersRegistrations">-</div>
+                    <div class="region-card-meta" id="othersTopCountry">Top: —</div>
                 </div>
             </div>
         </div>
@@ -483,6 +493,7 @@
                     <p class="chart-subtitle">Designation-based role personas</p>
                 </div>
                 <div class="chart-container-medium">
+                    <div class="chart-skeleton" id="skel-persona"><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:80%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:35%"></div><div class="skel-bar" style="height:60%"></div></div>
                     <canvas id="personaChart"></canvas>
                 </div>
             </div>
@@ -502,6 +513,7 @@
                     </button>
                 </div>
                 <div class="chart-container-medium">
+                    <div class="chart-skeleton" id="skel-broadCategory"><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:85%"></div><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:60%"></div></div>
                     <canvas id="broadCategoryChart"></canvas>
                 </div>
             </div>
@@ -518,7 +530,7 @@
                     </div>
                 </div>
                 <div class="chart-container-donut">
-                    <div class="chart-skeleton" id="skel-regSource"><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:85%"></div><div class="skel-bar" style="height:40%"></div></div>
+                    <div class="chart-skeleton chart-skeleton--donut" id="skel-regSource"><div class="skel-ring"></div></div>
                     <canvas id="registrationSourceChart"></canvas>
                 </div>
             </div>
@@ -528,7 +540,7 @@
                     <p class="chart-subtitle">Demographic breakdown</p>
                 </div>
                 <div class="chart-container-donut">
-                    <div class="chart-skeleton" id="skel-gender"><div class="skel-bar" style="height:80%"></div><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:35%"></div></div>
+                    <div class="chart-skeleton chart-skeleton--donut" id="skel-gender"><div class="skel-ring"></div></div>
                     <canvas id="genderChart"></canvas>
                 </div>
             </div>
@@ -539,7 +551,7 @@
                     <p class="chart-subtitle">By occupation / role</p>
                 </div>
                 <div class="chart-container-donut">
-                    <div class="chart-skeleton" id="skel-occupation"><div class="skel-bar" style="height:75%"></div><div class="skel-bar" style="height:60%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:30%"></div></div>
+                    <div class="chart-skeleton chart-skeleton--donut" id="skel-occupation"><div class="skel-ring"></div></div>
                     <canvas id="occupationChart"></canvas>
                 </div>
             </div>
@@ -617,6 +629,7 @@
                     </div>
                 </div>
                 <div class="india-map-container" id="indiaMapContainer">
+                    <div class="chart-skeleton chart-skeleton--map" id="skel-indiaMap"><div class="skel-map"></div></div>
                     <div id="indiaMapHeatmap" class="india-map-svg-wrap"></div>
                     <div id="indiaMapTooltip" class="india-map-tooltip" aria-hidden="true"></div>
                 </div>
@@ -629,6 +642,7 @@
                     </div>
                 </div>
                 <div class="apac-map-container" id="apacMapContainer">
+                    <div class="chart-skeleton chart-skeleton--map" id="skel-apacMap"><div class="skel-map"></div></div>
                     <div id="apacMapHeatmap" class="apac-map-svg-wrap"></div>
                     <div id="apacMapTooltip" class="india-map-tooltip apac-map-tooltip" aria-hidden="true"></div>
                 </div>
@@ -642,6 +656,7 @@
                     <h3 class="chart-title">Top Cities</h3>
                 </div>
                 <div class="chart-container-medium">
+                    <div class="chart-skeleton" id="skel-cities"><div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:30%"></div><div class="skel-bar" style="height:20%"></div></div>
                     <canvas id="citiesChart"></canvas>
                 </div>
             </div>
@@ -651,6 +666,7 @@
                     <h3 class="chart-title">Top cities outside India</h3>
                 </div>
                 <div class="chart-container-medium">
+                    <div class="chart-skeleton" id="skel-citiesOutsideIndia"><div class="skel-bar" style="height:85%"></div><div class="skel-bar" style="height:65%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:28%"></div><div class="skel-bar" style="height:18%"></div></div>
                     <canvas id="citiesOutsideIndiaChart"></canvas>
                 </div>
             </div>
@@ -663,6 +679,7 @@
                     <h3 class="chart-title">Top Organizations</h3>
                 </div>
                 <div class="chart-container-medium">
+                    <div class="chart-skeleton" id="skel-organizations"><div class="skel-bar" style="height:88%"></div><div class="skel-bar" style="height:72%"></div><div class="skel-bar" style="height:58%"></div><div class="skel-bar" style="height:44%"></div><div class="skel-bar" style="height:32%"></div><div class="skel-bar" style="height:22%"></div></div>
                     <canvas id="organizationsChart"></canvas>
                 </div>
             </div>

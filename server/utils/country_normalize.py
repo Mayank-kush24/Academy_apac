@@ -69,11 +69,27 @@ CANONICAL_COUNTRY_ALIASES_EXTRA: dict[str, list[str]] = {
     "APAC": ["APAC", "Asia Pacific"],
 }
 
+# ISO-3166 long forms / registration-form variants seen in imported data. Appended to (not
+# replacing) the alias lists above, so these raw values roll up to the right canonical country.
+CANONICAL_COUNTRY_ALIASES_VARIANTS: dict[str, list[str]] = {
+    "Brunei": ["Brunei Darussalam"],
+    "Fiji": ["Fiji Islands"],
+    "Laos": ["Lao People's Democratic Republic"],
+    "North Korea": ["Korea, Democratic People's Republic of"],
+    "South Korea": ["Korea, Republic of", "Republic of Korea", "Korea"],
+    "Taiwan": ["Taiwan, Province of China"],
+    "Vietnam": ["Viet Nam"],
+}
+
 
 def _merged_aliases() -> dict[str, list[str]]:
     out = dict(CANONICAL_COUNTRY_ALIASES)
     for k, v in CANONICAL_COUNTRY_ALIASES_EXTRA.items():
         out[k] = v
+    for k, v in CANONICAL_COUNTRY_ALIASES_VARIANTS.items():
+        aliases = list(out.get(k, [k]))
+        aliases.extend(a for a in v if a not in aliases)
+        out[k] = aliases
     return out
 
 
@@ -127,6 +143,15 @@ def _alias_tuple_for_canonical(canonical: str) -> tuple[str, ...]:
     if not aliases:
         aliases = [canonical]
     return tuple({a.strip().lower() for a in aliases if a and str(a).strip()})
+
+
+def canonical_aliases_lower(canonical_names: Sequence[str]) -> tuple[str, ...]:
+    """Lowercased raw aliases of the given canonical countries, for raw-SQL IN / NOT IN lists."""
+    out: set[str] = set()
+    for c in canonical_names:
+        if c:
+            out.update(_alias_tuple_for_canonical(c))
+    return tuple(sorted(out))
 
 
 def country_column_matches_canonical(column, canonical: str):

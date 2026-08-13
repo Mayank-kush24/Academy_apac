@@ -111,6 +111,7 @@ def build_insights_context(
             "anz_registrations": summary.get("anz_registrations"),
             "greater_china_registrations": summary.get("greater_china_registrations"),
             "korea_registrations": summary.get("korea_registrations"),
+            "others_registrations": summary.get("others_registrations"),
             "top_india_state": summary.get("top_india_state"),
             "top_india_city": summary.get("top_india_city"),
             "top_apac_country": summary.get("top_apac_country"),

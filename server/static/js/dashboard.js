@@ -12,8 +12,65 @@ const PERIOD_DEBOUNCE_MS = 150;
 let lastDashboardSummary = null;
 let lastDashboardCharts = null;
 
+const CHART_SKELETON_SPECS = [
+    { id: 'skel-registrationTrends', parentSelector: '.chart-container-large', html: '<div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:65%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:80%"></div><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:60%"></div>' },
+    { id: 'skel-domains', parentSelector: '.segmentation-container', html: '<div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:60%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:35%"></div><div class="skel-bar" style="height:25%"></div><div class="skel-bar" style="height:20%"></div>' },
+    { id: 'skel-persona', parentSelector: '#personaChart', insertBeforeCanvas: true, html: '<div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:80%"></div><div class="skel-bar" style="height:45%"></div><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:35%"></div><div class="skel-bar" style="height:60%"></div>' },
+    { id: 'skel-broadCategory', parentSelector: '#broadCategoryChart', insertBeforeCanvas: true, html: '<div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:85%"></div><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:60%"></div>' },
+    { id: 'skel-regSource', parentSelector: '#registrationSourceChart', insertBeforeCanvas: true, className: 'chart-skeleton chart-skeleton--donut', html: '<div class="skel-ring"></div>' },
+    { id: 'skel-gender', parentSelector: '#genderChart', insertBeforeCanvas: true, className: 'chart-skeleton chart-skeleton--donut', html: '<div class="skel-ring"></div>' },
+    { id: 'skel-occupation', parentSelector: '#occupationChart', insertBeforeCanvas: true, className: 'chart-skeleton chart-skeleton--donut', html: '<div class="skel-ring"></div>' },
+    { id: 'skel-indiaMap', parentSelector: '#indiaMapContainer', className: 'chart-skeleton chart-skeleton--map', html: '<div class="skel-map"></div>' },
+    { id: 'skel-apacMap', parentSelector: '#apacMapContainer', className: 'chart-skeleton chart-skeleton--map', html: '<div class="skel-map"></div>' },
+    { id: 'skel-cities', parentSelector: '#citiesChart', insertBeforeCanvas: true, html: '<div class="skel-bar" style="height:90%"></div><div class="skel-bar" style="height:70%"></div><div class="skel-bar" style="height:55%"></div><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:30%"></div><div class="skel-bar" style="height:20%"></div>' },
+    { id: 'skel-citiesOutsideIndia', parentSelector: '#citiesOutsideIndiaChart', insertBeforeCanvas: true, html: '<div class="skel-bar" style="height:85%"></div><div class="skel-bar" style="height:65%"></div><div class="skel-bar" style="height:50%"></div><div class="skel-bar" style="height:40%"></div><div class="skel-bar" style="height:28%"></div><div class="skel-bar" style="height:18%"></div>' },
+    { id: 'skel-organizations', parentSelector: '#organizationsChart', insertBeforeCanvas: true, html: '<div class="skel-bar" style="height:88%"></div><div class="skel-bar" style="height:72%"></div><div class="skel-bar" style="height:58%"></div><div class="skel-bar" style="height:44%"></div><div class="skel-bar" style="height:32%"></div><div class="skel-bar" style="height:22%"></div>' }
+];
+
+function _ensureChartSkeletons() {
+    CHART_SKELETON_SPECS.forEach(function (spec) {
+        if (document.getElementById(spec.id)) return;
+        var parent = null;
+        var before = null;
+        if (spec.insertBeforeCanvas) {
+            before = document.querySelector(spec.parentSelector);
+            parent = before ? before.parentElement : null;
+        } else {
+            parent = document.querySelector(spec.parentSelector);
+        }
+        if (!parent) return;
+        var el = document.createElement('div');
+        el.id = spec.id;
+        el.className = spec.className || 'chart-skeleton';
+        el.innerHTML = spec.html;
+        if (before) parent.insertBefore(el, before);
+        else parent.insertBefore(el, parent.firstChild);
+    });
+}
+
+function _showDashboardGhostLoaders() {
+    const root = document.getElementById('dashboardPremium');
+    if (root) {
+        root.classList.add('is-loading');
+        root.setAttribute('aria-busy', 'true');
+    }
+    _ensureChartSkeletons();
+    showInsightsLoading();
+}
+
+function _hideDashboardGhostLoaders() {
+    const root = document.getElementById('dashboardPremium');
+    if (root) {
+        root.classList.remove('is-loading');
+        root.setAttribute('aria-busy', 'false');
+    }
+    document.querySelectorAll('.chart-skeleton').forEach(function (el) {
+        el.remove();
+    });
+}
+
 function _removeChartSkeletons() {
-    document.querySelectorAll('.chart-skeleton').forEach(el => el.remove());
+    _hideDashboardGhostLoaders();
 }
 
 // Load dashboard data on page load
@@ -140,9 +197,10 @@ async function openRegionBreakdown(region) {
     const totalEl = document.getElementById('regionBreakdownTotal');
     const listEl = document.getElementById('regionBreakdownList');
     if (!modal || !titleEl || !totalEl || !listEl) return;
-    titleEl.textContent = 'Loading…';
-    totalEl.textContent = 'Total: —';
-    listEl.innerHTML = '';
+    titleEl.innerHTML = '<span class="ghost-line" style="width:10rem;height:1.1em;"></span>';
+    totalEl.innerHTML = '<span class="ghost-line" style="width:8rem;height:0.95em;"></span>';
+    listEl.classList.add('is-ghost-loading');
+    listEl.innerHTML = '<li></li><li></li><li></li><li></li><li></li><li></li>';
     modal.style.display = 'flex';
     modal.setAttribute('aria-hidden', 'false');
     try {
@@ -150,10 +208,14 @@ async function openRegionBreakdown(region) {
         const response = await authenticatedFetch(url);
         if (!response.ok) {
             const err = await response.json().catch(function() { return {}; });
+            listEl.classList.remove('is-ghost-loading');
             titleEl.textContent = err.error || 'Failed to load';
+            totalEl.textContent = '';
+            listEl.innerHTML = '';
             return;
         }
         const data = await response.json();
+        listEl.classList.remove('is-ghost-loading');
         titleEl.textContent = data.label || region;
         const total = (data.total !== undefined && data.total !== null) ? data.total : 0;
         totalEl.textContent = 'Total: ' + (typeof total === 'number' ? total.toLocaleString() : total) + ' registrations';
@@ -169,8 +231,10 @@ async function openRegionBreakdown(region) {
             return '<li><span>' + esc(item.name || 'Unknown') + '</span><span class="region-breakdown-count">' + esc(countStr) + '</span></li>';
         }).join('');
     } catch (err) {
+        listEl.classList.remove('is-ghost-loading');
         titleEl.textContent = 'Error';
         totalEl.textContent = err.message || 'Failed to load breakdown';
+        listEl.innerHTML = '';
     }
 }
 
@@ -189,6 +253,7 @@ async function loadDashboardData() {
     if (isLoading) return;
     if (lastLoadedPeriod === currentPeriod && lastLoadedPeriod !== null) return;
     isLoading = true;
+    _showDashboardGhostLoaders();
 
     const loadingIndicator = document.querySelector('.command-bar');
     if (loadingIndicator) loadingIndicator.style.opacity = '0.7';
@@ -210,7 +275,8 @@ async function loadDashboardData() {
                 top_india_city: 'N/A', top_apac_country: 'N/A',
                 sea_registrations: 0, sea_top_country: 'N/A', anz_registrations: 0, anz_top_country: 'N/A',
                 greater_china_registrations: 0, greater_china_top_country: 'N/A',
-                korea_registrations: 0, korea_top_country: 'N/A', india_registrations: 0,
+                korea_registrations: 0, korea_top_country: 'N/A',
+                others_registrations: 0, others_top_country: 'N/A', india_registrations: 0,
                 total_skillboost_profiles: 0, verified_skillboost_profiles: 0, skillboost_verification_rate: null,
                 skillboost_credits_allocated: 0, skillboost_credits_not_sent: 0, skillboost_credits_sent: 0,
                 total_skilllab_submissions: 0, verified_skilllab_submissions: 0, skilllab_submission_verification_rate: null,
@@ -237,7 +303,6 @@ async function loadDashboardData() {
         lastDashboardCharts = chartsData;
         updateKPICards(summary, chartsData);
         renderCharts(chartsData, summary);
-        _removeChartSkeletons();
         lastLoadedPeriod = currentPeriod;
     } catch (error) {
         console.error('Failed to load dashboard data:', error);
@@ -263,6 +328,8 @@ async function loadDashboardData() {
             greater_china_top_country: 'N/A',
             korea_registrations: 0,
             korea_top_country: 'N/A',
+            others_registrations: 0,
+            others_top_country: 'N/A',
             india_registrations: 0,
             total_skillboost_profiles: 0,
             verified_skillboost_profiles: 0,
@@ -306,7 +373,7 @@ async function loadDashboardData() {
         });
     } finally {
         isLoading = false;
-        _removeChartSkeletons();
+        _hideDashboardGhostLoaders();
         const loadingIndicator = document.querySelector('.command-bar');
         if (loadingIndicator) {
             loadingIndicator.style.opacity = '1';
@@ -660,7 +727,7 @@ function updateKPICards(summary, chartsData) {
         });
     }
 
-    // Region cards: SEA, ANZ, East Asia
+    // Region cards: SEA, ANZ, Greater China, Korea, India, Others
     const seaRegEl = document.getElementById('seaRegistrations');
     if (seaRegEl) seaRegEl.textContent = (summary.sea_registrations !== undefined && summary.sea_registrations !== null) ? formatNumber(summary.sea_registrations) : '-';
     const seaTopEl = document.getElementById('seaTopCountry');
@@ -685,6 +752,11 @@ function updateKPICards(summary, chartsData) {
     if (indiaRegEl) indiaRegEl.textContent = (summary.india_registrations !== undefined && summary.india_registrations !== null) ? formatNumber(summary.india_registrations) : '-';
     const indiaTopEl = document.getElementById('indiaTopState');
     if (indiaTopEl) indiaTopEl.textContent = 'Top: ' + (summary.top_india_state || '—');
+
+    const othersRegEl = document.getElementById('othersRegistrations');
+    if (othersRegEl) othersRegEl.textContent = (summary.others_registrations !== undefined && summary.others_registrations !== null) ? formatNumber(summary.others_registrations) : '-';
+    const othersTopEl = document.getElementById('othersTopCountry');
+    if (othersTopEl) othersTopEl.textContent = 'Top: ' + (summary.others_top_country || '—');
 
     updateHeaderUserInfo();
 }
@@ -1202,6 +1274,14 @@ function showInsightsLoading() {
         '<div class="insight-item loading">' +
         '<div class="insight-icon"><i class="fas fa-spinner fa-spin"></i></div>' +
         '<div class="insight-content"><div class="insight-text">Analyzing data…</div></div>' +
+        '</div>' +
+        '<div class="insight-item loading">' +
+        '<div class="insight-icon"><i class="fas fa-spinner fa-spin"></i></div>' +
+        '<div class="insight-content"><div class="insight-text">Analyzing data…</div></div>' +
+        '</div>' +
+        '<div class="insight-item loading">' +
+        '<div class="insight-icon"><i class="fas fa-spinner fa-spin"></i></div>' +
+        '<div class="insight-content"><div class="insight-text">Analyzing data…</div></div>' +
         '</div>';
 }
 
@@ -1687,6 +1767,8 @@ window.exportData = async function exportData(event) {
             csvContent += `Korea Top Country,${summary.korea_top_country || 'N/A'}\n`;
             csvContent += `India Registrations,${summary.india_registrations ?? ''}\n`;
             csvContent += `India Top State,${summary.top_india_state || 'N/A'}\n`;
+            csvContent += `Others Registrations,${summary.others_registrations ?? ''}\n`;
+            csvContent += `Others Top Country,${summary.others_top_country || 'N/A'}\n`;
             csvContent += `Unique Organizations,${summary.unique_organizations}\n`;
             csvContent += `Top Domain,${summary.top_domain}\n`;
             csvContent += `Top City,${summary.top_city}\n\n`;

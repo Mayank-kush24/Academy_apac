@@ -811,8 +811,8 @@
 /* Region registrations row (SEA, ANZ, Greater China, Korea, India) */
 .region-registrations-row {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 16px;
     margin-bottom: 32px;
 }
 
@@ -1465,11 +1465,15 @@
     border-color: #d1d5db;
 }
 
-/* ── Chart loading skeleton ── */
+/* ── Ghost / skeleton loaders (charts + metric values) ── */
 @keyframes skeletonPulse {
-    0% { opacity: 0.12; }
-    50% { opacity: 0.22; }
-    100% { opacity: 0.12; }
+    0% { opacity: 0.35; }
+    50% { opacity: 0.85; }
+    100% { opacity: 0.35; }
+}
+@keyframes ghostShimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
 }
 .chart-skeleton {
     display: flex;
@@ -1480,17 +1484,216 @@
     height: 100%;
     padding: 24px 32px 32px;
     box-sizing: border-box;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
 }
 .chart-skeleton .skel-bar {
     flex: 1;
     max-width: 48px;
     border-radius: 6px 6px 0 0;
-    background: currentColor;
-    opacity: 0.15;
+    background: rgba(15, 23, 42, 0.08);
     animation: skeletonPulse 1.6s ease-in-out infinite;
 }
 .chart-skeleton .skel-bar:nth-child(odd) { animation-delay: 0.3s; }
 .chart-skeleton .skel-bar:nth-child(3n) { animation-delay: 0.6s; }
+.chart-skeleton--donut {
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+}
+.chart-skeleton--donut .skel-ring {
+    width: min(56%, 180px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: conic-gradient(
+        rgba(15, 23, 42, 0.1) 0 35%,
+        rgba(15, 23, 42, 0.06) 35% 62%,
+        rgba(15, 23, 42, 0.12) 62% 100%
+    );
+    mask: radial-gradient(circle, transparent 42%, #000 43%);
+    -webkit-mask: radial-gradient(circle, transparent 42%, #000 43%);
+    animation: skeletonPulse 1.6s ease-in-out infinite;
+}
+.chart-skeleton--map {
+    align-items: stretch;
+    padding: 20px;
+}
+.chart-skeleton--map .skel-map {
+    flex: 1;
+    border-radius: 12px;
+    background: linear-gradient(
+        110deg,
+        rgba(15, 23, 42, 0.05) 25%,
+        rgba(15, 23, 42, 0.1) 37%,
+        rgba(15, 23, 42, 0.05) 63%
+    );
+    background-size: 200% 100%;
+    animation: ghostShimmer 1.4s linear infinite;
+}
+.chart-container-large,
+.chart-container-medium,
+.chart-container-donut,
+.segmentation-container,
+.india-map-container,
+.apac-map-container {
+    position: relative;
+}
+#dashboardPremium.is-loading .chart-container-large > canvas,
+#dashboardPremium.is-loading .chart-container-medium > canvas,
+#dashboardPremium.is-loading .chart-container-donut > canvas,
+#dashboardPremium.is-loading .segmentation-container > canvas,
+#dashboardPremium.is-loading #indiaMapHeatmap,
+#dashboardPremium.is-loading #apacMapHeatmap {
+    opacity: 0;
+}
+
+/* Text / number ghosts while dashboard data loads */
+.ghost-line {
+    display: inline-block;
+    vertical-align: middle;
+    border-radius: 6px;
+    background: linear-gradient(
+        110deg,
+        rgba(15, 23, 42, 0.06) 25%,
+        rgba(15, 23, 42, 0.12) 37%,
+        rgba(15, 23, 42, 0.06) 63%
+    );
+    background-size: 200% 100%;
+    animation: ghostShimmer 1.35s linear infinite;
+    color: transparent !important;
+    user-select: none;
+    pointer-events: none;
+}
+#dashboardPremium.is-loading .kpi-value,
+#dashboardPremium.is-loading .kpi-hero-stat-val,
+#dashboardPremium.is-loading .kpi-change,
+#dashboardPremium.is-loading .kpi-footer-stat,
+#dashboardPremium.is-loading .kpi-footer-note-wrap,
+#dashboardPremium.is-loading .kpi-small-value,
+#dashboardPremium.is-loading .region-card-value,
+#dashboardPremium.is-loading .region-card-meta,
+#dashboardPremium.is-loading .skill-lab-card-value,
+#dashboardPremium.is-loading .skill-lab-card-meta,
+#dashboardPremium.is-loading .skill-lab-credits-value,
+#dashboardPremium.is-loading .codelab-stat-value,
+#dashboardPremium.is-loading .optional-mcq-track-value,
+#dashboardPremium.is-loading .optional-mcq-stat-primary,
+#dashboardPremium.is-loading .optional-mcq-stat-secondary,
+#dashboardPremium.is-loading .cohort-c1-c2-overlap-meta,
+#dashboardPremium.is-loading .tracks-progress-counter,
+#dashboardPremium.is-loading .tracks-target-badge span,
+#dashboardPremium.is-loading .track-card-stat-line,
+#dashboardPremium.is-loading .track-status-badge,
+#dashboardPremium.is-loading .insight-item.loading .insight-text {
+    position: relative;
+    color: transparent !important;
+    border-color: transparent !important;
+    background: linear-gradient(
+        110deg,
+        rgba(15, 23, 42, 0.06) 25%,
+        rgba(15, 23, 42, 0.12) 37%,
+        rgba(15, 23, 42, 0.06) 63%
+    );
+    background-size: 200% 100%;
+    animation: ghostShimmer 1.35s linear infinite;
+    border-radius: 6px;
+    overflow: hidden;
+    pointer-events: none;
+    user-select: none;
+}
+#dashboardPremium.is-loading .kpi-value {
+    min-height: 1.1em;
+    max-width: 7.5rem;
+    width: 55%;
+}
+#dashboardPremium.is-loading .kpi-hero-stat-val {
+    min-height: 1.25em;
+    max-width: 9rem;
+    width: 70%;
+}
+#dashboardPremium.is-loading .kpi-change,
+#dashboardPremium.is-loading .kpi-footer-stat,
+#dashboardPremium.is-loading .kpi-footer-note-wrap {
+    min-height: 1em;
+    max-width: 8rem;
+    width: 65%;
+    display: inline-block;
+}
+#dashboardPremium.is-loading .kpi-change i,
+#dashboardPremium.is-loading .track-status-badge,
+#dashboardPremium.is-loading .insight-item.loading .insight-icon {
+    visibility: hidden;
+}
+#dashboardPremium.is-loading .kpi-sparkline canvas {
+    opacity: 0;
+}
+#dashboardPremium.is-loading .kpi-sparkline {
+    min-width: 100px;
+    min-height: 28px;
+    border-radius: 4px;
+    background: linear-gradient(
+        110deg,
+        rgba(15, 23, 42, 0.05) 25%,
+        rgba(15, 23, 42, 0.1) 37%,
+        rgba(15, 23, 42, 0.05) 63%
+    );
+    background-size: 200% 100%;
+    animation: ghostShimmer 1.35s linear infinite;
+}
+#dashboardPremium.is-loading .kpi-small-value,
+#dashboardPremium.is-loading .region-card-value,
+#dashboardPremium.is-loading .skill-lab-card-value {
+    min-height: 1.2em;
+    max-width: 6.5rem;
+    width: 50%;
+    display: block;
+}
+#dashboardPremium.is-loading .region-card-meta,
+#dashboardPremium.is-loading .skill-lab-card-meta,
+#dashboardPremium.is-loading .cohort-c1-c2-overlap-meta {
+    min-height: 0.95em;
+    max-width: 8rem;
+    width: 60%;
+    display: block;
+    margin-top: 4px;
+}
+#dashboardPremium.is-loading .skill-lab-credits-value,
+#dashboardPremium.is-loading .codelab-stat-value,
+#dashboardPremium.is-loading .optional-mcq-track-value,
+#dashboardPremium.is-loading .optional-mcq-stat-primary,
+#dashboardPremium.is-loading .optional-mcq-stat-secondary {
+    min-height: 1em;
+    min-width: 2.5rem;
+    display: inline-block;
+}
+#dashboardPremium.is-loading .tracks-progress-bar,
+#dashboardPremium.is-loading .track-card-progress-bar {
+    width: 28% !important;
+    background: rgba(15, 23, 42, 0.1) !important;
+    animation: skeletonPulse 1.6s ease-in-out infinite;
+}
+#dashboardPremium.is-loading .insight-item.loading .insight-text {
+    display: block;
+    min-height: 1em;
+    width: 70%;
+    max-width: 18rem;
+}
+.region-breakdown-list.is-ghost-loading li {
+    color: transparent !important;
+    height: 1.25rem;
+    margin-bottom: 10px;
+    border-radius: 6px;
+    background: linear-gradient(
+        110deg,
+        rgba(15, 23, 42, 0.06) 25%,
+        rgba(15, 23, 42, 0.12) 37%,
+        rgba(15, 23, 42, 0.06) 63%
+    );
+    background-size: 200% 100%;
+    animation: ghostShimmer 1.35s linear infinite;
+}
 
 /* Registration source bifurcation card (placeholder) */
 .registration-source-row {
@@ -1969,8 +2172,35 @@
         flex-direction: column;
         gap: 16px;
     }
+
+    .header-actions {
+        flex-direction: column;
+        align-items: stretch;
+        width: 100%;
+        gap: 12px;
+    }
+
+    .period-filters {
+        width: 100%;
+        flex-wrap: wrap;
+        box-sizing: border-box;
+    }
+
+    .period-btn {
+        flex: 1 1 calc(50% - 8px);
+        min-height: 44px;
+        text-align: center;
+        padding: 10px 12px;
+    }
+
+    .action-btn {
+        width: 100%;
+        justify-content: center;
+        min-height: 44px;
+    }
     
-    .hero-kpi-row {
+    .hero-kpi-row,
+    .hero-kpi-row.hero-kpi-row--six {
         grid-template-columns: 1fr;
         gap: 14px;
     }
@@ -1984,6 +2214,18 @@
     }
     .kpi-hero .kpi-hero-footer {
         padding: 10px 16px 12px 16px;
+    }
+
+    .primary-analytics-row,
+    .kpi-small-row,
+    .skill-lab-cards,
+    .region-registrations-row,
+    .tracks-row,
+    .ranking-row,
+    .bifurcation-row,
+    .bifurcation-row.bifurcation-row--two {
+        grid-template-columns: 1fr !important;
+        gap: 16px;
     }
     
     .chart-container-large,
@@ -2057,6 +2299,10 @@
 
 .import-step-card .chart-header {
     margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
 }
 
 .import-step-card .chart-title {
@@ -2215,6 +2461,237 @@
     box-shadow: 0 6px 16px rgba(255, 122, 24, 0.35);
 }
 
+/* ============================================
+   UTS SYNC CARD (Cohort 3 Import)
+   ============================================ */
+.uts-sync-card {
+    margin-bottom: 24px;
+    padding: 28px;
+}
+
+.uts-sync-card:hover {
+    transform: none;
+}
+
+.uts-sync-header {
+    margin-bottom: 20px;
+}
+
+.uts-sync-title-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.uts-sync-icon {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: rgba(255, 122, 24, 0.12);
+    color: #ff7a18;
+    font-size: 18px;
+}
+
+.uts-sync-heading {
+    min-width: 0;
+    flex: 1;
+}
+
+.uts-sync-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 18px;
+    font-weight: 600;
+    color: #1a1a1a;
+    letter-spacing: -0.01em;
+    margin: 0 0 6px 0;
+    line-height: 1.3;
+}
+
+.uts-sync-desc {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    color: #6b7280;
+    margin: 0;
+    line-height: 1.5;
+    max-width: 56ch;
+}
+
+.uts-sync-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.uts-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: rgba(249, 250, 251, 0.9);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    min-width: 0;
+}
+
+.uts-metric-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9ca3af;
+}
+
+.uts-metric-value {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    color: #1f2937;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.uts-metric-status {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    max-width: 100%;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    background: rgba(156, 163, 175, 0.15);
+    color: #6b7280;
+}
+
+.uts-metric-status.is-ok,
+.uts-metric-status.is-success {
+    background: rgba(34, 197, 94, 0.12);
+    color: #15803d;
+}
+
+.uts-metric-status.is-error,
+.uts-metric-status.is-failed {
+    background: rgba(239, 68, 68, 0.12);
+    color: #b91c1c;
+}
+
+.uts-metric-status.is-running,
+.uts-metric-status.is-partial {
+    background: rgba(245, 158, 11, 0.14);
+    color: #b45309;
+}
+
+.uts-gap-warning {
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    color: #92400e;
+    font-size: 0.9rem;
+    line-height: 1.45;
+}
+
+.uts-sync-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px 24px;
+    align-items: flex-start;
+    padding-top: 4px;
+}
+
+.uts-action {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.uts-action .btn {
+    min-width: 148px;
+    justify-content: center;
+}
+
+.uts-action-hint {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: #9ca3af;
+    line-height: 1.4;
+    max-width: 220px;
+}
+
+.uts-btn-secondary {
+    background: #fff;
+    color: #374151;
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    box-shadow: none;
+}
+
+.uts-btn-secondary:hover {
+    background: #f9fafb;
+    border-color: rgba(0, 0, 0, 0.18);
+    color: #111827;
+    transform: translateY(-1px);
+}
+
+.uts-sync-spinner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    align-self: center;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(255, 122, 24, 0.08);
+    color: #c2410c;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.uts-sync-result {
+    margin-top: 16px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    background: #f8fafc;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    white-space: pre-wrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.82rem;
+    color: #334155;
+    line-height: 1.5;
+    max-height: 320px;
+    overflow: auto;
+}
+
+@media (max-width: 768px) {
+    .uts-sync-metrics {
+        grid-template-columns: 1fr;
+    }
+
+    .uts-sync-actions {
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .uts-action {
+        width: 100%;
+    }
+
+    .uts-action .btn {
+        width: 100%;
+    }
+
+    .uts-action-hint {
+        max-width: none;
+    }
+}
+
 /* Import progress overlay (shown while importing) */
 .import-progress-overlay {
     position: fixed;
@@ -2322,7 +2799,7 @@
     }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 768px) {
     .users-page {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
