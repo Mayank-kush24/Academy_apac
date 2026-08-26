@@ -1433,6 +1433,8 @@
     height: 420px !important;
     min-height: 420px !important;
     max-height: 420px !important;
+    overflow-x: auto;
+    overflow-y: hidden;
 }
 
 .chart-header:has(.seg-back-btn) {

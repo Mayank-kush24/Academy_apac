@@ -35,9 +35,18 @@ def _add_columns(table: str) -> None:
                 raise
 
 
-def _backfill_table(table: str) -> int:
+def _backfill_table(table: str, only_missing: bool = False) -> int:
+    # Rows inserted outside the importer (e.g. the PII injection script) carry a real
+    # designation but no categories, so they show up as Unclassified. only_missing
+    # fills just those and leaves existing classifications untouched.
+    missing_sql = (
+        " AND (broad_category IS NULL OR TRIM(broad_category) = '')" if only_missing else ""
+    )
     rows = db.session.execute(
-        text(f"SELECT id, designation FROM {table} WHERE designation IS NOT NULL AND TRIM(designation) != ''")
+        text(
+            f"SELECT id, designation FROM {table} "
+            f"WHERE designation IS NOT NULL AND TRIM(designation) != ''{missing_sql}"
+        )
     ).fetchall()
     print(f"Backfilling {len(rows)} rows in {table}...")
     desig_cache: dict[str, tuple] = {}
@@ -69,19 +78,24 @@ def _backfill_table(table: str) -> int:
     return updated
 
 
-def migrate_cohort(cohort_id: int, backfill: bool) -> None:
+def migrate_cohort(cohort_id: int, backfill: bool, only_missing: bool = False) -> None:
     prefix = get_table_prefix(cohort_id)
     for base in ("user_pii", "user_pii_injected"):
         _add_columns(f"{prefix}{base}")
     if backfill and cohort_id in (2, 3):
         for base in ("user_pii", "user_pii_injected"):
-            _backfill_table(f"{prefix}{base}")
+            _backfill_table(f"{prefix}{base}", only_missing=only_missing)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Add title category columns and optional backfill")
     parser.add_argument("--cohort", type=int, default=None, help="Cohort id (default: 1 and 2)")
     parser.add_argument("--no-backfill", action="store_true", help="Skip designation backfill")
+    parser.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="Classify only rows with no category yet, leaving existing ones untouched",
+    )
     args = parser.parse_args()
 
     cohorts = [args.cohort] if args.cohort is not None else [1, 2]
@@ -89,7 +103,7 @@ def main():
     with app.app_context():
         for cid in cohorts:
             print(f"\n--- Cohort {cid} ---")
-            migrate_cohort(cid, backfill=not args.no_backfill)
+            migrate_cohort(cid, backfill=not args.no_backfill, only_missing=args.only_missing)
         ensure_user_pii_combined_views(db.engine)
         print("\n[OK] user_pii_combined views refreshed")
 

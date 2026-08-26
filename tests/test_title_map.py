@@ -64,3 +64,29 @@ def test_supervisor_maps_to_broad_category():
     sub, broad = get_title_categories("Supervisor")
     assert sub is not None
     assert broad in BROAD_CATEGORIES
+
+
+def test_client_taxonomy_overrides_bulk_corpus():
+    """The 700-title client list wins over the frequency-resolved corpus."""
+    assert get_title_categories("Director") == ("Director", "Information Decision Maker")
+    assert get_title_categories("Head of Department")[1] == "Information Decision Maker"
+    assert get_title_categories("Mandiant Consultant")[1] == "Security End User"
+
+
+def test_compound_title_resolves_from_a_known_part():
+    sub, broad = get_title_categories("Founder, CTO")
+    assert sub == "Founder"
+    assert broad in BROAD_CATEGORIES
+
+
+def test_compound_split_does_not_break_legitimate_comma_titles():
+    """Whole-string matching runs first, so real comma-bearing titles stay intact."""
+    sub, broad = get_title_categories("Manager, Information Technology")
+    assert sub == "Manager, Information Technology"
+    assert broad == "Information Decision Maker"
+
+
+def test_compound_split_ignores_unknown_parts():
+    """Free text splits into words; none are known titles, so nothing is guessed."""
+    assert get_title_categories("Bag and shoose  and mobile") == (None, None)
+    assert get_title_categories("C&B Manager") == (None, None)

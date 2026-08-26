@@ -7,12 +7,13 @@ so every window containing it is unfetchable. There is no end-of-range parameter
 the only way forward is to start after the bad record and record the skipped window
 as a gap.
 
-Finds the earliest safe ``start`` by probing the live API, then stores it.
+Sync Now now skips these windows automatically. This script remains for operators
+who want to probe or advance the watermark without importing.
 
 Usage:
   python scripts/skip_uts_poisoned_window.py                  # probe, show plan, no writes
   python scripts/skip_uts_poisoned_window.py --apply
-  python scripts/skip_uts_poisoned_window.py --apply --start 2026-07-26T15:21:04Z
+  python scripts/skip_uts_poisoned_window.py --apply --start 2026-08-14T07:29:01Z
 """
 import argparse
 import os
@@ -24,50 +25,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from server.app import create_app
 from server.utils.h2s_uts_client import H2SUtsClient, H2SUtsError
 from server.utils.h2s_uts_sync import (
+    POISON_GAP_REASON,
     SYNC_KEY_REGISTRATION_START,
     add_registration_gap,
+    find_earliest_safe_registration_start,
     get_registration_gaps,
     get_sync_value,
+    parse_uts_iso,
+    registration_start_works,
     set_sync_value,
+    uts_iso,
 )
-
-ISO_FMT = "%Y-%m-%dT%H:%M:%S.000Z"
-
-
-def _iso(dt: datetime) -> str:
-    return dt.strftime(ISO_FMT)
-
-
-def _parse_iso(value: str) -> datetime:
-    cleaned = value.strip().replace("Z", "+00:00")
-    return datetime.fromisoformat(cleaned).astimezone(timezone.utc)
-
-
-def _start_works(client: H2SUtsClient, dt: datetime) -> bool:
-    try:
-        client.fetch_registrations(start=_iso(dt))
-        return True
-    except H2SUtsError:
-        return False
-
-
-def find_earliest_safe_start(client: H2SUtsClient, lo: datetime, hi: datetime) -> datetime:
-    """Binary search the boundary between a failing and a succeeding ``start``."""
-    if _start_works(client, lo):
-        return lo
-    if not _start_works(client, hi):
-        raise SystemExit(
-            f"Even start={_iso(hi)} fails. The bad record is later than the search window; "
-            f"re-run with --search-hi set past it."
-        )
-    while (hi - lo) > timedelta(seconds=1):
-        mid = lo + (hi - lo) / 2
-        if _start_works(client, mid):
-            hi = mid
-        else:
-            lo = mid
-        print(f"  probing... bad<={_iso(lo)}  good>={_iso(hi)}")
-    return hi
 
 
 def main() -> None:
@@ -87,20 +55,30 @@ def main() -> None:
         client = H2SUtsClient()
 
         if args.start:
-            safe = _parse_iso(args.start)
-            print(f"using supplied start: {_iso(safe)}")
-            if not _start_works(client, safe):
-                raise SystemExit(f"start={_iso(safe)} still returns an error; pick a later time.")
+            safe = parse_uts_iso(args.start)
+            print(f"using supplied start: {uts_iso(safe)}")
+            if not registration_start_works(client, safe):
+                raise SystemExit(f"start={uts_iso(safe)} still returns an error; pick a later time.")
         else:
-            lo = _parse_iso(args.search_lo) if args.search_lo else (
-                _parse_iso(current) if current else datetime.now(timezone.utc) - timedelta(days=365)
+            lo = parse_uts_iso(args.search_lo) if args.search_lo else (
+                parse_uts_iso(current) if current else datetime.now(timezone.utc) - timedelta(days=365)
             )
-            hi = _parse_iso(args.search_hi) if args.search_hi else datetime.now(timezone.utc)
-            print(f"probing for earliest safe start between {_iso(lo)} and {_iso(hi)}...")
-            safe = find_earliest_safe_start(client, lo, hi)
+            hi = parse_uts_iso(args.search_hi) if args.search_hi else datetime.now(timezone.utc)
+            print(f"probing for earliest safe start between {uts_iso(lo)} and {uts_iso(hi)}...")
+            try:
+                safe = find_earliest_safe_registration_start(
+                    client,
+                    lo,
+                    hi,
+                    on_probe=lambda bad, good: print(
+                        f"  probing... bad<={uts_iso(bad)}  good>={uts_iso(good)}"
+                    ),
+                )
+            except H2SUtsError as exc:
+                raise SystemExit(str(exc)) from exc
 
-        print(f"\nearliest safe start: {_iso(safe)}")
-        print(f"unfetchable window : {current or '(beginning)'} -> {_iso(safe)}")
+        print(f"\nearliest safe start: {uts_iso(safe)}")
+        print(f"unfetchable window : {current or '(beginning)'} -> {uts_iso(safe)}")
 
         if not args.apply:
             print("\nDry run. Re-run with --apply to write.")
@@ -109,15 +87,11 @@ def main() -> None:
         add_registration_gap(
             args.prefix,
             gap_from=current or "(beginning)",
-            gap_to=_iso(safe),
-            reason=(
-                "UTS registrations endpoint returns HTTP 500 for any window containing this "
-                "range (upstream $convert to ObjectId fails on a non-ObjectId value). "
-                "Run a full sync to backfill once Hack2Skill fixes the record."
-            ),
+            gap_to=uts_iso(safe),
+            reason=POISON_GAP_REASON.format(bad=""),
         )
-        set_sync_value(args.prefix, SYNC_KEY_REGISTRATION_START, _iso(safe))
-        print(f"\n[OK] watermark set to {_iso(safe)}")
+        set_sync_value(args.prefix, SYNC_KEY_REGISTRATION_START, uts_iso(safe))
+        print(f"\n[OK] watermark set to {uts_iso(safe)}")
         for gap in get_registration_gaps(args.prefix):
             print(f"[GAP] {gap['from']} -> {gap['to']}")
 

@@ -236,12 +236,19 @@ def uts_sync_now():
     """On-demand Cohort 3 sync from Hack2Skill UTS APIs.
 
     Body/query ``full=true`` omits the registration ``start`` watermark and fetches all data.
+
+    Prefer ``?stream=1`` (SSE). Sync often exceeds CDI/nginx proxy idle timeouts (~60s);
+    heartbeats keep the gateway from returning HTTP 504 while work continues.
     """
     err, code = _require_cohort3_uts()
     if err is not None:
         return err, code
     from server.utils.h2s_uts_client import H2SUtsError
-    from server.utils.h2s_uts_sync import run_cohort3_uts_sync
+    from server.utils.h2s_uts_sync import (
+        SYNC_KEY_LAST_SYNC_STATUS,
+        run_cohort3_uts_sync,
+        set_sync_value,
+    )
 
     full = False
     if request.args.get("full", "").strip().lower() in ("1", "true", "yes"):
@@ -254,6 +261,57 @@ def uts_sync_now():
                 full = True
 
     prefix = getattr(g, "table_prefix", None) or "cohort_3_"
+    use_stream = request.args.get("stream", "").strip().lower() in ("1", "true", "yes")
+
+    if use_stream:
+        progress_queue: queue.Queue = queue.Queue()
+        app = current_app._get_current_object()
+        cohort_snap = snapshot_cohort_globals()
+        mode = "full" if full else "incremental"
+
+        def run_sync():
+            with app.app_context():
+                apply_cohort_globals(cohort_snap[0], cohort_snap[1])
+                try:
+                    set_sync_value(
+                        prefix,
+                        SYNC_KEY_LAST_SYNC_STATUS,
+                        f"running ({mode})",
+                    )
+                    result = run_cohort3_uts_sync(prefix=prefix, full=full)
+                    progress_queue.put({"done": True, "result": result})
+                except Exception as exc:
+                    progress_queue.put({"done": True, "error": str(exc)[:1000]})
+
+        thread = threading.Thread(target=run_sync, daemon=True)
+        thread.start()
+
+        def generate():
+            while True:
+                try:
+                    item = progress_queue.get(timeout=0.5)
+                except queue.Empty:
+                    # Keepalive comment — nginx/CDI proxies treat this as activity.
+                    yield ": keepalive\n\n"
+                    continue
+                if item.get("done"):
+                    if "error" in item:
+                        yield "data: " + json.dumps({"ok": False, "error": item["error"]}) + "\n\n"
+                    else:
+                        yield "data: " + json.dumps(item.get("result") or {}) + "\n\n"
+                    break
+            thread.join(timeout=5)
+
+        return Response(
+            stream_with_context(generate()),
+            mimetype="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+            },
+        )
+
     try:
         result = run_cohort3_uts_sync(prefix=prefix, full=full)
     except H2SUtsError as exc:

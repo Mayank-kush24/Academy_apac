@@ -2080,90 +2080,145 @@ const _segDataLabelsPlugin = {
 function _renderSegmentationLevel(canvasId, items, title, onBarClick) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return;
+
+    const sorted = (items || []).slice().sort(function (a, b) { return (b.value || 0) - (a.value || 0); });
+    const labels = sorted.map(function (d) {
+        var raw = d.label || '(unknown)';
+        if (raw.length <= 14) return raw;
+        var parts = raw.split(' ');
+        if (parts.length < 2) return raw;
+        var mid = Math.ceil(parts.length / 2);
+        return [parts.slice(0, mid).join(' '), parts.slice(mid).join(' ')];
+    });
+    const values = sorted.map(function (d) { return Number(d.value) || 0; });
+
+    const brandAccent = '#ff7a18';
+    const grays = [
+        'rgba(229,231,235,0.9)', 'rgba(209,213,219,0.9)',
+        'rgba(156,163,175,0.9)', 'rgba(107,114,128,0.9)',
+        'rgba(75,85,99,0.9)', 'rgba(55,65,81,0.9)'
+    ];
+    const bgColors = values.map(function (_, i) {
+        return i === 0 ? brandAccent : grays[(i - 1) % grays.length];
+    });
+
+    if (charts[canvasId]) charts[canvasId].destroy();
+    if (Chart.getChart(canvas)) Chart.getChart(canvas).destroy();
+
     const container = canvas.parentElement;
+    const msgEl = container ? container.querySelector('.empty-chart-message') : null;
+    if (msgEl) msgEl.remove();
+
+    var minBarWidth = 110;
+    var containerWidth = container ? container.clientWidth : 600;
+    var neededWidth = Math.max(sorted.length, 1) * minBarWidth;
+    var canvasWidth = Math.max(containerWidth, neededWidth);
+
     if (container) {
+        container.style.overflowX = neededWidth > containerWidth ? 'auto' : 'hidden';
+        container.style.overflowY = 'hidden';
         container.style.height = '420px';
         container.style.minHeight = '420px';
         container.style.maxHeight = '420px';
     }
+    canvas.style.display = 'block';
+    canvas.style.width = canvasWidth + 'px';
+    canvas.style.minWidth = canvasWidth + 'px';
+    canvas.style.height = '100%';
 
-    if (Chart.getChart(canvas)) Chart.getChart(canvas).destroy();
-
-    const labels = items.map(d => d.label || '(unknown)');
-    const values = items.map(d => Number(d.value) || 0);
-
-    const chart = new Chart(canvas, {
+    charts[canvasId] = new Chart(canvas, {
         type: 'bar',
         data: {
-            labels,
+            labels: labels,
             datasets: [{
                 label: title,
                 data: values,
-                backgroundColor: 'rgba(59,130,246,0.7)',
-                borderColor: 'rgba(59,130,246,1)',
-                borderWidth: 1,
-                borderRadius: 6,
-                minBarLength: 12
+                backgroundColor: bgColors,
+                borderRadius: 8,
+                borderSkipped: false,
+                maxBarThickness: 56,
+                minBarLength: 4,
+                borderWidth: 0,
+                categoryPercentage: 0.8,
+                barPercentage: 0.85
             }]
         },
         options: {
-            responsive: true,
+            responsive: false,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            layout: { padding: { top: 24, bottom: 8 } },
+            layout: { padding: { top: 24, right: 16, bottom: 8, left: 8 } },
             plugins: {
                 legend: { display: false },
-                tooltip: { enabled: false }
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(255,255,255,0.98)',
+                    padding: 10,
+                    titleFont: { family: 'Inter', size: 12, weight: '600' },
+                    bodyFont: { family: 'Inter', size: 11, weight: '500' },
+                    borderColor: '#E5E7EB', borderWidth: 1, cornerRadius: 4,
+                    titleColor: '#1F2937', bodyColor: '#6B7280',
+                    displayColors: true,
+                    callbacks: {
+                        title: function (ctxArr) {
+                            var i = ctxArr && ctxArr[0] ? ctxArr[0].dataIndex : -1;
+                            return (i >= 0 && i < sorted.length) ? (sorted[i].label || '') : '';
+                        },
+                        label: function (ctx) { return ctx.parsed.y.toLocaleString() + ' users'; }
+                    }
+                }
             },
             scales: {
                 x: {
+                    grid: { display: false, drawBorder: false },
                     ticks: {
-                        font: { family: "'Inter', sans-serif", size: 11 },
+                        font: { family: 'Inter', size: 10, weight: '500' },
                         color: '#6B7280',
-                        maxRotation: 35,
-                        minRotation: 0
-                    },
-                    grid: { display: false }
+                        maxRotation: 0,
+                        minRotation: 0,
+                        padding: 4,
+                        autoSkip: false
+                    }
                 },
                 y: {
                     beginAtZero: true,
+                    grid: { color: 'rgba(0,0,0,0.04)', drawBorder: false, drawTicks: false },
                     ticks: {
-                        font: { family: "'Inter', sans-serif", size: 11 },
-                        color: '#6B7280'
-                    },
-                    grid: { color: 'rgba(0,0,0,0.05)' }
+                        font: { family: 'Inter', size: 11, weight: '500' },
+                        color: '#6B7280',
+                        padding: 8,
+                        maxTicksLimit: 6,
+                        callback: function (v) { return v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v; }
+                    }
                 }
             },
-            onClick(event) {
-                if (!onBarClick) return;
-                const xScale = chart.scales.x;
-                const idx = xScale.getValueForPixel(event.x);
-                if (idx >= 0 && idx < items.length) onBarClick(idx);
+            onClick: function (_event, elements) {
+                if (!onBarClick || !elements || !elements.length) return;
+                var idx = elements[0].index;
+                if (idx >= 0 && idx < sorted.length) onBarClick(idx);
             },
-            onHover(event) {
-                if (!onBarClick) { canvas.style.cursor = 'default'; return; }
-                const xScale = chart.scales.x;
-                const idx = xScale.getValueForPixel(event.x);
-                canvas.style.cursor = (idx >= 0 && idx < items.length) ? 'pointer' : 'default';
+            onHover: function (_event, elements) {
+                if (!onBarClick) {
+                    canvas.style.cursor = 'default';
+                    return;
+                }
+                canvas.style.cursor = (elements && elements.length) ? 'pointer' : 'default';
             }
         },
         plugins: [_segDataLabelsPlugin]
     });
-
-    const containerWidth = container ? container.offsetWidth : 0;
-    if (containerWidth === 0) {
-        setTimeout(() => { chart.resize(); }, 100);
-    }
 }
 
 function renderSegmentationChart(segData) {
-    const filteredIndustries = (segData.industries || []).filter(ind => ind.label !== 'Other');
+    const filteredIndustries = (segData.industries || []).filter(function (ind) {
+        return ind && ind.label && String(ind.label).toLowerCase() !== 'other';
+    });
     const subtitle = document.getElementById('segmentationSubtitle');
     const backBtn = document.getElementById('segBackBtn');
 
     function drillInto(index) {
         const industry = filteredIndustries[index];
-        if (!industry || !industry.domains) return;
+        if (!industry || !industry.domains || !industry.domains.length) return;
         if (subtitle) subtitle.textContent = 'Domains in ' + industry.label;
         if (backBtn) backBtn.style.display = '';
         _renderSegmentationLevel('domainsChart', industry.domains, industry.label, null);

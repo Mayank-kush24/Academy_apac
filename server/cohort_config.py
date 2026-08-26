@@ -12,6 +12,7 @@ table_prefix:
 
 Routes access the prefix via  flask.g.table_prefix  (set per-request).
 """
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
 # Cohort numeric ids used in /c/<id>/... and ?cohort_id=
@@ -50,6 +51,9 @@ COHORTS: Dict[int, Dict[str, Any]] = {
         "schema": None,
         "enabled": True,
         "description": "Third program intake (UTS API sync).",
+        # Registration Trend x-axis for period=all. C3 onboarding started mid-July;
+        # Jan 15 (C1/C2 default) leaves months of zeros and compresses the real series.
+        "registration_trend_start": date(2026, 7, 15),
         # Same module set as Cohort 2.
         "disabled_pages": (
             "project-submission",
@@ -132,6 +136,28 @@ def is_cohort_api_path_disabled(cohort_id: int, path: str) -> bool:
         if path == p or path.startswith(p + "/"):
             return True
     return False
+
+
+def get_registration_trend_start(table_prefix: str = "", today: Optional[date] = None) -> date:
+    """First day on the Registration Trend x-axis when the dashboard period is 'all'.
+
+    Cohort 1/2 use 15 Jan of the current program year. Cohort 3 uses its configured
+    open date so the chart is not padded with empty months before onboarding began.
+    """
+    today = today or date.today()
+    prefix = table_prefix or ""
+    for entry in COHORTS.values():
+        if (entry.get("table_prefix") or "") == prefix:
+            configured = entry.get("registration_trend_start")
+            if configured:
+                if isinstance(configured, date):
+                    return configured
+                return date.fromisoformat(str(configured))
+            break
+    start = date(today.year, 1, 15)
+    if start > today:
+        start = date(today.year - 1, 1, 15)
+    return start
 
 
 def get_table_prefix(cohort_id: int) -> str:

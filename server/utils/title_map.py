@@ -27,6 +27,9 @@ FUZZY_MAX_SCAN = int(os.environ.get("TITLE_FUZZY_MAX_SCAN", "120000"))
 # Number of top fuzzy hits to re-rank by length closeness before choosing one.
 FUZZY_RERANK_LIMIT = int(os.environ.get("TITLE_FUZZY_RERANK_LIMIT", "25"))
 
+#: Seniority signal for compound titles: these outrank end-user roles.
+DECISION_MAKER_CATEGORIES = frozenset({"Information Decision Maker"})
+
 BROAD_CATEGORIES = frozenset({
     "Data End User",
     "Information End User",
@@ -195,17 +198,60 @@ def _lookup_cleaned(cleaned: str) -> tuple[str | None, str | None]:
     return choice_meta[candidate_idxs[local_idx]]
 
 
+_SPLIT_RE = re.compile(r"\s*(?:[,&/|+]|\band\b)\s*", re.IGNORECASE)
+
+
+def _title_parts(cleaned: str) -> list[str]:
+    """Split a compound designation ("ceo, co-founder") into candidate titles."""
+    parts = (p.strip(" -.") for p in _SPLIT_RE.split(cleaned))
+    return [p for p in parts if len(re.sub(r"[^a-z0-9]", "", p)) >= 2]
+
+
+@functools.lru_cache(maxsize=8192)
+def _lookup_compound(cleaned: str) -> tuple[str | None, str | None]:
+    """
+    Resolve a compound designation from its parts.
+
+    Only reached once the whole string has failed, so legitimate comma-bearing titles
+    ("manager, information technology") still match intact and are never split.
+
+    Parts are resolved against the exact index only. Fuzzy matching a short fragment is
+    actively misleading — "ceo" scores a perfect token_set_ratio against "assistante
+    ceo", and free text splits into words that match unrelated titles — so a part that
+    is not a known title on its own is skipped rather than guessed at. Where several
+    parts resolve, a decision-maker role wins over an end-user one.
+    """
+    parts = _title_parts(cleaned)
+    if len(parts) < 2:
+        return None, None
+    exact = _load_index()["exact"]
+    best: tuple[str, str] | None = None
+    best_rank: tuple[int, int] | None = None
+    for pos, part in enumerate(parts):
+        hit = exact.get(part)
+        if hit is None:
+            continue
+        sub, broad = hit
+        rank = (0 if broad in DECISION_MAKER_CATEGORIES else 1, pos)
+        if best_rank is None or rank < best_rank:
+            best, best_rank = (sub, broad), rank
+    return best if best is not None else (None, None)
+
+
 def map_title(raw_title: str):
     """
     Map a designation to (sub_category, broad_category).
 
-    Strategy: exact client index lookup -> fuzzy match against client corpus.
+    Strategy: exact client index lookup -> fuzzy match against client corpus ->
+    split compound titles and match on the strongest part.
     Returns ("Unclassified", "Unclassified") when no match meets the threshold.
     """
     cleaned = _clean_text(raw_title)
     if not cleaned:
         return "Unclassified", "Unclassified"
     sub, broad = _lookup_cleaned(cleaned)
+    if sub is None or broad is None:
+        sub, broad = _lookup_compound(cleaned)
     if sub is None or broad is None:
         return "Unclassified", "Unclassified"
     return sub, broad

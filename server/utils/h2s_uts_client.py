@@ -18,6 +18,10 @@ from urllib.parse import urljoin
 import requests
 
 
+#: Hard server-side cap on rows returned by one registrations response.
+REGISTRATION_PAGE_SIZE = 50000
+
+
 class H2SUtsError(Exception):
     """Raised when the UTS API returns an error or is misconfigured."""
 
@@ -107,7 +111,14 @@ class H2SUtsClient:
             raise H2SUtsError(f"UTS API returned non-JSON for {path}") from exc
 
     def fetch_registrations(self, start: Optional[str] = None) -> Any:
-        """GET /api/v1/event/{slug}/uts[?start=ISO]."""
+        """
+        GET /api/v1/event/{slug}/uts[?start=ISO].
+
+        The endpoint caps every response at REGISTRATION_PAGE_SIZE rows and ignores
+        ``limit``, ``skip``, ``offset`` and ``pageSize``. The cap applies to a window
+        anchored at ``start``, so callers reach past it by advancing ``start`` rather
+        than by asking for a larger response.
+        """
         params: Dict[str, Any] = {}
         if start:
             params["start"] = start

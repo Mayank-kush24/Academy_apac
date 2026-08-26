@@ -1,0 +1,701 @@
+buyer_segment_rollup,buyer_segment,title,num_title
+Decision Maker,Information Decision Maker,Director,313808
+Decision Maker,Information Decision Maker,"Manager, Information Technology",63581
+Decision Maker,Information Decision Maker,Office Manager,30668
+Decision Maker,Information Decision Maker,Head of Department,14866
+Decision Maker,Information Decision Maker,"Project Manager, Information Technology",14290
+Decision Maker,Information Decision Maker,Senior Information Technology Manager,11717
+Decision Maker,Information Decision Maker,IT Infrastructure Manager,8152
+Decision Maker,Information Decision Maker,Senior IT Manager,4835
+Decision Maker,Information Decision Maker,Service Delivery Manager,4452
+Decision Maker,Information Decision Maker,DBA,3945
+Decision Maker,Information Decision Maker,IT Service Manager,3651
+Decision Maker,Information Decision Maker,Network Manager,3169
+Decision Maker,Information Decision Maker,Information Technology Service Delivery Manager,2949
+Decision Maker,Information Decision Maker,Information Technology Program Manager,2751
+Decision Maker,Information Decision Maker,Senior IT Project Manager,2477
+Decision Maker,Information Decision Maker,Information Technology Services Manager,2298
+Decision Maker,Information Decision Maker,Information Technology Infrastructure Manager,2084
+Decision Maker,Information Decision Maker,"Manager, Information Technology Support",1579
+Decision Maker,Information Decision Maker,Assistant IT Manager,1391
+Decision Maker,Information Decision Maker,IT Application Manager,1346
+Decision Maker,Information Decision Maker,Information Technology Audit Manager,1243
+Decision Maker,Information Decision Maker,Network Operations Manager,1064
+Decision Maker,Information Decision Maker,Group Information Technology Manager,1053
+Decision Maker,Information Decision Maker,Infrastructure Project Manager,1044
+Decision Maker,Information Decision Maker,IT Systems Manager,928
+Decision Maker,Information Decision Maker,Manager - IT Infrastructure And Cloud Operations,894
+Decision Maker,Information Decision Maker,"Manager, Information Technology Applications",815
+Decision Maker,Information Decision Maker,Group IT Manager,785
+Decision Maker,Information Decision Maker,Information Technology Application Manager,745
+Decision Maker,Information Decision Maker,Regional Information Technology Manager,728
+Decision Maker,Information Decision Maker,General Manager Information Technology,694
+Decision Maker,Information Decision Maker,Customer Support Manager,684
+Decision Maker,Information Decision Maker,"Manager, Information Technology Systems",669
+Decision Maker,Information Decision Maker,IT Infrastructure And Operations Manager,660
+Decision Maker,Information Decision Maker,Information Technology Development Manager,651
+Decision Maker,Information Decision Maker,"Senior Manager, Information Technology Operations",632
+Decision Maker,Information Decision Maker,"Manager, Information Services",602
+Decision Maker,Information Decision Maker,"Senior Manager, IT Infrastructure",589
+Decision Maker,Information Decision Maker,Infrastructure Services Manager,587
+Decision Maker,Information Decision Maker,IT Delivery Manager,583
+Decision Maker,Information Decision Maker,Information Technology Business Relationship Manager,578
+Decision Maker,Information Decision Maker,"Manager, Infrastructure Engineering",570
+Decision Maker,Information Decision Maker,"Assistant Manager, Information Technology",564
+Decision Maker,Information Decision Maker,"Manager, Technical Support",561
+Decision Maker,Information Decision Maker,Network Infrastructure Manager,521
+Decision Maker,Information Decision Maker,IT Business Relationship Manager,493
+Decision Maker,Information Decision Maker,Senior IT Operations Manager,478
+Decision Maker,Information Decision Maker,"Manager, Network Services",476
+Decision Maker,Information Decision Maker,Business Application Manager,474
+Decision Maker,Information Decision Maker,IT Asset Manager,473
+Decision Maker,Information Decision Maker,Information Technology Help Desk Manager,439
+Decision Maker,Information Decision Maker,IT Operation Manager,412
+Decision Maker,Information Decision Maker,Platform Manager,400
+Decision Maker,Information Decision Maker,IT Solutions Manager,393
+Decision Maker,Information Decision Maker,"Manager, Information Technology Network",390
+Decision Maker,Information Decision Maker,Corporate IT Manager,390
+Decision Maker,Information Decision Maker,Information Technology System Manager,386
+Decision Maker,Information Decision Maker,Senior Service Delivery Manager,365
+Decision Maker,Information Decision Maker,Information Technology Solutions Manager,360
+Decision Maker,Information Decision Maker,Information Technology Dir,359
+Decision Maker,Information Decision Maker,Corporate Information Technology Manager,343
+Decision Maker,Information Decision Maker,Senior Infrastructure Manager,343
+Decision Maker,Information Decision Maker,Information Technology Engineering Manager,339
+Decision Maker,Information Decision Maker,Support Services Manager,339
+Decision Maker,Information Decision Maker,Cloud Manager,314
+Decision Maker,Information Decision Maker,"Manager, IT Security",310
+Decision Maker,Information Decision Maker,Senior IT Audit Manager,303
+Decision Maker,Information Decision Maker,Lead Information Technology Project Manager,301
+Decision Maker,Information Decision Maker,Lead Database Administrator,300
+Decision Maker,Information Decision Maker,Business Support Manager,298
+Decision Maker,Information Decision Maker,Information Technology Business Manager,289
+Decision Maker,Information Decision Maker,Cloud Operations Manager,280
+Decision Maker,Information Decision Maker,Information Technology Portfolio Manager,274
+Decision Maker,Information Decision Maker,Senior Infrastructure Project Manager,272
+Decision Maker,Information Decision Maker,Software Asset Manager,269
+Decision Maker,Information Decision Maker,AVP IT,265
+Decision Maker,Information Decision Maker,Information Technology Compliance Manager,265
+Decision Maker,Information Decision Maker,Senior Application Manager,261
+Decision Maker,Information Decision Maker,IT Change Manager,255
+Decision Maker,Information Decision Maker,"Manager, Database Administration",252
+Decision Maker,Information Decision Maker,IT Governance Manager,250
+Decision Maker,Information Decision Maker,IT Technical Manager,250
+Decision Maker,Information Decision Maker,IT Manager ||,250
+Decision Maker,Information Decision Maker,IT Service Operations Manager,249
+Decision Maker,Information Decision Maker,"Manager, Information Technology Service Operations",247
+Decision Maker,Information Decision Maker,Systems Infrastructure Manager,245
+Decision Maker,Information Decision Maker,Senior Technical Support Manager,236
+Decision Maker,Information Decision Maker,IT Department Manager,233
+Decision Maker,Information Decision Maker,"Technical Manager, Information Technology",231
+Decision Maker,Information Decision Maker,"Senior Manager, Network Engineering",231
+Decision Maker,Information Decision Maker,Senior Manager Information Technology Infrastructure,229
+Decision Maker,Information Decision Maker,IT Application Development Manager,227
+Decision Maker,Information Decision Maker,"Change Manager, Information Technology",227
+Decision Maker,Information Decision Maker,Deputy IT Manager,223
+Decision Maker,Information Decision Maker,"Senior Manager, Information Technology Security",223
+Decision Maker,Information Decision Maker,"Manager, Information Technology Department",222
+Decision Maker,Information Decision Maker,"Manager, Application Support",222
+Decision Maker,Information Decision Maker,IT Category Manager,208
+Decision Maker,Information Decision Maker,"Senior Manager, Infrastructure Operations",206
+Decision Maker,Information Decision Maker,Information Technology Infrastructure Operations Manager,204
+Practitioner,Data End User,Senior Data Analyst,10814
+Practitioner,Data End User,Senior Business Analyst,8244
+Practitioner,Data End User,Business Intelligence Analyst,6383
+Practitioner,Data End User,Business Intelligence Developer,3421
+Practitioner,Data End User,BI,2558
+Practitioner,Data End User,AI,1872
+Practitioner,Data End User,Data Scientist / Analyst / Engineer,1853
+Practitioner,Data End User,Research Analyst,1729
+Practitioner,Data End User,Senior Business Intelligence Analyst,1681
+Practitioner,Data End User,Senior Researcher,1497
+Practitioner,Data End User,Senior Data Architect,1436
+Practitioner,Data End User,Business Intelligence Engineer,1203
+Practitioner,Data End User,Senior AI Engineer,1146
+Practitioner,Data End User,Senior Business Intelligence Developer,1112
+Practitioner,Data End User,Junior Data Scientist,970
+Practitioner,Data End User,Data Analytics Engineer,927
+Practitioner,Data End User,Cloud Data Engineer,905
+Practitioner,Data End User,Enterprise Data Architect,889
+Practitioner,Data End User,Data Solutions Architect,842
+Practitioner,Data End User,Data Entry Specialist,834
+Practitioner,Data End User,Business Intelligence Lead,792
+Practitioner,Data End User,AI Architect,787
+Practitioner,Data End User,Junior Data Analyst,765
+Practitioner,Data End User,Quality Assurance Analyst,762
+Practitioner,Data End User,DGM,759
+Practitioner,Data End User,Data Analytics Lead,733
+Practitioner,Data End User,AI Lead,719
+Practitioner,Data End User,Data Entry Operator,674
+Practitioner,Data End User,Data Analytics Specialist,655
+Practitioner,Data End User,Data Entry Clerk,648
+Practitioner,Data End User,Senior Database Engineer,612
+Practitioner,Data End User,Data Science Engineer,610
+Practitioner,Data End User,Junior Data Engineer,598
+Practitioner,Data End User,Intelligence Analyst,576
+Practitioner,Data End User,Data Science Analyst,561
+Practitioner,Data End User,Business Intelligence Architect,553
+Practitioner,Data End User,Data Integrity Specialist,532
+Practitioner,Data End User,Senior Research Analyst,525
+Practitioner,Data End User,Data Center Technician,516
+Practitioner,Data End User,Senior Research Associate,515
+Practitioner,Data End User,Sr. Business Analyst,506
+Practitioner,Data End User,Analytics Lead,506
+Practitioner,Data End User,Analytics,500
+Practitioner,Data End User,Sql Server Database Administrator,495
+Practitioner,Data End User,Database Architect,493
+Practitioner,Data End User,Data Governance Analyst,493
+Practitioner,Data End User,Data Engineering Lead,485
+Practitioner,Data End User,Analytics Manager,481
+Practitioner,Data End User,Data Warehouse Developer,478
+Practitioner,Data End User,Functional Analyst,473
+Practitioner,Data End User,Data Platform Engineer,466
+Practitioner,Data End User,Data Software Engineer,457
+Practitioner,Data End User,Credit Analyst,453
+Practitioner,Data End User,Senior Oracle Database Administrator,451
+Practitioner,Data End User,Lead AI Engineer,449
+Practitioner,Data End User,Data Science Team Lead,441
+Practitioner,Data End User,Machine Learning Scientist,426
+Practitioner,Data End User,Data Analytics Team Lead,411
+Practitioner,Data End User,Lead Machine Learning Engineer,408
+Practitioner,Data End User,Treasury Analyst,404
+Practitioner,Data End User,Data Engineering Team Lead,398
+Practitioner,Data End User,Algorithm Engineer,383
+Practitioner,Data End User,Machine Learning Researcher,376
+Practitioner,Data End User,Senior Business Intelligence Consultant,354
+Practitioner,Data End User,Data Research Analyst,353
+Practitioner,Data End User,Senior Reporting Analyst,342
+Practitioner,Data End User,Data Governance Lead,341
+Practitioner,Data End User,Quantitative Analyst,339
+Practitioner,Data End User,Big Data Architect,338
+Practitioner,Data End User,Senior Data Center Engineer,334
+Practitioner,Data End User,Machine Learning Engineer ,334
+Practitioner,Data End User,Senior BI Analyst,328
+Practitioner,Data End User,AI Team Lead,328
+Practitioner,Data End User,Generative AI Engineer,324
+Practitioner,Data End User,Data Engineering Specialist,322
+Practitioner,Data End User,Staff - Engineering: Data Center / IT,322
+Practitioner,Data End User,Data Warehouse Architect,316
+Practitioner,Data End User,Data Integration Engineer,316
+Practitioner,Data End User,Sr. Database Administrator,312
+Practitioner,Data End User,Senior Treasury Analyst,307
+Practitioner,Data End User,Cloud Data Architect,298
+Practitioner,Data End User,AI Research Engineer,288
+Practitioner,Data End User,Principal Machine Learning Engineer,276
+Practitioner,Data End User,Machine Learning,270
+Practitioner,Data End User,Quantitative Researcher,265
+Practitioner,Data End User,Senior ML Engineer,262
+Practitioner,Data End User,Data Analytics Manager,259
+Practitioner,Data End User,Data Warehouse Engineer,259
+Practitioner,Data End User,AI Solutions Engineer,256
+Practitioner,Data End User,Principal AI Engineer,255
+Practitioner,Data End User,Data Quality Specialist,252
+Practitioner,Data End User,Database Specialist,252
+Practitioner,Data End User,Senior Data Analytics Engineer,250
+Practitioner,Data End User,Analytics Specialist,247
+Practitioner,Data End User,Insights Analyst,246
+Practitioner,Data End User,Senior Hris Analyst,245
+Practitioner,Data End User,Sr. Machine Learning Engineer,242
+Practitioner,Data End User,Data Scientist / Machine Learning Engineer,239
+Practitioner,Data End User,Senior Manager Analytics,233
+Practitioner,Data End User,Senior Cloud Data Engineer,224
+Practitioner,Information End User,IT,42367
+Practitioner,Information End User,Senior Network Engineer,10484
+Practitioner,Information End User,Network Administrator,9365
+Practitioner,Information End User,Infrastructure Engineer,7567
+Practitioner,Information End User,Administrative Assistant,4339
+Practitioner,Information End User,Senior Infrastructure Engineer,3540
+Practitioner,Information End User,IT Business Analyst,2788
+Practitioner,Information End User,IT System Administrator,2494
+Practitioner,Information End User,Network/System Administrator,2068
+Practitioner,Information End User,Senior Database Administrator,2039
+Practitioner,Information End User,"Supervisor, Information Technology",1817
+Practitioner,Information End User,Informatica,1797
+Practitioner,Information End User,Senior IT Specialist,1654
+Practitioner,Information End User,Network Analyst,1494
+Practitioner,Information End User,Senior IT Engineer,1482
+Practitioner,Information End User,Database Developer,1348
+Practitioner,Information End User,Senior IT Analyst,1336
+Practitioner,Information End User,Senior Manager IT,1313
+Practitioner,Information End User,Network Specialist,1290
+Practitioner,Information End User,IT Specialist I,1242
+Practitioner,Information End User,"Senior Manager, Information Technology",1199
+Practitioner,Information End User,IT Team Lead,1184
+Practitioner,Information End User,Senior Support Engineer,1113
+Practitioner,Information End User,Infrastructure Analyst,1107
+Practitioner,Information End User,Network Admin,1098
+Practitioner,Information End User,Assistant Manager IT,1085
+Practitioner,Information End User,Senior Network Administrator,1018
+Practitioner,Information End User,Cloud Infrastructure Engineer,1010
+Practitioner,Information End User,It-administrator,980
+Practitioner,Information End User,IT Systems Analyst,976
+Practitioner,Information End User,Information Technology System Administrator,970
+Practitioner,Information End User,Senior Information Technology Engineer,952
+Practitioner,Information End User,Network Technician,935
+Practitioner,Information End User,Information Technology Team Lead,933
+Practitioner,Information End User,Staff - IT Infrastructure And Cloud Operations,932
+Practitioner,Information End User,Information Technology Business Analyst,812
+Practitioner,Information End User,Informaticien,801
+Practitioner,Information End User,IT Tech,750
+Practitioner,Information End User,Senior Information Technology Specialist,742
+Practitioner,Information End User,Customer Support,712
+Practitioner,Information End User,Senior IT Systems Engineer,705
+Practitioner,Information End User,Servicenow Developer,687
+Practitioner,Information End User,Consulting,683
+Practitioner,Information End User,IT Director,683
+Practitioner,Information End User,IT Leader,641
+Practitioner,Information End User,Lead Network Engineer,634
+Practitioner,Information End User,Senior Information Technology Analyst,625
+Practitioner,Information End User,Information Technology System Engineer,609
+Practitioner,Information End User,Network Support Engineer,606
+Practitioner,Information End User,Information Technology Specialist ||,606
+Practitioner,Information End User,Consultor,587
+Practitioner,Information End User,Infrastructure Team Lead,565
+Practitioner,Information End User,IT Specialists,553
+Practitioner,Information End User,Network,546
+Practitioner,Information End User,Senior Database Developer,542
+Practitioner,Information End User,Senior IT Support Specialist,520
+Practitioner,Information End User,Mathematics Teacher,518
+Practitioner,Information End User,IT Consultant,515
+Practitioner,Information End User,Instructional Technology Specialist,510
+Practitioner,Information End User,Operations supervisor,509
+Practitioner,Information End User,Information Technology Department,501
+Practitioner,Information End User,Profesional IT system,495
+Practitioner,Information End User,Storage Engineer,490
+Practitioner,Information End User,IT Project Lead,486
+Practitioner,Information End User,Information Technology Service Desk,479
+Practitioner,Information End User,Service Desk Engineer,472
+Practitioner,Information End User,Senior IT Technician,462
+Practitioner,Information End User,Network And IT Specialist,460
+Practitioner,Information End User,Senior IT Developer,432
+Practitioner,Information End User,Senior Information Technology Consultant,432
+Practitioner,Information End User,Senior IT Administrator,421
+Practitioner,Information End User,Deputy Manager IT,417
+Practitioner,Information End User,Deputy Manager Of Information Technology,405
+Practitioner,Information End User,Network Operations Center Engineer,391
+Practitioner,Information End User,Senior Network Analyst,379
+Practitioner,Information End User,IT Solution Architect,368
+Practitioner,Information End User,Chief Manager IT,367
+Practitioner,Information End User,IT Services,364
+Practitioner,Information End User,IT Application Analyst,353
+Practitioner,Information End User,Information Technology Help Desk,349
+Practitioner,Information End User,Network Operations Engineer,337
+Practitioner,Information End User,Information Technology Business Partner,335
+Practitioner,Information End User,Service Desk Technician,326
+Practitioner,Information End User,IT Teacher,324
+Practitioner,Information End User,IT Support Specialist ||,319
+Practitioner,Information End User,Information Technology Infrastructure Specialist,318
+Practitioner,Information End User,"Supervisor, Information Technology Support",315
+Practitioner,Information End User,Principal Infrastructure Engineer,313
+Practitioner,Information End User,Senior Infrastructure Analyst,313
+Practitioner,Information End User,Storage Administrator,312
+Practitioner,Information End User,IT Help Desk Technician,312
+Practitioner,Information End User,Senior Storage Engineer,299
+Practitioner,Information End User,Information Technology Project Manager,299
+Practitioner,Information End User,Network Infrastructure Engineer,298
+Practitioner,Information End User,Network Consultant,292
+Practitioner,Information End User,IT Software Engineer,290
+Practitioner,Information End User,"Team Leader, Information Technology",288
+Practitioner,Information End User,IT Engineer Iead,284
+Practitioner,Information End User,Is / IT Staff,279
+Practitioner,Information End User,Customer Service Supervisor,277
+Practitioner,Operations End User,Quality Engineer,4825
+Practitioner,Operations End User,QA,3742
+Practitioner,Operations End User,Senior QA Engineer,1734
+Practitioner,Operations End User,"Supervisor, Operations",1656
+Practitioner,Operations End User,Software Quality Assurance Engineer,1193
+Practitioner,Operations End User,QA Automation Engineer,1081
+Practitioner,Operations End User,Delivery Lead,1022
+Practitioner,Operations End User,Industrial Engineer,1019
+Practitioner,Operations End User,Logistics Coordinator,973
+Practitioner,Operations End User,Production Supervisor,907
+Practitioner,Operations End User,Supply Chain Analyst,907
+Practitioner,Operations End User,Senior Operations Manager,841
+Practitioner,Operations End User,Operations Team Lead,808
+Practitioner,Operations End User,Procurement Analyst,806
+Practitioner,Operations End User,Supplier Quality Engineer,767
+Practitioner,Operations End User,Quality Assurance,713
+Practitioner,Operations End User,Maintenance Engineer,680
+Practitioner,Operations End User,Senior Operations Analyst,678
+Practitioner,Operations End User,Quality Assurance Specialist,641
+Practitioner,Operations End User,Logistics,618
+Practitioner,Operations End User,Lead - Operations,613
+Practitioner,Operations End User,Operation Manager,599
+Practitioner,Operations End User,Operations Assistant,539
+Practitioner,Operations End User,Senior Operations Specialist,531
+Practitioner,Operations End User,Production Manager,487
+Practitioner,Operations End User,Business Process Analyst,481
+Practitioner,Operations End User,Senior Production Engineer,478
+Practitioner,Operations End User,Warehouse Supervisor,477
+Practitioner,Operations End User,Logistics Specialist,474
+Practitioner,Operations End User,Senior Operations Engineer,473
+Practitioner,Operations End User,Area Manager,455
+Practitioner,Operations End User,Supply Chain Specialist,431
+Practitioner,Operations End User,General Manager Operations,414
+Practitioner,Operations End User,Logistics Analyst,410
+Practitioner,Operations End User,Business Process Lead,387
+Practitioner,Operations End User,Operations Leader,387
+Practitioner,Operations End User,Quality Assurance Manager,373
+Practitioner,Operations End User,Senior Software QA Engineer,363
+Practitioner,Operations End User,"Supervisor, Logistics",358
+Practitioner,Operations End User,Senior Quality Assurance Analyst,328
+Practitioner,Operations End User,Principal Process Engineer,325
+Practitioner,Operations End User,Assistant Operations Manager,305
+Practitioner,Operations End User,Lead QA Engineer,305
+Practitioner,Operations End User,Senior Quality Analyst,292
+Practitioner,Operations End User,Senior QA Automation Engineer,289
+Practitioner,Operations End User,Senior Supplier Quality Engineer,283
+Practitioner,Operations End User,Deputy General Manager Operations,273
+Practitioner,Operations End User,Operation Engineer,271
+Practitioner,Operations End User,Production Coordinator,269
+Practitioner,Operations End User,Senior Supply Chain Analyst,268
+Practitioner,Operations End User,Senior QA Analyst,264
+Practitioner,Operations End User,Lead Quality Assurance Engineer,259
+Practitioner,Operations End User,Supply Chain,257
+Practitioner,Operations End User,Software Quality Assurance,250
+Practitioner,Operations End User,Supply Chain Manager,249
+Practitioner,Operations End User,Supply Chain Coordinator,240
+Practitioner,Operations End User,Gm Operations,237
+Practitioner,Operations End User,Operations Research Analyst,231
+Practitioner,Operations End User,Warehouse Associate,229
+Practitioner,Operations End User,Senior Procurement Analyst,229
+Practitioner,Operations End User,Executive Assistant To Chief Operating Officer,219
+Practitioner,Operations End User,"Supervisor, Quality Assurance",216
+Practitioner,Operations End User,Principal QA Engineer,216
+Practitioner,Operations End User,Quality Assurance Team Lead,213
+Practitioner,Operations End User,Lead Quality Engineer,211
+Practitioner,Operations End User,Business Operations Manager,211
+Practitioner,Operations End User,Business Operations Specialist,211
+Practitioner,Operations End User,Senior Delivery Manager,210
+Practitioner,Operations End User,Quality Control,206
+Practitioner,Operations End User,Strategy Lead,205
+Practitioner,Operations End User,Branch Operations Manager,205
+Practitioner,Operations End User,Production Operator,204
+Practitioner,Operations End User,Operation Analyst,203
+Practitioner,Operations End User,Senior Planning Engineer,199
+Practitioner,Operations End User,Senior Industrial Engineer,198
+Practitioner,Operations End User,Customer Operations Specialist,197
+Practitioner,Operations End User,Operation Specialist,197
+Practitioner,Operations End User,Software QA Analyst,196
+Practitioner,Operations End User,Deputy Manager Operations,193
+Practitioner,Operations End User,Operations Technician ||,190
+Practitioner,Operations End User,Business & Operations,188
+Practitioner,Operations End User,Sourcing Specialist,185
+Practitioner,Operations End User,Senior Operations Associate,181
+Practitioner,Operations End User,Global Operations Associate,178
+Practitioner,Operations End User,Quality Assurance Officer,177
+Practitioner,Operations End User,Supply Chain Lead,174
+Practitioner,Operations End User,Software QA Tester,173
+Practitioner,Operations End User,QA Team Lead,171
+Practitioner,Operations End User,Business Operations Lead,170
+Practitioner,Operations End User,"Supervisor, Supply Chain",169
+Practitioner,Operations End User,Commercial Analyst,168
+Practitioner,Operations End User,Supply Chain Data Analyst,166
+Practitioner,Operations End User,Lead Process Engineer,166
+Practitioner,Operations End User,Senior Business Operations Analyst,166
+Practitioner,Operations End User,Safety Coordinator,164
+Practitioner,Operations End User,Transportation Engineer,161
+Practitioner,Operations End User,"Supervisor, Transportation",156
+Practitioner,Operations End User,QA Test Engineer,150
+Practitioner,Operations End User,Facilities Coordinator,145
+Practitioner,Operations End User,Supply Chain Planner,145
+Practitioner,Product End User,Product Designer,5511
+Practitioner,Product End User,Product Mgr,4687
+Practitioner,Product End User,Senior Product Manager,2704
+Practitioner,Product End User,Senior Product Designer,2243
+Practitioner,Product End User,Product Development Engineer,2048
+Practitioner,Product End User,Production Engineer,1893
+Practitioner,Product End User,Senior Product Owner,1816
+Practitioner,Product End User,Senior Product Engineer,1418
+Practitioner,Product End User,UX Researcher,867
+Practitioner,Product End User,Senior Research Scientist,815
+Practitioner,Product End User,Technical Product Owner,805
+Practitioner,Product End User,Senior Product Development Engineer,730
+Practitioner,Product End User,Lead Product Designer,702
+Practitioner,Product End User,Product Development,691
+Practitioner,Product End User,Senior Product Analyst,682
+Practitioner,Product End User,Digital Product Owner,623
+Practitioner,Product End User,Senior Product Developer,560
+Practitioner,Product End User,Production,524
+Practitioner,Product End User,Product Design Engineer,500
+Practitioner,Product End User,Product Leader,472
+Practitioner,Product End User,Product Manager / Product Owner,433
+Practitioner,Product End User,Business Analyst / Product Owner,349
+Practitioner,Product End User,Technical Product Manager,338
+Practitioner,Product End User,Product Manger,331
+Practitioner,Product End User,Product Development Lead,310
+Practitioner,Product End User,Agile Product Owner,303
+Practitioner,Product End User,Engineer - Product,299
+Practitioner,Product End User,Product Team Lead,298
+Practitioner,Product End User,Product Development Manager,296
+Practitioner,Product End User,Service Delivery Lead,296
+Practitioner,Product End User,Group Product Manager,284
+Practitioner,Product End User,Product Marketing Manager,281
+Practitioner,Product End User,Product Marketing Lead,265
+Practitioner,Product End User,Sr. Product Owner,260
+Practitioner,Product End User,Lead Design Engineer,245
+Practitioner,Product End User,Project Delivery Manager,225
+Practitioner,Product End User,Product Owner Ii,224
+Practitioner,Product End User,Category Manager,198
+Practitioner,Product End User,Productor,191
+Practitioner,Product End User,Product Application Engineer,184
+Practitioner,Product End User,Senior Product Support Engineer,179
+Practitioner,Product End User,Assistant Product Manager,174
+Practitioner,Product End User,Staff Product Designer,169
+Practitioner,Product End User,Senior Product Design Engineer,165
+Practitioner,Product End User,Senior Technical Product Owner,163
+Practitioner,Product End User,Product Engineering,161
+Practitioner,Product End User,Sr. Product Designer,159
+Practitioner,Product End User,Product Development Coordinator,154
+Practitioner,Product End User,Product Owner & Manager,153
+Practitioner,Product End User,Product Quality Engineer,152
+Practitioner,Product End User,Product Engineering Lead,142
+Practitioner,Product End User,Technical Product Lead,141
+Practitioner,Product End User,Product Engineer ||,140
+Practitioner,Product End User,Digital Product Lead,138
+Practitioner,Product End User,AI Product Lead,135
+Practitioner,Product End User,Product Strategist,133
+Practitioner,Product End User,Agile Delivery Lead,133
+Practitioner,Product End User,"Senior Manager, Product Development",131
+Practitioner,Product End User,Senior Product Data Analyst,123
+Practitioner,Product End User,Product Development Scientist,122
+Practitioner,Product End User,Senior Product Lead,122
+Practitioner,Product End User,Product Software Engineer,110
+Practitioner,Product End User,Project Manager Scrum Master,108
+Practitioner,Product End User,Technical Product Specialist,107
+Practitioner,Product End User,Product Solution Engineer,107
+Practitioner,Product End User,Product Development Analyst,105
+Practitioner,Product End User,Product Test Engineer,105
+Practitioner,Product End User,Principal Product Development Engineer,104
+Practitioner,Product End User,Digital Product Designer,102
+Practitioner,Product End User,BI Product Owner,100
+Practitioner,Product End User,CRM Product Owner,99
+Practitioner,Product End User,Products,98
+Practitioner,Product End User,Production Analyst,97
+Practitioner,Product End User,Product Design Lead,97
+Practitioner,Product End User,"Supervisor, Product Engineering",94
+Practitioner,Product End User,Product Analytics,84
+Practitioner,Product End User,Sr. Product Engineer,82
+Practitioner,Product End User,Software Product Owner,81
+Practitioner,Product End User,AI Product Engineer,81
+Practitioner,Product End User,Product Delivery Lead,79
+Practitioner,Product End User,Product Development Assistant,78
+Practitioner,Product End User,Service Delivery Consultant,78
+Practitioner,Product End User,R&D Lead,78
+Practitioner,Product End User,Delivery Leader,77
+Practitioner,Product End User,Production Lead,77
+Practitioner,Product End User,UX/UI Product Designer,76
+Practitioner,Product End User,"Supervisor, Product Development",76
+Practitioner,Product End User,Software Engineer & Product Owner,76
+Practitioner,Product End User,Product Development Technician,75
+Practitioner,Product End User,Product Engineering Manager,74
+Practitioner,Product End User,Senior Product Support Specialist,73
+Practitioner,Product End User,Product Business Analyst,73
+Practitioner,Product End User,Product Development Senior Scientist,73
+Practitioner,Product End User,Salesforce Product Owner,72
+Practitioner,Product End User,Product Builder,72
+Practitioner,Product End User,Senior Product Marketing Manager,71
+Practitioner,Product End User,Product Marketing Engineer,71
+Practitioner,Product End User,Product Manager ||,71
+Practitioner,Product End User,Global Product Owner,70
+Practitioner,Product End User,Product Manager,69
+Practitioner,Security End User,Cyber Security Engineer,11206
+Practitioner,Security End User,Senior Security Engineer,6194
+Practitioner,Security End User,Cyber Security Specialist,5291
+Practitioner,Security End User,Cybersecurity Analyst,5261
+Practitioner,Security End User,Network Security Engineer,5140
+Practitioner,Security End User,Senior Security Analyst,3266
+Practitioner,Security End User,Cyber Security,2880
+Practitioner,Security End User,Cyber Security Consultant,2382
+Practitioner,Security End User,Senior Information Security Analyst,2370
+Practitioner,Security End User,Senior Information Security Engineer,1925
+Practitioner,Security End User,Senior Network Security Engineer,1742
+Practitioner,Security End User,Cyber Security Architect,1614
+Practitioner,Security End User,Cyber Threat Intelligence Analyst,1336
+Practitioner,Security End User,Senior Security Architect,1154
+Practitioner,Security End User,Devsecops Engineer,1150
+Practitioner,Security End User,Sr. Security Engineer,1122
+Practitioner,Security End User,Application Security Engineer,1025
+Practitioner,Security End User,Senior Cyber Security Analyst,1012
+Practitioner,Security End User,Senior Security Specialist,997
+Practitioner,Security End User,Sr. Security Analyst,883
+Practitioner,Security End User,SOC,875
+Practitioner,Security End User,Cyber Security Lead,839
+Practitioner,Security End User,Security Engineer ||,825
+Practitioner,Security End User,Security Reseacher,788
+Practitioner,Security End User,Enterprise Security Architect,747
+Practitioner,Security End User,Security Guard,739
+Practitioner,Security End User,Security Operations Center Analyst,692
+Practitioner,Security End User,Penetration Tester,679
+Practitioner,Security End User,Security Analyst ||,616
+Practitioner,Security End User,Senior Information Security Specialist,604
+Practitioner,Security End User,Network Security Analyst,588
+Practitioner,Security End User,Information Security Analyst ||,586
+Practitioner,Security End User,Security Solutions Architect,585
+Practitioner,Security End User,Senior Cloud Security Engineer,537
+Practitioner,Security End User,Security Systems Engineer,534
+Practitioner,Security End User,Cyber Threat Analyst,527
+Practitioner,Security End User,Network Security Administrator,525
+Practitioner,Security End User,Network Security Specialist,523
+Practitioner,Security End User,Cyber Security Advisor,518
+Practitioner,Security End User,Cyber Security Expert,488
+Practitioner,Security End User,Network Security Architect,446
+Practitioner,Security End User,Security Software Engineer,438
+Practitioner,Security End User,Threat Hunter,435
+Practitioner,Security End User,Mandiant Consultant,425
+Practitioner,Security End User,Senior Application Security Engineer,421
+Practitioner,Security End User,System Security Engineer,418
+Practitioner,Security End User,Cyber Security Manager,418
+Practitioner,Security End User,Principal Cybersecurity Engineer,400
+Practitioner,Security End User,Blockchain Developer,395
+Practitioner,Security End User,Threat Analyst,386
+Practitioner,Security End User,Senior Manager Information Security,366
+Practitioner,Security End User,Senior Information Security Consultant,365
+Practitioner,Security End User,Senior Cyber Security Specialist,360
+Practitioner,Security End User,Safety Officer,358
+Practitioner,Security End User,Malware Analyst,354
+Practitioner,Security End User,Staff - Security Systems,336
+Practitioner,Security End User,Infosec Analyst,331
+Practitioner,Security End User,Security Compliance Analyst,329
+Practitioner,Security End User,Security Team Lead,329
+Practitioner,Security End User,Cyber Security Professional,329
+Practitioner,Security End User,Network Security,327
+Practitioner,Security End User,Cloud Security,317
+Practitioner,Security End User,Senior Security Advisor,305
+Practitioner,Security End User,Sr. Security Consultant,299
+Practitioner,Security End User,Cybersecurity Researcher,294
+Practitioner,Security End User,Cyber Security Team Lead,289
+Practitioner,Security End User,Threat Researcher,283
+Practitioner,Security End User,Information Security Engineer ||,283
+Practitioner,Security End User,Sr. Cybersecurity Engineer,269
+Practitioner,Security End User,Application Security Analyst,267
+Practitioner,Security End User,Architect - Security Systems,250
+Practitioner,Security End User,Security Analist,250
+Practitioner,Security End User,Senior Devsecops Engineer,242
+Practitioner,Security End User,Systems Security Analyst,232
+Practitioner,Security End User,Infosec Engineer,229
+Practitioner,Security End User,Lead Cybersecurity Engineer,225
+Practitioner,Security End User,SOC Lead,221
+Practitioner,Security End User,Cloud Security Consultant,218
+Practitioner,Security End User,Cybersecurity Administrator,217
+Practitioner,Security End User,Senior SOC Analyst,211
+Practitioner,Security End User,Senior Information Technology Security Analyst,207
+Practitioner,Security End User,Senior Product Security Engineer,205
+Practitioner,Security End User,Senior Security Researcher,203
+Practitioner,Security End User,Sr. Security Architect,203
+Practitioner,Security End User,Cloud Security Analyst,199
+Practitioner,Security End User,Senior Infrastructure Security Engineer,196
+Practitioner,Security End User,Network Security Consultant,195
+Practitioner,Security End User,Security Systems Administrator,194
+Practitioner,Security End User,Information Security Team Lead,186
+Practitioner,Security End User,Cyber Security Senior Consultant,184
+Practitioner,Security End User,Sr. Security Specialist,179
+Practitioner,Security End User,Senior Security Systems Engineer,178
+Practitioner,Security End User,Senior Security Administrator,177
+Practitioner,Security End User,Cyber Security Associate,177
+Practitioner,Security End User,Cyber Threat Intelligence,176
+Practitioner,Security End User,Information Security Compliance Analyst,174
+Practitioner,Security End User,Security Solutions Engineer,174
+Practitioner,Security End User,Cyber Threat Hunter,169
+Practitioner,Security End User,Application Security Architect,169
+Practitioner,Security End User,Information Security Risk Analyst,167
+Practitioner,Technology End User,Software Engineer,229763
+Practitioner,Technology End User,Senior Software Engineer,123598
+Practitioner,Technology End User,Software Developer,88382
+Practitioner,Technology End User,Tech Administrator,43509
+Practitioner,Technology End User,Solutions Architect,37130
+Practitioner,Technology End User,Full Stack Developer,26204
+Practitioner,Technology End User,Senior Software Developer,23923
+Practitioner,Technology End User,Senior Engineer,23683
+Practitioner,Technology End User,Technical Lead,23134
+Practitioner,Technology End User,Machine Learning Engineer,17804
+Practitioner,Technology End User,Principal Software Engineer,16304
+Practitioner,Technology End User,Senior Data Engineer,15013
+Practitioner,Technology End User,Lead Software Engineer,12945
+Practitioner,Technology End User,Tech Lead,12710
+Practitioner,Technology End User,Senior Systems Engineer,12128
+Practitioner,Technology End User,Application Developer,11948
+Practitioner,Technology End User,Staff Software Engineer,11116
+Practitioner,Technology End User,Associate Software Engineer,11036
+Practitioner,Technology End User,Enterprise Architect,10758
+Practitioner,Technology End User,Software Architect,9981
+Practitioner,Technology End User,Senior Developer,9974
+Practitioner,Technology End User,Professional Development Coordinator,9696
+Practitioner,Technology End User,Mechanical Engineer,9629
+Practitioner,Technology End User,Sr. Software Engineer,9272
+Practitioner,Technology End User,Project Engineer,9171
+Practitioner,Technology End User,Senior Analyst,8947
+Practitioner,Technology End User,Technical Architect,7646
+Practitioner,Technology End User,Application Engineer,7501
+Practitioner,Technology End User,Solutions Engineer,6871
+Practitioner,Technology End User,Senior Solutions Architect,6486
+Practitioner,Technology End User,Technical Support Engineer,5959
+Practitioner,Technology End User,Process Engineer,5954
+Practitioner,Technology End User,Electrical Engineer,5725
+Practitioner,Technology End User,Back End Developer,5569
+Practitioner,Technology End User,Senior Software Development Engineer,5513
+Practitioner,Technology End User,Site Reliability Engineer,5410
+Practitioner,Technology End User,SRE,5232
+Practitioner,Technology End User,Civil Engineer,4711
+Practitioner,Technology End User,SE,4629
+Practitioner,Technology End User,Senior Application Developer,4377
+Practitioner,Technology End User,SDE,4222
+Practitioner,Technology End User,System Architect,4037
+Practitioner,Technology End User,Technical,3933
+Practitioner,Technology End User,Senior Systems Analyst,3887
+Practitioner,Technology End User,Software Test Engineer,3835
+Practitioner,Technology End User,Application Analyst,3767
+Practitioner,Technology End User,IT - Solution / System Architect,3757
+Practitioner,Technology End User,Automation Engineer,3558
+Practitioner,Technology End User,Senior Web Developer,3533
+Practitioner,Technology End User,Platform Engineer,3530
+Practitioner,Technology End User,Project Lead,3429
+Practitioner,Technology End User,Engineering Lead,3425
+Practitioner,Technology End User,Senior Architect,3281
+Practitioner,Technology End User,Senior Systems Administrator,3209
+Practitioner,Technology End User,Senior Project Engineer,3024
+Practitioner,Technology End User,Senior Application Engineer,2936
+Practitioner,Technology End User,Cloud Solution Architect,2915
+Practitioner,Technology End User,Senior Mechanical Engineer,2841
+Practitioner,Technology End User,Senior Cloud Engineer,2821
+Practitioner,Technology End User,Research Engineer,2772
+Practitioner,Technology End User,Senior Solutions Engineer,2748
+Practitioner,Technology End User,Senior Machine Learning Engineer,2697
+Practitioner,Technology End User,Python Developer,2645
+Practitioner,Technology End User,Software,2632
+Practitioner,Technology End User,Technical Manager,2621
+Practitioner,Technology End User,Industry Analyst,2525
+Practitioner,Technology End User,Technical Support Specialist,2511
+Practitioner,Technology End User,Senior Technical Lead,2395
+Practitioner,Technology End User,Analytics Engineer,2337
+Practitioner,Technology End User,Computer Engineer,2337
+Practitioner,Technology End User,Technical Support,2329
+Practitioner,Technology End User,Senior Test Engineer,2321
+Practitioner,Technology End User,Technical Writer,2320
+Practitioner,Technology End User,Senior Full Stack Developer,2303
+Practitioner,Technology End User,Lead Software Developer,2270
+Practitioner,Technology End User,Senior Electrical Engineer,2261
+Practitioner,Technology End User,Software Engineering Team Lead,2249
+Practitioner,Technology End User,Technical Analyst,2237
+Practitioner,Technology End User,Senior Process Engineer,2230
+Practitioner,Technology End User,Software Engineer,2229
+Practitioner,Technology End User,Principal Systems Engineer,2189
+Practitioner,Technology End User,Service Engineer,2186
+Practitioner,Technology End User,Principal Solutions Architect,2086
+Practitioner,Technology End User,Senior Site Reliability Engineer,2080
+Practitioner,Technology End User,Research & Development Engineer,2026
+Practitioner,Technology End User,Senior Principal Engineer,2016
+Practitioner,Technology End User,Senior Quality Assurance Engineer,1963
+Practitioner,Technology End User,Salesforce Developer,1925
+Practitioner,Technology End User,Application Specialist,1925
+Practitioner,Technology End User,Engineering Technician,1918
+Practitioner,Technology End User,Application Architect,1888
+Practitioner,Technology End User,Software Developer / Engineer,1872
+Practitioner,Technology End User,Associate Software Developer,1870
+Practitioner,Technology End User,Senior Staff Engineer,1868
+Practitioner,Technology End User,Technical Team Lead,1836
+Practitioner,Technology End User,Software Development Team Lead,1810
+Practitioner,Technology End User,Senior Engineering Manager,1800
+Practitioner,Technology End User,Lead Systems Engineer,1772
+Practitioner,Technology End User,Senior Software Architect,1745
+Practitioner,Technology End User,Developer Advocate,1743

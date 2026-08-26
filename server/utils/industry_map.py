@@ -1,6 +1,7 @@
 """
 Industry ↔ Domain mapping used by dashboard segmentation and table pages.
 """
+from collections import defaultdict
 
 INDUSTRY_DOMAIN_MAP = {
     'Technology': [
@@ -515,3 +516,88 @@ def get_industry(domain, designation=None, organization=None, persona=None):
         return _PERSONA_INDUSTRY_FALLBACK[persona]
 
     return ''
+
+
+# Storage key "Technology" is shown as "Information Technology" on the dashboard chart.
+_INDUSTRY_DISPLAY_LABELS = {
+    'Technology': 'Information Technology',
+}
+
+
+def canonical_industry(raw) -> str:
+    """Map a stored industry or domain string to an INDUSTRY_DOMAIN_MAP key.
+
+    Domain-level values such as "Software development" roll up to "Technology".
+    Returns '' for empty, Other, or anything that cannot be classified.
+    """
+    if not raw or not isinstance(raw, str):
+        return ''
+    name = raw.strip()
+    if not name or name.lower() == 'other':
+        return ''
+    if name == 'Information Technology':
+        return 'Technology'
+    if name in INDUSTRY_DOMAIN_MAP:
+        return name
+    mapped = _DOMAIN_INDUSTRY_LOOKUP.get(name.lower())
+    if not mapped or mapped.lower() == 'other':
+        return ''
+    return mapped
+
+
+def industry_chart_label(canonical: str) -> str:
+    """Dashboard label for a canonical industry key."""
+    if not canonical:
+        return ''
+    return _INDUSTRY_DISPLAY_LABELS.get(canonical, canonical)
+
+
+def accumulate_industry_buckets(
+    buckets: dict,
+    raw_industry=None,
+    domain=None,
+    n=0,
+    designation=None,
+    organization=None,
+    persona=None,
+) -> None:
+    """Add *n* users into *buckets* keyed by canonical industry.
+
+    Stored industry is used when it is already a known category; otherwise the
+    domain (and designation/org/persona fallbacks) are mapped the same way as
+    ``get_industry``. Domain names are kept under each industry for drill-down.
+    """
+    n = int(n or 0)
+    if n <= 0:
+        return
+    key = canonical_industry(raw_industry)
+    if not key:
+        key = canonical_industry(domain)
+    if not key:
+        inferred = get_industry(domain, designation, organization, persona)
+        key = canonical_industry(inferred)
+    if not key:
+        return
+    bucket = buckets.setdefault(key, {'total': 0, 'domains': defaultdict(int)})
+    bucket['total'] += n
+    dlabel = domain.strip() if isinstance(domain, str) else ''
+    if dlabel and dlabel.lower() != 'other':
+        bucket['domains'][dlabel] += n
+
+
+def industry_buckets_to_chart(buckets: dict) -> list:
+    """Convert accumulate_industry_buckets output into dashboard chart series."""
+    out = []
+    for key, bucket in (buckets or {}).items():
+        domains = [
+            {'label': lbl, 'value': int(val)}
+            for lbl, val in (bucket.get('domains') or {}).items()
+        ]
+        domains.sort(key=lambda x: -x['value'])
+        out.append({
+            'label': industry_chart_label(key),
+            'value': int(bucket.get('total') or 0),
+            'domains': domains,
+        })
+    out.sort(key=lambda x: -x['value'])
+    return out

@@ -100,6 +100,9 @@ function _formatUtsResult(data) {
     lines.push('Started: ' + (data.sync_started_at || '—'));
     lines.push('Watermark used: ' + (data.registration_start_used || '(none — full fetch)'));
     lines.push('New watermark: ' + (data.registration_start_new || '—'));
+    if (data.full_range_unavailable) {
+        lines.push('Full-range fetch skipped a poisoned UTS window; imported from the first safe start.');
+    }
     if (data.registrations_error) {
         lines.push('Registrations — FAILED: ' + data.registrations_error);
     } else {
@@ -139,6 +142,41 @@ function _formatUtsResult(data) {
     return lines.join('\n');
 }
 
+async function _readUtsSyncSse(resp) {
+    if (!resp.body || !resp.body.getReader) {
+        return await resp.json().catch(function() { return {}; });
+    }
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var last = null;
+    while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buffer += decoder.decode(chunk.value, { stream: true });
+        var parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (var i = 0; i < parts.length; i++) {
+            var block = parts[i];
+            // SSE comments (": keepalive") — ignore; they only keep the proxy awake.
+            var dataMatch = block.match(/^data:\s*(.+)$/m);
+            if (!dataMatch) continue;
+            try {
+                last = JSON.parse(dataMatch[1].trim());
+            } catch (e) {
+                /* ignore partial/malformed frames */
+            }
+        }
+    }
+    if (!last && buffer) {
+        var tail = buffer.match(/^data:\s*(.+)$/m);
+        if (tail) {
+            try { last = JSON.parse(tail[1].trim()); } catch (e) { /* ignore */ }
+        }
+    }
+    return last || {};
+}
+
 async function runUtsSync(full) {
     var btnNow = document.getElementById('utsSyncNowBtn');
     var btnAll = document.getElementById('utsSyncAllBtn');
@@ -155,16 +193,33 @@ async function runUtsSync(full) {
             ? '<i class="fas fa-spinner fa-spin"></i> Syncing all data… this may take several minutes'
             : '<i class="fas fa-spinner fa-spin"></i> Syncing… this may take a few minutes';
     }
+    var statusPoll = setInterval(function() { loadUtsSyncStatus(); }, 4000);
     try {
-        var resp = await fetch(_utsFetchUrl('/api/import/uts-sync'), {
+        // stream=1 sends SSE heartbeats so CDI/nginx do not 504 on long syncs.
+        var resp = await fetch(_utsFetchUrl('/api/import/uts-sync?stream=1'), {
             method: 'POST',
             headers: Object.assign({ 'Content-Type': 'application/json' }, _importAuthHeaders()),
             credentials: 'same-origin',
             body: JSON.stringify({ full: !!full }),
         });
-        var data = await resp.json().catch(function() { return {}; });
-        if (!resp.ok && !data.registrations && !data.modules) {
-            throw new Error(data.error || ('Sync failed (HTTP ' + resp.status + ')'));
+        var ct = (resp.headers.get('content-type') || '').toLowerCase();
+        var data;
+        if (ct.indexOf('text/event-stream') !== -1) {
+            data = await _readUtsSyncSse(resp);
+        } else {
+            data = await resp.json().catch(function() { return {}; });
+        }
+        if ((!resp.ok || data.error) && !data.registrations && !data.modules) {
+            var fail = data.error;
+            if (!fail) {
+                if (resp.status === 502 || resp.status === 504) {
+                    fail = 'Gateway timed out (HTTP ' + resp.status +
+                        '). Sync may still be running — wait a minute, refresh status, then retry Sync Now if needed.';
+                } else {
+                    fail = 'Sync failed (HTTP ' + resp.status + ')';
+                }
+            }
+            throw new Error(fail);
         }
         if (resEl) {
             resEl.textContent = _formatUtsResult(data);
@@ -180,7 +235,9 @@ async function runUtsSync(full) {
             errEl.textContent = (e && e.message) || 'Sync failed';
             errEl.style.display = 'block';
         }
+        await loadUtsSyncStatus();
     } finally {
+        clearInterval(statusPoll);
         if (btnNow) btnNow.disabled = false;
         if (btnAll) btnAll.disabled = false;
         if (spinner) spinner.style.display = 'none';

@@ -14,6 +14,7 @@ from server.utils.mcq_answer_key import score_submission, get_response_score
 from server.utils.permissions import require_page_access
 from server.utils.cache import cache_result
 from server.config import Config
+from server.cohort_config import get_registration_trend_start
 from server.utils.dashboard_gemini_insights import (
     build_insights_context,
     generate_dashboard_insights,
@@ -73,7 +74,10 @@ OTHERS_UNSPECIFIED_LABEL = 'Unspecified'
 
 bp = Blueprint('dashboard', __name__)
 
-from server.utils.industry_map import INDUSTRY_DOMAIN_MAP, _DOMAIN_INDUSTRY_LOOKUP, get_industry
+from server.utils.industry_map import (
+    accumulate_industry_buckets,
+    industry_buckets_to_chart,
+)
 from server.utils.persona_map import get_persona
 
 # Module-level cached combined dashboard (summary + charts) - one cache entry per period
@@ -183,6 +187,45 @@ def _prefixed_persona_distribution(pii: str, date_frag: str, date_params: dict) 
     out = [{"label": k, "value": v} for k, v in agg.items()]
     out.sort(key=lambda x: -x["value"])
     return out
+
+
+def _prefixed_industry_distribution(pii: str, date_frag: str, date_params: dict) -> list:
+    """Roll domain-level values into industry categories for the segmentation chart.
+
+    Cohort 3 (and some C2 imports) store the raw domain in ``industry`` instead of
+    the mapped category, which made the chart plot 10 overlapping domain bars.
+    """
+    buckets = {}
+    rows = _safe_rows(
+        f"""SELECT industry, domain, COUNT(*) AS n FROM {pii}
+            WHERE (
+                (industry IS NOT NULL AND TRIM(industry) != '')
+                OR (domain IS NOT NULL AND TRIM(domain) != '')
+            ){date_frag}
+            GROUP BY industry, domain""",
+        date_params,
+    )
+    for industry, domain, n in rows:
+        accumulate_industry_buckets(buckets, industry, domain, n)
+
+    rows_fb = _safe_rows(
+        f"""SELECT designation, organization_name, persona, COUNT(*) AS n FROM {pii}
+            WHERE (industry IS NULL OR TRIM(industry) = '')
+              AND (domain IS NULL OR TRIM(domain) = '')
+              AND (
+                (designation IS NOT NULL AND TRIM(designation) != '')
+                OR (organization_name IS NOT NULL AND TRIM(organization_name) != '')
+                OR (persona IS NOT NULL AND TRIM(persona) != '')
+              ){date_frag}
+            GROUP BY designation, organization_name, persona""",
+        date_params,
+    )
+    for desig, org, persona, n in rows_fb:
+        accumulate_industry_buckets(
+            buckets, None, None, n,
+            designation=desig, organization=org, persona=persona,
+        )
+    return industry_buckets_to_chart(buckets)
 
 
 def _prefixed_broad_category_distribution(pii: str, date_frag: str, date_params: dict) -> list:
@@ -593,18 +636,8 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
     country_dist = [{"label": lbl, "value": val}
                     for lbl, val in merge_country_count_rows([(r[0], int(r[1])) for r in raw_countries])[:10]]
 
-    # Industry (user segmentation) – skip "Other"
-    raw_ind = _safe_rows(
-        f"SELECT industry, COUNT(*) AS n FROM {pii} WHERE industry IS NOT NULL AND industry != ''{date_frag} GROUP BY industry ORDER BY n DESC",
-        date_params,
-    )
-    industry_list = []
-    for ind_name, cnt in raw_ind:
-        if not ind_name or ind_name == "Other":
-            continue
-        label = "Information Technology" if ind_name == "Technology" else ind_name
-        industry_list.append({"label": label, "value": int(cnt)})
-    industry_list.sort(key=lambda x: -x["value"])
+    # Industry (user segmentation): roll domains up to canonical industries
+    industry_list = _prefixed_industry_distribution(pii, date_frag, date_params)
 
     # Designation (top 10)
     designation_dist = _grp("designation", 10)
@@ -740,18 +773,21 @@ def _fetch_prefixed_dashboard(prefix: str, period: str) -> dict:
             FROM {pii} WHERE COALESCE(display_registered_at, registered_at) IS NOT NULL GROUP BY d ORDER BY d""",
         {},
     )
-    now = datetime.now()
-    if "cutoff" in date_params:
-        _co = date_params["cutoff"]
-        start_date = _co.date() if hasattr(_co, "date") else datetime.fromisoformat(str(_co)).date()
-    else:
-        start_date = date(now.year, 1, 15)
-        if start_date > date.today():
-            start_date = date(now.year - 1, 1, 15)
     date_dict = {}
     for r in trend_rows:
         dk = r[0] if isinstance(r[0], type(date.today())) else (r[0].date() if hasattr(r[0], "date") else r[0])
         date_dict[dk] = int(r[1])
+    if "cutoff" in date_params:
+        _co = date_params["cutoff"]
+        start_date = _co.date() if hasattr(_co, "date") else datetime.fromisoformat(str(_co)).date()
+    else:
+        start_date = get_registration_trend_start(prefix)
+    # Cohort 3: never pad empty months before the first real registration day
+    # (e.g. a 90d filter still starts in May while C3 opened 15 Jul).
+    if prefix == "cohort_3_" and date_dict:
+        first = min(date_dict)
+        if first > start_date:
+            start_date = first
     reg_trends = []
     cur = start_date
     today_d = date.today()

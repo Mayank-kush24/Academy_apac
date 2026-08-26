@@ -41,6 +41,12 @@ DEFAULT_SRC_CANDIDATES = [
 ]
 DEFAULT_INDEX = os.path.join(_ROOT, "data", "title_index.pkl.gz")
 DEFAULT_CONFLICTS = os.path.join(_ROOT, "data", "title_index_conflicts.csv")
+# Curated client taxonomy layered over the bulk corpus. It is small and hand-checked,
+# so it wins outright instead of competing on frequency; kept as a default so a rebuild
+# never silently drops it.
+DEFAULT_OVERRIDE = os.path.join(
+    _ROOT, "700 Job titles _ C3 _ Gen ai apac - 700 New Job Titles.csv"
+)
 
 # Header aliases (normalized: lowercased, underscores/spaces collapsed).
 _TITLE_HEADERS = ("title", "sub category", "sub_category", "raw title", "designation")
@@ -89,7 +95,69 @@ def _load_dataframe(src: str) -> pd.DataFrame:
     return pd.read_csv(src, encoding="utf-8", on_bad_lines="skip")
 
 
-def build_index(src: str, index_path: str, conflicts_path: str) -> dict:
+def _load_overrides(path: str) -> tuple[dict[str, tuple[str, str]], list[tuple[str, str]]]:
+    """
+    Read the curated taxonomy as ``normalized title -> (display, broad)``.
+
+    The file can disagree with itself — the same title filed under two segments, often
+    differing only by trailing whitespace — so conflicts are settled the same way as the
+    bulk corpus (highest ``num_title`` wins) rather than by row order, and returned so
+    the caller can surface them.
+    """
+    if not path or not os.path.isfile(path):
+        return {}, []
+    df = _load_dataframe(path)
+    title_col = _pick_column(df.columns, _TITLE_HEADERS)
+    broad_col = _pick_column(df.columns, _BROAD_HEADERS)
+    count_col = _pick_column(df.columns, _COUNT_HEADERS)
+    if not title_col or not broad_col:
+        sys.exit(f"Override file {path} lacks a title/broad column: {list(df.columns)}")
+
+    work = pd.DataFrame({
+        "raw": df[title_col].astype("string"),
+        "broad": df[broad_col].astype("string").str.strip(),
+    })
+    work["count"] = (
+        pd.to_numeric(df[count_col], errors="coerce").fillna(1).clip(lower=1)
+        if count_col else 1
+    )
+    work["norm"] = work["raw"].map(_clean_text)
+    work = work[(work["norm"] != "") & work["broad"].notna() & (work["broad"] != "")]
+
+    weight = (
+        work.groupby(["norm", "broad"], observed=True)["count"]
+        .sum()
+        .reset_index()
+        .sort_values(["norm", "count"], ascending=[True, False])
+    )
+    distinct = weight.groupby("norm", observed=True)["broad"].nunique()
+    conflicted = set(distinct[distinct > 1].index)
+    winners = weight.drop_duplicates("norm", keep="first")
+    conflicts = sorted(
+        (norm, broad)
+        for norm, broad in zip(winners["norm"], winners["broad"])
+        if norm in conflicted
+    )
+
+    work["display"] = work["raw"].map(_display_sub)
+    displays = (
+        work[work["display"] != ""]
+        .groupby(["norm", "display"], observed=True)["count"]
+        .sum()
+        .reset_index()
+        .sort_values(["norm", "count"], ascending=[True, False])
+        .drop_duplicates("norm", keep="first")
+    )
+    norm_to_display = dict(zip(displays["norm"], displays["display"]))
+
+    out = {
+        norm: (norm_to_display.get(norm) or norm.title(), broad)
+        for norm, broad in zip(winners["norm"], winners["broad"])
+    }
+    return out, conflicts
+
+
+def build_index(src: str, index_path: str, conflicts_path: str, override: str = "") -> dict:
     if not os.path.isfile(src):
         sys.exit(f"Source not found: {src}")
 
@@ -143,14 +211,31 @@ def build_index(src: str, index_path: str, conflicts_path: str) -> dict:
     )
     norm_to_display = dict(zip(disp_weight["norm"], disp_weight["display"]))
 
+    overrides, override_conflicts = _load_overrides(override)
+    override_changed = sum(
+        1 for norm, (_d, broad) in overrides.items() if norm_to_broad.get(norm) != broad
+    )
+    override_added = sum(1 for norm in overrides if norm not in norm_to_broad)
+
     exact: dict[str, tuple[str, str]] = {}
     choices: list[str] = []
     choice_meta: list[tuple[str, str]] = []
+    position: dict[str, int] = {}
     for norm, broad in norm_to_broad.items():
         display = norm_to_display.get(norm) or norm.title()
         exact[norm] = (display, broad)
+        position[norm] = len(choices)
         choices.append(norm)
         choice_meta.append((display, broad))
+    for norm, (display, broad) in overrides.items():
+        exact[norm] = (display, broad)
+        idx = position.get(norm)
+        if idx is None:
+            position[norm] = len(choices)
+            choices.append(norm)
+            choice_meta.append((display, broad))
+        else:
+            choice_meta[idx] = (display, broad)
 
     token_index: dict[str, list[int]] = defaultdict(list)
     for idx, choice in enumerate(choices):
@@ -184,6 +269,11 @@ def build_index(src: str, index_path: str, conflicts_path: str) -> dict:
         "skipped_rows": skipped,
         "index_path": index_path,
         "conflicts_path": conflicts_path if conflict_norms else None,
+        "override_path": override if overrides else None,
+        "override_entries": len(overrides),
+        "override_changed": override_changed,
+        "override_added": override_added,
+        "override_conflicts": override_conflicts,
     }
 
 
@@ -193,10 +283,12 @@ def main():
                         help="Input reference (.xlsx/.xls/.csv)")
     parser.add_argument("--out", default=DEFAULT_INDEX, help="Output pickle.gz path")
     parser.add_argument("--conflicts", default=DEFAULT_CONFLICTS, help="Conflicts CSV path")
+    parser.add_argument("--override", default=DEFAULT_OVERRIDE,
+                        help="Curated taxonomy that wins over the bulk corpus ('' to skip)")
     args = parser.parse_args()
 
     print(f"Reading {args.src} ...")
-    stats = build_index(args.src, args.out, args.conflicts)
+    stats = build_index(args.src, args.out, args.conflicts, args.override)
     print(f"[OK] source columns: title='{stats['title_col']}' "
           f"broad='{stats['broad_col']}' count='{stats['count_col']}'")
     print(f"[OK] input rows: {stats['input_rows']:,}")
@@ -204,6 +296,13 @@ def main():
     print(f"[OK] fuzzy choices: {stats['choices']:,}")
     print(f"[OK] skipped rows: {stats['skipped_rows']:,}")
     print(f"[OK] conflicts (highest-frequency wins): {stats['conflicts']:,}")
+    if stats["override_path"]:
+        print(f"[OK] override applied: {stats['override_entries']:,} titles "
+              f"({stats['override_changed']:,} recategorised, {stats['override_added']:,} new) "
+              f"<- {stats['override_path']}")
+        for norm, winner in stats["override_conflicts"]:
+            print(f"[WARN] override file disagrees with itself on '{norm}' "
+                  f"-> resolved to '{winner}' (highest num_title)")
     print(f"[OK] index written -> {stats['index_path']}")
     if stats["conflicts_path"]:
         print(f"[OK] conflicts logged -> {stats['conflicts_path']}")
